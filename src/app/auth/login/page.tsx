@@ -5,17 +5,28 @@ import { Mic } from 'lucide-react'
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   async function signInWithGoogle() {
     setLoading(true)
-    const { createClient } = await import('@/lib/supabase')
-    const supabase = createClient()
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    })
+    setError(null)
+    try {
+      const { createClient } = await import('@/lib/supabase')
+      const supabase = createClient()
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      })
+      if (error) {
+        setError(error.message)
+        setLoading(false)
+      }
+    } catch (err) {
+      setError('Something went wrong. Please try again.')
+      setLoading(false)
+    }
   }
 
   return (
@@ -46,6 +57,10 @@ export default function LoginPage() {
           )}
           {loading ? 'Redirecting...' : 'Continue with Google'}
         </button>
+
+        {error && (
+          <p className="text-xs text-red-500 mt-4">{error}</p>
+        )}
 
         <p className="text-xs text-gray-400 mt-6">
           By signing in, you agree to our{' '}
