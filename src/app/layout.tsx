@@ -1,0 +1,30 @@
+import type { Metadata } from 'next'
+import { Inter } from 'next/font/google'
+import './globals.css'
+
+const inter = Inter({ subsets: ['latin'] })
+
+export const metadata: Metadata = {
+  title: 'InterviewAI — Practice like it\'s real. Perform when it matters.',
+  description: 'AI-powered voice mock interview platform for the Indian job market. Practice full interview rounds with real-time AI feedback.',
+  keywords: 'mock interview, AI interview, job interview practice, India, voice interview',
+  openGraph: {
+    title: 'InterviewAI',
+    description: 'Practice like it\'s real. Perform when it matters.',
+    type: 'website',
+  },
+}
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <html lang="en">
+      <body className={inter.className}>
+        {children}
+      </body>
+    </html>
+  )
+}
