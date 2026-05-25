@@ -165,6 +165,57 @@ Generate a comprehensive feedback report for this candidate.`
       .update({ status: 'completed', ended_at: new Date().toISOString() })
       .eq('id', session_id)
 
+    // Update streak
+    const today = new Date().toISOString().slice(0, 10)
+    const { data: currentUser } = await supabase
+      .from('users')
+      .select('current_streak, longest_streak, last_session_date')
+      .eq('id', user.id)
+      .single()
+
+    let newStreak = 1
+    if (currentUser?.last_session_date) {
+      const lastDate = new Date(currentUser.last_session_date + 'T00:00:00Z')
+      const todayDate = new Date(today + 'T00:00:00Z')
+      const diffDays = Math.round((todayDate.getTime() - lastDate.getTime()) / 86400000)
+      if (diffDays === 0) newStreak = currentUser.current_streak
+      else if (diffDays === 1) newStreak = currentUser.current_streak + 1
+    }
+    const newLongest = Math.max(newStreak, currentUser?.longest_streak ?? 0)
+    await supabase
+      .from('users')
+      .update({ current_streak: newStreak, longest_streak: newLongest, last_session_date: today })
+      .eq('id', user.id)
+
+    // Update weak areas with running average per topic
+    const topicGroups = new Map<string, number[]>()
+    for (const q of questions as Question[]) {
+      const answer = answerMap.get(q.id)
+      if (answer?.score != null) {
+        const arr = topicGroups.get(q.topic_tag) ?? []
+        arr.push(answer.score)
+        topicGroups.set(q.topic_tag, arr)
+      }
+    }
+    for (const [topicTag, scores] of Array.from(topicGroups.entries())) {
+      const sessionAvg = scores.reduce((a, b) => a + b, 0) / scores.length
+      const { data: existing } = await supabase
+        .from('weak_areas')
+        .select('avg_score, session_count')
+        .eq('user_id', user.id)
+        .eq('topic_tag', topicTag)
+        .single()
+      const existingCount = existing?.session_count ?? 0
+      const newCount = existingCount + 1
+      const newAvg = ((existing?.avg_score ?? 0) * existingCount + sessionAvg) / newCount
+      await supabase
+        .from('weak_areas')
+        .upsert(
+          { user_id: user.id, topic_tag: topicTag, avg_score: Math.round(newAvg * 100) / 100, session_count: newCount, last_updated: new Date().toISOString() },
+          { onConflict: 'user_id,topic_tag' }
+        )
+    }
+
     // Send email report via Resend
     try {
       const { data: userData } = await supabase

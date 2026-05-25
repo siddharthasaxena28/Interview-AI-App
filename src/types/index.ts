@@ -13,6 +13,9 @@ export interface User {
   plan: Plan
   referral_code: string
   created_at: string
+  current_streak: number
+  longest_streak: number
+  last_session_date: string | null
 }
 
 export interface Subscription {

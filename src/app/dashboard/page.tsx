@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
-import { Mic, Plus, Clock, TrendingUp, CreditCard, LogOut } from 'lucide-react'
+import { Mic, Plus, Clock, TrendingUp, CreditCard, LogOut, Flame, Target } from 'lucide-react'
 import type { User, InterviewSession, FeedbackReport } from '@/types'
 
 export default async function DashboardPage() {
@@ -33,12 +33,21 @@ export default async function DashboardPage() {
         .in('session_id', sessionIds)
     : { data: [] }
 
+  const { data: weakAreas } = await supabase
+    .from('weak_areas')
+    .select('topic_tag, avg_score, session_count')
+    .eq('user_id', authUser.id)
+    .order('avg_score', { ascending: true })
+    .limit(3)
+
   const reportMap = new Map(
     (reports ?? []).map((r: Pick<FeedbackReport, 'session_id' | 'overall_score' | 'selection_probability'>) => [r.session_id, r])
   )
 
   const user = userData as User | null
   const creditBalance = user?.credit_balance ?? 0
+  const currentStreak = user?.current_streak ?? 0
+  const longestStreak = user?.longest_streak ?? 0
 
   const roundLabels: Record<string, string> = {
     tech_l1: 'Technical L1',
@@ -121,11 +130,11 @@ export default async function DashboardPage() {
         </div>
 
         {/* Stats row */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <div className="text-2xl font-bold text-gray-900">{sessions?.length ?? 0}</div>
             <div className="text-sm text-gray-500 flex items-center gap-1 mt-0.5">
-              <Mic className="w-3.5 h-3.5" /> Sessions completed
+              <Mic className="w-3.5 h-3.5" /> Sessions
             </div>
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -138,6 +147,15 @@ export default async function DashboardPage() {
               <TrendingUp className="w-3.5 h-3.5" /> Avg score
             </div>
           </div>
+          <div className={`rounded-xl border p-4 ${currentStreak >= 3 ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-200'}`}>
+            <div className={`text-2xl font-bold flex items-center gap-1 ${currentStreak >= 3 ? 'text-orange-600' : 'text-gray-900'}`}>
+              {currentStreak >= 1 && <Flame className="w-5 h-5" />}
+              {currentStreak}
+            </div>
+            <div className="text-sm text-gray-500 mt-0.5">
+              Day streak{longestStreak > currentStreak ? ` · best ${longestStreak}` : ''}
+            </div>
+          </div>
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <div className="text-2xl font-bold text-blue-600">{creditBalance}</div>
             <div className="text-sm text-gray-500 flex items-center gap-1 mt-0.5">
@@ -145,6 +163,32 @@ export default async function DashboardPage() {
             </div>
           </div>
         </div>
+
+        {/* Weak areas / focus topics */}
+        {weakAreas && weakAreas.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-8">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
+              <Target className="w-4 h-4 text-amber-500" />
+              <h2 className="font-semibold text-gray-900">Focus Areas</h2>
+              <span className="text-xs text-gray-400 ml-1">topics to practice more</span>
+            </div>
+            <div className="px-6 py-4 flex flex-wrap gap-3">
+              {(weakAreas as Array<{topic_tag: string; avg_score: number; session_count: number}>).map((wa) => {
+                const pct = Math.round((wa.avg_score / 5) * 100)
+                const color = pct >= 60 ? 'text-green-600 bg-green-50 border-green-200' : pct >= 40 ? 'text-amber-600 bg-amber-50 border-amber-200' : 'text-red-600 bg-red-50 border-red-200'
+                return (
+                  <div key={wa.topic_tag} className={`border rounded-lg px-4 py-2.5 flex items-center gap-3 ${color}`}>
+                    <div>
+                      <div className="font-medium text-sm capitalize">{wa.topic_tag.replace(/_/g, ' ')}</div>
+                      <div className="text-xs opacity-70">{wa.session_count} session{wa.session_count !== 1 ? 's' : ''}</div>
+                    </div>
+                    <div className="text-lg font-bold">{pct}%</div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Interview history */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">

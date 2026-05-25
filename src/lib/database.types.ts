@@ -19,6 +19,9 @@ export interface Database {
           plan: string
           referral_code: string
           created_at: string
+          current_streak: number
+          longest_streak: number
+          last_session_date: string | null
         }
         Insert: {
           id?: string
@@ -29,6 +32,9 @@ export interface Database {
           plan?: string
           referral_code?: string
           created_at?: string
+          current_streak?: number
+          longest_streak?: number
+          last_session_date?: string | null
         }
         Update: {
           id?: string
@@ -39,6 +45,9 @@ export interface Database {
           plan?: string
           referral_code?: string
           created_at?: string
+          current_streak?: number
+          longest_streak?: number
+          last_session_date?: string | null
         }
       }
       subscriptions: {
