@@ -39,7 +39,8 @@ export async function GET(
 
     // Update session status to in_progress if it was setup
     if (session.status === 'setup') {
-      // Rate limit: max 3 sessions started per hour
+      // Rate limit: max 10 sessions started per hour. Credits are the real abuse
+      // guard; this just stops runaway loops. 3/hr was too tight for normal practice.
       const oneHourAgo = new Date(Date.now() - 3_600_000).toISOString()
       const { count: recentCount } = await supabase
         .from('interview_sessions')
@@ -47,9 +48,9 @@ export async function GET(
         .eq('user_id', user.id)
         .not('started_at', 'is', null)
         .gte('started_at', oneHourAgo)
-      if ((recentCount ?? 0) >= 3) {
+      if ((recentCount ?? 0) >= 10) {
         return NextResponse.json(
-          { error: 'Rate limit exceeded. You can start at most 3 sessions per hour.' },
+          { error: 'Rate limit exceeded. You can start at most 10 sessions per hour.' },
           { status: 429 }
         )
       }
