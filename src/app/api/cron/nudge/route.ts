@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase-server'
+import { sendPushToUser } from '@/lib/push-server'
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('Authorization')
@@ -24,11 +25,12 @@ export async function GET(request: NextRequest) {
   }
 
   let sent = 0
+  let pushed = 0
 
   // Streak at risk: last practiced yesterday, active streak
   const { data: streakUsers } = await supabase
     .from('users')
-    .select('email, name, current_streak')
+    .select('id, email, name, current_streak')
     .eq('last_session_date', toDate(1))
     .gte('current_streak', 2)
 
@@ -42,12 +44,18 @@ export async function GET(request: NextRequest) {
       })
       sent++
     } catch { /* non-fatal */ }
+    // Push notification (no-ops if VAPID keys aren't configured)
+    pushed += await sendPushToUser(supabase, u.id, {
+      title: `🔥 ${u.current_streak}-day streak at risk`,
+      body: 'Practise one interview today to keep your streak alive.',
+      url: '/interview/setup',
+    }).catch(() => 0)
   }
 
   // Re-engagement: last practiced 3 days ago
   const { data: nudgeUsers } = await supabase
     .from('users')
-    .select('email, name')
+    .select('id, email, name')
     .eq('last_session_date', toDate(3))
 
   for (const u of nudgeUsers ?? []) {
@@ -60,9 +68,14 @@ export async function GET(request: NextRequest) {
       })
       sent++
     } catch { /* non-fatal */ }
+    pushed += await sendPushToUser(supabase, u.id, {
+      title: 'Ready for your next mock interview?',
+      body: 'A quick 20-minute practice session keeps you sharp.',
+      url: '/interview/setup',
+    }).catch(() => 0)
   }
 
-  return NextResponse.json({ sent, timestamp: new Date().toISOString() })
+  return NextResponse.json({ sent, pushed, timestamp: new Date().toISOString() })
 }
 
 function streakAtRiskHtml({ name, streak, appUrl }: { name: string; streak: number; appUrl: string }) {

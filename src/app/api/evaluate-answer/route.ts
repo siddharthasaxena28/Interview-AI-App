@@ -5,7 +5,8 @@ import type { Question } from '@/types'
 
 const client = new Anthropic()
 
-const EVAL_SYSTEM_PROMPT = `You are an expert interviewer scoring candidate answers.
+const EVAL_SYSTEM_PROMPT = `You are a sharp, fair human interviewer conducting a live voice interview. You are scoring the candidate's most recent answer and deciding how to react in the moment, the way a real interviewer would.
+
 Score the answer on a scale of 1-5:
 1 = Very poor / No understanding
 2 = Basic / Incomplete
@@ -13,11 +14,22 @@ Score the answer on a scale of 1-5:
 4 = Good / Well-explained
 5 = Excellent / Demonstrates deep expertise
 
+Then decide whether to PROBE before moving on. A real interviewer pushes back when:
+- the answer is vague, hand-wavy, or uses buzzwords without substance
+- the candidate gave a correct but shallow answer and there is an obvious deeper follow-up
+- the answer is incomplete or the candidate clearly guessed
+Do NOT probe when the answer was thorough and confident (score 4-5 with specifics) — just acknowledge and move on.
+
+"brief_feedback" must sound like a real interviewer speaking out loud — natural, warm but honest, ONE short sentence. Never robotic. Examples: "Okay, that gives me a rough idea." / "Good — I like that you mentioned trade-offs." / "Hmm, let's dig into that a bit."
+
+When you probe, "probe_question" is a single, specific follow-up question that challenges or deepens the answer — phrased conversationally, as you would say it aloud.
+
 Return ONLY a JSON object with this exact structure:
 {
   "score": <number 1-5>,
-  "brief_feedback": "<one sentence feedback>",
-  "generate_followup": <true if score ≤ 2, false otherwise>
+  "brief_feedback": "<one natural spoken sentence>",
+  "probe": <true|false>,
+  "probe_question": "<the follow-up question to ask aloud, or empty string if probe is false>"
 }`
 
 export async function POST(request: NextRequest) {
@@ -92,12 +104,12 @@ Candidate's answer:
     const content = message.content[0]
     if (content.type !== 'text') throw new Error('Unexpected response type')
 
-    let evaluation: { score: number; brief_feedback: string; generate_followup: boolean }
+    let evaluation: { score: number; brief_feedback: string; probe: boolean; probe_question: string }
     try {
       const jsonMatch = content.text.match(/\{[\s\S]*\}/)
       evaluation = JSON.parse(jsonMatch ? jsonMatch[0] : content.text)
     } catch {
-      evaluation = { score: 3, brief_feedback: '', generate_followup: false }
+      evaluation = { score: 3, brief_feedback: '', probe: false, probe_question: '' }
     }
 
     const score = Math.min(5, Math.max(1, evaluation.score ?? 3))
@@ -141,31 +153,25 @@ Candidate's answer:
       }
     }
 
-    // Generate a follow-up probe question when the candidate struggles
-    if (evaluation.generate_followup) {
-      try {
-        const followUpMsg = await client.messages.create({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 128,
-          messages: [{
-            role: 'user',
-            content: `The candidate struggled to answer this interview question:\n"${q.text}"\n\nTheir answer: "${transcript || '[no answer]'}"\n\nWrite one short follow-up question to probe their basic understanding of the underlying concept. Return only the question text, nothing else.`,
-          }],
-        })
-        const followUpText = followUpMsg.content[0].type === 'text' ? followUpMsg.content[0].text.trim() : null
-        if (followUpText) {
-          const { data: fq } = await supabase.from('questions').insert({
-            session_id,
-            text: followUpText,
-            topic_tag: q.topic_tag,
-            difficulty: Math.max(1, (q.difficulty as number) - 1),
-            order_index: 999,
-            asked: false,
-          }).select().single()
-          if (fq) nextQuestion = fq as Question
-        }
-      } catch {
-        // non-fatal — continue without follow-up if generation fails
+    // The interviewer decided to push back — the probe came from the same scoring
+    // call (no extra LLM round-trip). Insert it and make it the next question so
+    // the AI challenges the candidate before moving on.
+    let isProbe = false
+    const probeText = (evaluation.probe_question ?? '').trim()
+    if (evaluation.probe && probeText) {
+      const { data: fq } = await supabase.from('questions').insert({
+        session_id,
+        text: probeText,
+        round_type: session.round_type,
+        topic_tag: q.topic_tag,
+        // Probes don't escalate difficulty — they dig into the same topic.
+        difficulty: q.difficulty,
+        order_index: 999,
+        asked: false,
+      }).select().single()
+      if (fq) {
+        nextQuestion = fq as Question
+        isProbe = true
       }
     }
 
@@ -173,7 +179,10 @@ Candidate's answer:
       score,
       brief_feedback: evaluation.brief_feedback,
       next_question: nextQuestion,
-      questions_remaining: remainingQuestions?.length ?? 0,
+      is_probe: isProbe,
+      // Count the freshly-inserted probe so the client doesn't end the interview
+      // prematurely when the candidate is probed on the last scripted question.
+      questions_remaining: (remainingQuestions?.length ?? 0) + (isProbe ? 1 : 0),
     })
   } catch (error) {
     console.error('evaluate-answer error:', error)

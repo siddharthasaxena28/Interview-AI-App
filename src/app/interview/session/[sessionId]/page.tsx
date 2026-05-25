@@ -441,10 +441,19 @@ function SessionPageInner({ params }: SessionPageProps) {
 
       if (data.next_question && data.questions_remaining > 0) {
         setCurrentQuestion(data.next_question)
-        setQuestionIndex((i) => i + 1)
-        const ackText = data.brief_feedback
-          ? `${data.brief_feedback} Let's move on. ${data.next_question.text}`
-          : data.next_question.text
+        // A probe stays on the same logical question — don't advance the counter.
+        if (!data.is_probe) setQuestionIndex((i) => i + 1)
+        let ackText: string
+        if (data.is_probe) {
+          // Interviewer pushing back — flow straight into the follow-up, no "moving on".
+          ackText = data.brief_feedback
+            ? `${data.brief_feedback} ${data.next_question.text}`
+            : data.next_question.text
+        } else {
+          ackText = data.brief_feedback
+            ? `${data.brief_feedback} Let's move on. ${data.next_question.text}`
+            : data.next_question.text
+        }
         await speakText(ackText)
       } else {
         await endInterview()

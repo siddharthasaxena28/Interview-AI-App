@@ -12,6 +12,7 @@ interface FormData {
   role: string
   experience_years: number
   round_type: RoundType
+  resume_text: string
 }
 
 const ROUND_OPTIONS: { value: RoundType; label: string; desc: string }[] = [
@@ -41,6 +42,7 @@ function SetupPageInner() {
     role: '',
     experience_years: 0,
     round_type: initialRoundType,
+    resume_text: '',
   })
 
   function updateForm(field: keyof FormData, value: string | number) {
@@ -210,6 +212,25 @@ function SetupPageInner() {
                     <option value={10}>9–12 years</option>
                     <option value={15}>13+ years</option>
                   </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Paste your résumé
+                    <span className="text-gray-400 font-normal ml-1">(optional — makes questions personal)</span>
+                  </label>
+                  <textarea
+                    value={form.resume_text}
+                    onChange={(e) => updateForm('resume_text', e.target.value)}
+                    placeholder="Paste your résumé text here. The AI will ask about your actual projects, skills and experience — just like a real interviewer who has read your CV."
+                    maxLength={6000}
+                    rows={5}
+                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    {form.resume_text.length > 0
+                      ? `${form.resume_text.length}/6000 characters — questions will reference your background`
+                      : 'Skip this and we’ll generate questions from the job description alone.'}
+                  </p>
                 </div>
               </div>
             </div>

@@ -7,10 +7,11 @@ const client = new Anthropic()
 
 const SYSTEM_PROMPT = `You are an expert technical interviewer with 15 years of hiring experience at top tech companies across India and globally.
 
-Given a job description, company name, role, candidate experience level, and round type, generate exactly 15 interview questions.
+Given a job description, company name, role, candidate experience level, round type, and optionally the candidate's résumé, generate exactly 15 interview questions.
 
 Requirements:
 - Questions must reference the actual JD skills and technologies
+- If a résumé is provided, ground several questions in the candidate's ACTUAL projects, skills and experience — name their specific projects/technologies, just like a real interviewer who has read their CV. Mix these with JD-driven questions.
 - Research what the specified company typically asks — reference their known interview culture
 - Start at difficulty level 2, escalate to level 4-5 by question 12
 - Match the round type persona:
@@ -41,17 +42,21 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { jd_text, company, role, experience_years, round_type } = body as {
+    const { jd_text, company, role, experience_years, round_type, resume_text } = body as {
       jd_text: string
       company: string
       role: string
       experience_years: number
       round_type: RoundType
+      resume_text?: string
     }
 
     if (!jd_text || !company || !role || !round_type) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
+
+    // Résumé is optional and used only to personalise question generation (not stored).
+    const resume = (resume_text ?? '').trim().slice(0, 6000)
 
     // Create interview session first
     const { data: session, error: sessionError } = await supabase
@@ -79,8 +84,8 @@ Round Type: ${round_type}
 
 Job Description:
 ${jd_text}
-
-Generate 15 interview questions for this ${round_type} round at ${company}.`
+${resume ? `\nCandidate Résumé:\n${resume}\n` : ''}
+Generate 15 interview questions for this ${round_type} round at ${company}.${resume ? ' Ground several questions in the candidate\'s actual résumé projects and experience.' : ''}`
 
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',

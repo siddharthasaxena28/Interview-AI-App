@@ -6,6 +6,7 @@ import type { User, InterviewSession, FeedbackReport } from '@/types'
 import type { RoundType } from '@/types'
 import { CopyReferral } from './CopyReferral'
 import InterviewCountdown from './InterviewCountdown'
+import EnableReminders from './EnableReminders'
 
 // Map topic tags to the most relevant round type for "Practice This"
 function topicToRoundType(topic: string): RoundType {
@@ -153,6 +154,9 @@ export default async function DashboardPage() {
               Welcome back, {authUser.user_metadata?.full_name?.split(' ')[0] ?? 'there'}
             </h1>
             <p className="text-gray-500 text-sm mt-1">Ready for your next practice interview?</p>
+            <div className="mt-2">
+              <EnableReminders />
+            </div>
           </div>
           {creditBalance > 0 ? (
             <Link
