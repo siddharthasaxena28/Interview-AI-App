@@ -78,13 +78,15 @@ export default async function DashboardPage() {
         : '',
     }))
 
-  // Progress comparison: first 4 sessions avg vs latest 4 sessions avg
+  // Progress comparison: earliest-3 avg vs latest-3 avg.
+  // Requires >= 6 reports so the two windows never overlap.
+  const scoreOf = (s: InterviewSession) => (reportMap.get(s.id) as { overall_score: number }).overall_score
   let progressDelta: number | null = null
-  if (sessionsWithReports.length >= 4) {
-    const first4 = sessionsWithReports.slice(0, 4)
-    const last4 = sessionsWithReports.slice(-4)
-    const avgFirst = first4.reduce((a, s) => a + (reportMap.get(s.id) as { overall_score: number }).overall_score, 0) / 4
-    const avgLast = last4.reduce((a, s) => a + (reportMap.get(s.id) as { overall_score: number }).overall_score, 0) / 4
+  if (sessionsWithReports.length >= 6) {
+    const first3 = sessionsWithReports.slice(0, 3)
+    const last3 = sessionsWithReports.slice(-3)
+    const avgFirst = first3.reduce((a, s) => a + scoreOf(s), 0) / 3
+    const avgLast = last3.reduce((a, s) => a + scoreOf(s), 0) / 3
     progressDelta = Math.round(avgLast - avgFirst)
   }
 

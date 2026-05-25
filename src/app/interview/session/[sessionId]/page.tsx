@@ -54,6 +54,7 @@ function SessionPageInner({ params }: SessionPageProps) {
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const processorRef = useRef<ScriptProcessorNode | null>(null)
+  const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const answerStartRef = useRef<number>(0)
   const isMountedRef = useRef(true)
@@ -233,8 +234,6 @@ function SessionPageInner({ params }: SessionPageProps) {
 
               if (phaseRef.current === 'intro') {
                 const step = introStepRef.current
-                const persona = PERSONAS[sd.session.round_type]
-                const interviewerName = genderParam === 'female' ? persona.femaleName : persona.maleName
                 if (step === 1) {
                   introStepRef.current = 3
                   speakText(
@@ -250,7 +249,6 @@ function SessionPageInner({ params }: SessionPageProps) {
                     )
                   }
                 }
-                void interviewerName // keep reference alive
               } else {
                 handleAnswerCompleteRef.current(full)
               }
@@ -291,7 +289,11 @@ function SessionPageInner({ params }: SessionPageProps) {
     return () => {
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
       wsRef.current?.close(1000)
-      processorRef.current?.disconnect()
+      if (processorRef.current) {
+        processorRef.current.onaudioprocess = null
+        processorRef.current.disconnect()
+      }
+      sourceNodeRef.current?.disconnect()
       audioContextRef.current?.close().catch(() => {})
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -303,7 +305,20 @@ function SessionPageInner({ params }: SessionPageProps) {
     if (!stream || !audioContext) return
     if (audioContext.state === 'suspended') audioContext.resume().catch(() => {})
 
+    // Tear down any previous nodes — on reconnect this runs again and the old
+    // source/processor would otherwise leak and keep firing onaudioprocess.
+    if (processorRef.current) {
+      processorRef.current.onaudioprocess = null
+      processorRef.current.disconnect()
+      processorRef.current = null
+    }
+    if (sourceNodeRef.current) {
+      sourceNodeRef.current.disconnect()
+      sourceNodeRef.current = null
+    }
+
     const source = audioContext.createMediaStreamSource(stream)
+    sourceNodeRef.current = source
     const processor = audioContext.createScriptProcessor(4096, 1, 1)
     processorRef.current = processor
 

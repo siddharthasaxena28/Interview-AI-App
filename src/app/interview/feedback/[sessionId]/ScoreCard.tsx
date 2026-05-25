@@ -9,6 +9,7 @@ interface ScoreCardProps {
   overallScore: number
   selectionProbability: number
   appUrl: string
+  shareUrl: string
 }
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -29,6 +30,7 @@ export default function ScoreCard({
   overallScore,
   selectionProbability,
   appUrl,
+  shareUrl,
 }: ScoreCardProps) {
   function downloadCard() {
     const W = 1200
@@ -154,10 +156,17 @@ export default function ScoreCard({
   }
 
   function shareOnLinkedIn() {
-    const text = encodeURIComponent(
-      `Just completed a mock ${company} ${role} interview on InterviewAI 🎙️\n\nScore: ${overallScore}/100 | ${selectionProbability}% selection chance\n\nTime to practise more! ${appUrl}`
+    // Share the public report URL so recipients can click through to the report.
+    // LinkedIn pulls the preview from the target page's OG tags; the summary param
+    // is best-effort (newer LinkedIn largely ignores it).
+    const summary = encodeURIComponent(
+      `Just completed a mock ${company} ${role} interview on InterviewAI. Scored ${overallScore}/100 (${selectionProbability}% selection chance). Practise like it's real at ${appUrl.replace('https://', '')}`
     )
-    window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(appUrl)}&summary=${text}`, '_blank', 'noopener,noreferrer')
+    window.open(
+      `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}&summary=${summary}`,
+      '_blank',
+      'noopener,noreferrer'
+    )
   }
 
   return (

@@ -6,11 +6,13 @@ import { Calendar, X } from 'lucide-react'
 const STORAGE_KEY = 'interviewai_next_interview_date'
 
 function getDaysRemaining(dateStr: string): number {
-  const target = new Date(dateStr)
+  // Parse YYYY-MM-DD as LOCAL midnight (appending time avoids UTC parsing,
+  // which would shift the day in timezones behind UTC).
+  const target = new Date(dateStr + 'T00:00:00')
   target.setHours(0, 0, 0, 0)
   const now = new Date()
   now.setHours(0, 0, 0, 0)
-  return Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+  return Math.round((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
 }
 
 export default function InterviewCountdown() {

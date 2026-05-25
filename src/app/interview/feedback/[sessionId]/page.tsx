@@ -239,6 +239,7 @@ export default async function FeedbackPage({
           overallScore={r.overall_score}
           selectionProbability={r.selection_probability}
           appUrl={appUrl}
+          shareUrl={shareUrl}
         />
       </main>
     </div>
