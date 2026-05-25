@@ -483,9 +483,23 @@ export default function SessionPage({ params }: SessionPageProps) {
     wsRef.current?.close()
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop())
 
+    // Kick off end-session + feedback generation NOW so they run during the closing
+    // speech (~10s head start). All answers are already saved, so the report is often
+    // ready in the DB by the time the user lands on the feedback page.
+    fetch('/api/end-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId }),
+    }).catch(() => {})
+
+    fetch('/api/generate-feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId }),
+    }).catch(console.error)
+
     if (!abandoned && sessionData) {
       // Speak a natural closing before showing the ending screen
-      const persona = PERSONAS[sessionData.session.round_type]
       await speakText(
         `That brings us to the end of the interview. Thank you so much for your time today — it was a pleasure speaking with you. I'll review your answers and have your detailed feedback report ready shortly. Best of luck, and we'll be in touch!`,
         false // don't flip to listening state after closing
@@ -493,24 +507,6 @@ export default function SessionPage({ params }: SessionPageProps) {
     }
 
     setEnding(true)
-
-    try {
-      await fetch('/api/end-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId }),
-      })
-    } catch {
-      // non-fatal
-    }
-
-    // Fire-and-forget — the feedback page shows a loading state and polls every 5s
-    fetch('/api/generate-feedback', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: sessionId }),
-    }).catch(console.error)
-
     router.push(`/interview/feedback/${sessionId}`)
   }
 

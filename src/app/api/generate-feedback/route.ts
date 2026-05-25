@@ -58,19 +58,27 @@ export async function POST(request: NextRequest) {
 
     const { session_id } = await request.json() as { session_id: string }
 
-    // Fetch session, questions, and answers in parallel to save ~2s
+    // Fetch session, questions, answers, and any existing report in parallel.
     const [
       { data: session },
       { data: questions },
       { data: answers },
+      { data: existingReport },
     ] = await Promise.all([
       supabase.from('interview_sessions').select('*').eq('id', session_id).eq('user_id', user.id).single(),
       supabase.from('questions').select('*').eq('session_id', session_id).eq('asked', true).order('order_index'),
       supabase.from('answers').select('*').eq('session_id', session_id).order('recorded_at'),
+      supabase.from('feedback_reports').select('*').eq('session_id', session_id).maybeSingle(),
     ])
 
     if (!session) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+    }
+
+    // Dedup: the session page fires this early (head start) and the feedback page
+    // retries it. If a report already exists, return it instead of re-paying for the LLM.
+    if (existingReport) {
+      return NextResponse.json({ report: existingReport, cached: true })
     }
 
     const answerMap = new Map(
@@ -123,10 +131,13 @@ ${transcript}
 
 Generate a comprehensive feedback report for this candidate.`
 
-      // Use Haiku: fast (~4 s), fits within Vercel Hobby's 10 s limit
+      // Use Haiku: fast (~6 s) and capable. max_tokens must comfortably exceed the
+      // full report size — at 1024 the JSON truncated mid-string, JSON.parse threw,
+      // and the route 500'd on every call, so the report never reached the DB and the
+      // feedback page polled forever.
       const message = await client.messages.create({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
+        max_tokens: 4096,
         system: [
           {
             type: 'text',

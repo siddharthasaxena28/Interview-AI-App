@@ -30,28 +30,34 @@ export default function FeedbackClient({
       return
     }
 
-    // Retry generation from the browser after 8 s in case the session page's
-    // fire-and-forget timed out. The route is idempotent (upserts), so safe to call again.
-    const retryTimer = setTimeout(async () => {
-      if (retriedRef.current) return
+    // Trigger generation immediately. The session page already fired it as a head
+    // start, but the route dedups (returns the existing report), so this is safe and
+    // becomes the reliable path with the real auth cookie. When it resolves, refresh
+    // so the server component re-renders with the report — no waiting on a poll tick.
+    let cancelled = false
+    if (!retriedRef.current) {
       retriedRef.current = true
-      try {
-        await fetch('/api/generate-feedback', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: sessionId }),
-        })
-      } catch { /* silent */ }
-    }, 8000)
+      ;(async () => {
+        try {
+          const res = await fetch('/api/generate-feedback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionId }),
+          })
+          if (res.ok && !cancelled) router.refresh()
+        } catch { /* poll below is the safety net */ }
+      })()
+    }
 
-    // Poll every 5 s — server component re-checks the DB and re-renders with the report
-    const pollInterval = setInterval(() => router.refresh(), 5000)
+    // Safety-net poll — covers the case where generation finished via the head-start
+    // call but the await above errored (e.g. transient network).
+    const pollInterval = setInterval(() => router.refresh(), 3000)
 
-    // Give up showing "loading" after 90 s with a helpful message
-    const giveUpTimer = setTimeout(() => setTimedOut(true), 90000)
+    // Give up showing "loading" after 60 s with a helpful message
+    const giveUpTimer = setTimeout(() => setTimedOut(true), 60000)
 
     return () => {
-      clearTimeout(retryTimer)
+      cancelled = true
       clearInterval(pollInterval)
       clearTimeout(giveUpTimer)
     }
