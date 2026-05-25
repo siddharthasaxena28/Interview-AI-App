@@ -52,7 +52,8 @@ export default function SessionPage({ params }: SessionPageProps) {
   const wsRef = useRef<WebSocket | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const processorRef = useRef<ScriptProcessorNode | null>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const answerStartRef = useRef<number>(0)
   const isMountedRef = useRef(true)
@@ -61,8 +62,10 @@ export default function SessionPage({ params }: SessionPageProps) {
   const liveTranscriptRef = useRef('')
   const currentQuestionRef = useRef<Question | null>(null)
   const mutedRef = useRef(false)
-  // True while AI is speaking — prevents streaming mic audio to Deepgram during that time
+  // True while AI is speaking — prevents mic audio from reaching Deepgram
   const systemMutedRef = useRef(false)
+  // Prevents processing the same utterance twice (speech_final + UtteranceEnd both fire)
+  const isProcessingRef = useRef(false)
   const handleAnswerCompleteRef = useRef<(t: string) => Promise<void>>(async () => {})
   const phaseRef = useRef<'intro' | 'interview'>('intro')
   // introStep: 1 = listening for greeting reply, 3 = listening for self-intro
@@ -136,7 +139,7 @@ export default function SessionPage({ params }: SessionPageProps) {
         const { key } = tokenData
 
         const ws = new WebSocket(
-          `wss://api.deepgram.com/v1/listen?model=nova-2-general&language=en-IN&punctuate=true&interim_results=true&vad_events=true&endpointing=1500&utterance_end_ms=1500`,
+          `wss://api.deepgram.com/v1/listen?model=nova-2-general&language=en-IN&punctuate=true&interim_results=true&vad_events=true&endpointing=1500&utterance_end_ms=1500&encoding=linear16&sample_rate=16000&channels=1`,
           ['token', key]
         )
 
@@ -161,6 +164,10 @@ export default function SessionPage({ params }: SessionPageProps) {
           try {
             const msg = JSON.parse(event.data)
 
+            // Ignore all Deepgram events while AI is speaking — the mic is muted and any
+            // residual signal (echo, noise) must not trigger transcript or answer processing.
+            if (systemMutedRef.current) return
+
             if (msg.type === 'SpeechStarted') {
               setUserSpeaking()
             }
@@ -181,9 +188,15 @@ export default function SessionPage({ params }: SessionPageProps) {
             }
 
             if (msg.type === 'UtteranceEnd' || (msg.type === 'Results' && msg.speech_final)) {
+              // Guard against processing the same utterance twice:
+              // Deepgram can emit speech_final=true on a Results message AND then a
+              // separate UtteranceEnd for the same speech segment.
+              if (isProcessingRef.current) return
+
               const full = (finalTranscriptRef.current + ' ' + liveTranscriptRef.current).trim()
               if (!full) return
 
+              isProcessingRef.current = true
               finalTranscriptRef.current = ''
               liveTranscriptRef.current = ''
 
@@ -231,7 +244,8 @@ export default function SessionPage({ params }: SessionPageProps) {
 
     return () => {
       wsRef.current?.close()
-      if (mediaRecorderRef.current?.state !== 'inactive') mediaRecorderRef.current?.stop()
+      processorRef.current?.disconnect()
+      audioContextRef.current?.close().catch(() => {})
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started, micPermission, sessionData])
@@ -240,28 +254,39 @@ export default function SessionPage({ params }: SessionPageProps) {
     const stream = mediaStreamRef.current
     if (!stream) return
 
-    // Pick the best supported MIME type; Deepgram auto-detects opus/webm containers
-    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-      ? 'audio/webm;codecs=opus'
-      : MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')
-      ? 'audio/ogg;codecs=opus'
-      : ''
+    // Use the AudioContext resumed inside the Begin-click gesture (required so the
+    // context isn't suspended, which would prevent onaudioprocess from firing).
+    const audioContext = audioContextRef.current ?? new AudioContext({ sampleRate: 16000 })
+    audioContextRef.current = audioContext
+    if (audioContext.state === 'suspended') audioContext.resume().catch(() => {})
 
-    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
-    mediaRecorderRef.current = recorder
+    const source = audioContext.createMediaStreamSource(stream)
+    // ScriptProcessorNode streams raw PCM — format-agnostic, no container to corrupt.
+    // The Deepgram URL includes encoding=linear16&sample_rate=16000 so it can decode it.
+    const processor = audioContext.createScriptProcessor(4096, 1, 1)
+    processorRef.current = processor
 
-    recorder.ondataavailable = (event) => {
-      if (
-        event.data.size > 0 &&
-        ws.readyState === WebSocket.OPEN &&
-        !mutedRef.current &&
-        !systemMutedRef.current
-      ) {
-        ws.send(event.data)
-      }
+    processor.onaudioprocess = (e) => {
+      if (ws.readyState !== WebSocket.OPEN || mutedRef.current || systemMutedRef.current) return
+      const pcm = convertFloat32ToInt16(e.inputBuffer.getChannelData(0))
+      ws.send(pcm.buffer)
     }
 
-    recorder.start(250) // 250ms chunks — low latency without excessive overhead
+    source.connect(processor)
+    // Route through a silent gain node so the processor fires but mic isn't played back
+    const silentGain = audioContext.createGain()
+    silentGain.gain.value = 0
+    processor.connect(silentGain)
+    silentGain.connect(audioContext.destination)
+  }
+
+  function convertFloat32ToInt16(buffer: Float32Array): Int16Array {
+    const out = new Int16Array(buffer.length)
+    for (let i = 0; i < buffer.length; i++) {
+      const s = Math.max(-1, Math.min(1, buffer[i]))
+      out[i] = s < 0 ? s * 0x8000 : s * 0x7fff
+    }
+    return out
   }
 
   // Core TTS helper — speaks text and resolves when audio finishes playing
@@ -325,8 +350,9 @@ export default function SessionPage({ params }: SessionPageProps) {
       })
     }
 
-    // Unmute mic before switching to listening so we don't drop the first words
+    // Re-open the mic and clear the processing guard before entering listening state
     systemMutedRef.current = false
+    isProcessingRef.current = false
     if (startListening) {
       setListening()
       answerStartRef.current = Date.now()
@@ -372,9 +398,17 @@ export default function SessionPage({ params }: SessionPageProps) {
   // Keep ref in sync so WebSocket callbacks always call the latest version
   useEffect(() => { handleAnswerCompleteRef.current = handleAnswerComplete }, [handleAnswerComplete])
 
-  // The click on this button grants sticky activation so audio.play() is
-  // allowed later in async TTS callbacks (browser autoplay policy).
-  function handleBegin() {
+  // Must run inside the click handler so the browser treats it as a user gesture —
+  // this both resumes the AudioContext (required for ScriptProcessorNode to fire)
+  // and grants sticky activation so TTS audio.play() is allowed later.
+  async function handleBegin() {
+    try {
+      const ctx = new AudioContext({ sampleRate: 16000 })
+      if (ctx.state === 'suspended') await ctx.resume()
+      audioContextRef.current = ctx
+    } catch {
+      // If construction fails, setupAudioStreaming creates one as a fallback
+    }
     setStarted(true)
   }
 

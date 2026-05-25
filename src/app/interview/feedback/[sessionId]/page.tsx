@@ -27,31 +27,13 @@ export default async function FeedbackPage({
 
   if (!session) notFound()
 
-  let { data: report } = await supabase
+  const { data: report } = await supabase
     .from('feedback_reports')
     .select('*')
     .eq('session_id', sessionId)
     .single()
-
-  // If no report yet, generate it
-  if (!report) {
-    try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/generate-feedback`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Cookie: '',
-        },
-        body: JSON.stringify({ session_id: sessionId }),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        report = data.report
-      }
-    } catch {
-      // Will show loading state
-    }
-  }
+  // If report isn't ready yet, FeedbackClient polls every 5 s via router.refresh()
+  // and retries generation from the browser (which has the real auth cookie).
 
   const s = session as InterviewSession
   const r = report as FeedbackReport | null
