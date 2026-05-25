@@ -8,10 +8,9 @@ import { useAnalytics } from '@/hooks/useAnalytics'
 import { formatDuration } from '@/lib/utils'
 import type { Question, RoundType } from '@/types'
 import { PERSONAS } from '@/lib/personas'
-import { use } from 'react'
 
 interface SessionPageProps {
-  params: Promise<{ sessionId: string }>
+  params: { sessionId: string }
 }
 
 interface SessionData {
@@ -27,7 +26,7 @@ interface SessionData {
 }
 
 export default function SessionPage({ params }: SessionPageProps) {
-  const { sessionId } = use(params)
+  const { sessionId } = params
   const router = useRouter()
   const analytics = useAnalytics()
   const { state, setAiSpeaking, setListening, setUserSpeaking, setProcessing, setIdle } = useAudioStateMachine()
