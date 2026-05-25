@@ -29,7 +29,7 @@ export default function SessionPage({ params }: SessionPageProps) {
   const { sessionId } = params
   const router = useRouter()
   const analytics = useAnalytics()
-  const { state, setAiSpeaking, setListening, setUserSpeaking, setProcessing, setIdle } = useAudioStateMachine()
+  const { state, setAiSpeaking, setListening, setUserSpeaking, setProcessing } = useAudioStateMachine()
 
   const [sessionData, setSessionData] = useState<SessionData | null>(null)
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null)
@@ -43,6 +43,8 @@ export default function SessionPage({ params }: SessionPageProps) {
   const [error, setError] = useState('')
   const [micPermission, setMicPermission] = useState<'pending' | 'granted' | 'denied'>('pending')
   const [loadingSession, setLoadingSession] = useState(true)
+  // intro → interviewer warm-up; interview → scored questions
+  const [phase, setPhase] = useState<'intro' | 'interview'>('intro')
 
   const wsRef = useRef<WebSocket | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -52,15 +54,18 @@ export default function SessionPage({ params }: SessionPageProps) {
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const answerStartRef = useRef<number>(0)
   const isMountedRef = useRef(true)
-  // Refs to avoid stale closures in WebSocket callbacks
+  // Refs that must be read inside WebSocket callbacks (stale-closure-safe)
   const finalTranscriptRef = useRef('')
   const liveTranscriptRef = useRef('')
   const currentQuestionRef = useRef<Question | null>(null)
   const mutedRef = useRef(false)
   const handleAnswerCompleteRef = useRef<(t: string) => Promise<void>>(async () => {})
+  const phaseRef = useRef<'intro' | 'interview'>('intro')
+  // introStep: 1 = listening for greeting reply, 3 = listening for self-intro
+  const introStepRef = useRef(1)
 
-  // Keep currentQuestion ref in sync — read inside WebSocket callback to avoid stale closure
   useEffect(() => { currentQuestionRef.current = currentQuestion }, [currentQuestion])
+  useEffect(() => { phaseRef.current = phase }, [phase])
 
   // Load session data
   useEffect(() => {
@@ -110,17 +115,19 @@ export default function SessionPage({ params }: SessionPageProps) {
     requestMic()
   }, [])
 
-  // Connect Deepgram WebSocket after mic granted
+  // Connect Deepgram WebSocket after mic is granted and session is loaded
   useEffect(() => {
     if (micPermission !== 'granted' || !sessionData) return
 
     async function setupDeepgram() {
+      if (!sessionData) return
+      const sd = sessionData // narrowed, non-null reference safe to use in closures below
       try {
         const res = await fetch('/api/deepgram-token')
         const { key } = await res.json()
 
         const ws = new WebSocket(
-          `wss://api.deepgram.com/v1/listen?model=nova-3&language=en-IN&punctuate=true&interim_results=true&vad_events=true&endpointing=3000`,
+          `wss://api.deepgram.com/v1/listen?model=nova-3&language=en-IN&punctuate=true&interim_results=true&vad_events=true&endpointing=1500`,
           ['token', key]
         )
 
@@ -129,28 +136,30 @@ export default function SessionPage({ params }: SessionPageProps) {
           setupAudioStreaming(ws)
           analytics.capture('interview_started', {
             session_id: sessionId,
-            round_type: sessionData?.session.round_type,
-            company: sessionData?.session.company,
+            round_type: sd.session.round_type,
+            company: sd.session.company,
           })
-          if (currentQuestion) {
-            speakQuestion(currentQuestion.text)
-          }
+          // Start with a natural greeting before the first question
+          const persona = PERSONAS[sd.session.round_type]
+          introStepRef.current = 1
+          speakText(
+            `Hi there! Welcome, and thanks for joining us today. I'm ${persona.maleName}, and I'll be conducting your interview for the ${sd.session.role} position at ${sd.session.company}. It's great to have you here! How are you feeling today?`
+          )
         }
 
         ws.onmessage = (event) => {
           if (!isMountedRef.current) return
           try {
-            const data = JSON.parse(event.data)
+            const msg = JSON.parse(event.data)
 
-            if (data.type === 'SpeechStarted') {
+            if (msg.type === 'SpeechStarted') {
               setUserSpeaking()
             }
 
-            if (data.type === 'Results') {
-              const transcript = data.channel?.alternatives?.[0]?.transcript ?? ''
+            if (msg.type === 'Results') {
+              const transcript = msg.channel?.alternatives?.[0]?.transcript ?? ''
               if (transcript) {
-                if (data.is_final) {
-                  // Update ref first, then state — ref is read in UtteranceEnd closure
+                if (msg.is_final) {
                   finalTranscriptRef.current = (finalTranscriptRef.current + ' ' + transcript).trimStart()
                   liveTranscriptRef.current = ''
                   setFinalTranscript(finalTranscriptRef.current)
@@ -162,13 +171,34 @@ export default function SessionPage({ params }: SessionPageProps) {
               }
             }
 
-            // VAD silence detected — user finished speaking
-            if (data.type === 'UtteranceEnd' || (data.type === 'Results' && data.speech_final)) {
-              const fullTranscript = (finalTranscriptRef.current + ' ' + liveTranscriptRef.current).trim()
-              if (fullTranscript && currentQuestionRef.current) {
-                finalTranscriptRef.current = ''
-                liveTranscriptRef.current = ''
-                handleAnswerCompleteRef.current(fullTranscript)
+            if (msg.type === 'UtteranceEnd' || (msg.type === 'Results' && msg.speech_final)) {
+              const full = (finalTranscriptRef.current + ' ' + liveTranscriptRef.current).trim()
+              if (!full) return
+
+              finalTranscriptRef.current = ''
+              liveTranscriptRef.current = ''
+
+              if (phaseRef.current === 'intro') {
+                const step = introStepRef.current
+                if (step === 1) {
+                  // Candidate replied to "how are you" → ask for self-intro
+                  introStepRef.current = 3
+                  speakText(
+                    `That's great to hear! Before we dive in, I'd love to know a bit more about you. Could you give me a quick introduction — your background, experience, and what drew you to apply for this ${sd.session.role} role?`
+                  )
+                } else if (step === 3) {
+                  // Candidate gave self-intro → transition to first interview question
+                  phaseRef.current = 'interview'
+                  setPhase('interview')
+                  const q = currentQuestionRef.current
+                  if (q) {
+                    speakText(
+                      `That's a great background — thank you for sharing! Alright, let's get into the interview. Here's the first question: ${q.text}`
+                    )
+                  }
+                }
+              } else {
+                handleAnswerCompleteRef.current(full)
               }
             }
           } catch {
@@ -230,37 +260,38 @@ export default function SessionPage({ params }: SessionPageProps) {
     return output
   }
 
-  async function speakQuestion(text: string) {
+  // Core TTS helper — speaks text and resolves when audio finishes playing
+  async function speakText(text: string, startListening = true): Promise<void> {
     if (!sessionData) return
     setAiSpeaking()
     setFinalTranscript('')
     setLiveTranscript('')
+    finalTranscriptRef.current = ''
+    liveTranscriptRef.current = ''
 
     const persona = PERSONAS[sessionData.session.round_type]
-
     try {
       const res = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, voice_id: persona.voiceId }),
       })
-
       if (!res.ok) throw new Error('TTS failed')
 
       const audioBlob = await res.blob()
       const audioUrl = URL.createObjectURL(audioBlob)
 
-      if (audioRef.current) {
+      await new Promise<void>((resolve) => {
+        if (!audioRef.current) { resolve(); return }
         audioRef.current.src = audioUrl
-        audioRef.current.onended = () => {
-          URL.revokeObjectURL(audioUrl)
-          setListening()
-          answerStartRef.current = Date.now()
-        }
-        await audioRef.current.play()
-      }
+        audioRef.current.onended = () => { URL.revokeObjectURL(audioUrl); resolve() }
+        audioRef.current.play().catch(() => resolve())
+      })
     } catch {
-      // Fallback: use browser TTS
+      // Fallback — no audio, continue flow
+    }
+
+    if (startListening) {
       setListening()
       answerStartRef.current = Date.now()
     }
@@ -288,9 +319,12 @@ export default function SessionPage({ params }: SessionPageProps) {
       if (data.next_question && data.questions_remaining > 0) {
         setCurrentQuestion(data.next_question)
         setQuestionIndex((i) => i + 1)
-        await speakQuestion(data.next_question.text)
+        // Natural acknowledgment of the answer before asking the next question
+        const ackText = data.brief_feedback
+          ? `${data.brief_feedback} Let's move on to the next one. ${data.next_question.text}`
+          : data.next_question.text
+        await speakText(ackText)
       } else {
-        // Interview complete
         await endInterview()
       }
     } catch {
@@ -299,7 +333,7 @@ export default function SessionPage({ params }: SessionPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentQuestion, sessionData, sessionId])
 
-  // Keep handleAnswerComplete ref in sync — read inside WebSocket callback to avoid stale closure
+  // Keep ref in sync so WebSocket callbacks always call the latest version
   useEffect(() => { handleAnswerCompleteRef.current = handleAnswerComplete }, [handleAnswerComplete])
 
   async function endInterview(abandoned = false) {
@@ -310,9 +344,20 @@ export default function SessionPage({ params }: SessionPageProps) {
       total_questions: totalQuestions,
       duration_seconds: elapsed,
     })
-    setEnding(true)
+
     wsRef.current?.close()
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop())
+
+    if (!abandoned && sessionData) {
+      // Speak a natural closing before showing the ending screen
+      const persona = PERSONAS[sessionData.session.round_type]
+      await speakText(
+        `That brings us to the end of the interview. Thank you so much for your time today — it was a pleasure speaking with you. I'll review your answers and have your detailed feedback report ready shortly. Best of luck, and we'll be in touch!`,
+        false // don't flip to listening state after closing
+      ).catch(() => {})
+    }
+
+    setEnding(true)
 
     try {
       await fetch('/api/end-session', {
@@ -434,9 +479,15 @@ export default function SessionPage({ params }: SessionPageProps) {
         </div>
         <div className="flex items-center gap-4">
           <div className="text-sm text-gray-400 font-mono">{formatDuration(elapsed)}</div>
-          <div className="text-sm text-gray-400">
-            Q{questionIndex + 1}/{totalQuestions}
-          </div>
+          {phase === 'interview' ? (
+            <div className="text-sm text-gray-400">
+              Q{questionIndex + 1}/{totalQuestions}
+            </div>
+          ) : (
+            <div className="text-xs text-blue-400 bg-blue-900/30 px-2.5 py-1 rounded-full font-medium">
+              Intro
+            </div>
+          )}
         </div>
       </div>
 
@@ -483,15 +534,28 @@ export default function SessionPage({ params }: SessionPageProps) {
           </div>
         )}
 
-        {/* Current question */}
-        {currentQuestion && (
+        {/* Context card — intro warm-up or interview question */}
+        {phase === 'intro' ? (
+          <div className="bg-gray-800 rounded-2xl p-6 max-w-2xl w-full text-center">
+            <div className="text-xs text-blue-400 mb-2 uppercase tracking-wide font-medium">
+              Introductory Conversation
+            </div>
+            <p className="text-gray-300 text-base leading-relaxed">
+              {state === 'LISTENING' || state === 'USER_SPEAKING'
+                ? introStepRef.current === 1
+                  ? 'How are you feeling today?'
+                  : 'Tell me about yourself and your background.'
+                : 'Getting to know you before the interview begins...'}
+            </p>
+          </div>
+        ) : currentQuestion ? (
           <div className="bg-gray-800 rounded-2xl p-6 max-w-2xl w-full text-center">
             <div className="text-xs text-gray-500 mb-2 uppercase tracking-wide">
               Q{questionIndex + 1} · {currentQuestion.topic_tag.replace(/_/g, ' ')} · Difficulty {currentQuestion.difficulty}/5
             </div>
             <p className="text-white text-lg leading-relaxed">{currentQuestion.text}</p>
           </div>
-        )}
+        ) : null}
 
         {/* Live transcript */}
         {(liveTranscript || finalTranscript) && (
