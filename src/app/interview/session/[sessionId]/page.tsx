@@ -52,8 +52,7 @@ export default function SessionPage({ params }: SessionPageProps) {
   const wsRef = useRef<WebSocket | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
-  const processorRef = useRef<ScriptProcessorNode | null>(null)
-  const audioContextRef = useRef<AudioContext | null>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const answerStartRef = useRef<number>(0)
   const isMountedRef = useRef(true)
@@ -137,7 +136,7 @@ export default function SessionPage({ params }: SessionPageProps) {
         const { key } = tokenData
 
         const ws = new WebSocket(
-          `wss://api.deepgram.com/v1/listen?model=nova-3&language=en-IN&punctuate=true&interim_results=true&vad_events=true&endpointing=1500&utterance_end_ms=1500`,
+          `wss://api.deepgram.com/v1/listen?model=nova-2-general&language=en-IN&punctuate=true&interim_results=true&vad_events=true&endpointing=1500&utterance_end_ms=1500`,
           ['token', key]
         )
 
@@ -232,8 +231,7 @@ export default function SessionPage({ params }: SessionPageProps) {
 
     return () => {
       wsRef.current?.close()
-      audioContextRef.current?.close()
-      processorRef.current?.disconnect()
+      if (mediaRecorderRef.current?.state !== 'inactive') mediaRecorderRef.current?.stop()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started, micPermission, sessionData])
@@ -242,38 +240,28 @@ export default function SessionPage({ params }: SessionPageProps) {
     const stream = mediaStreamRef.current
     if (!stream) return
 
-    // Reuse the AudioContext created (and resumed) inside the Begin-click gesture.
-    const audioContext = audioContextRef.current ?? new AudioContext({ sampleRate: 16000 })
-    audioContextRef.current = audioContext
-    if (audioContext.state === 'suspended') audioContext.resume().catch(() => {})
+    // Pick the best supported MIME type; Deepgram auto-detects opus/webm containers
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')
+      ? 'audio/ogg;codecs=opus'
+      : ''
 
-    const source = audioContext.createMediaStreamSource(stream)
-    const processor = audioContext.createScriptProcessor(4096, 1, 1)
-    processorRef.current = processor
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+    mediaRecorderRef.current = recorder
 
-    processor.onaudioprocess = (e) => {
-      if (ws.readyState !== WebSocket.OPEN || mutedRef.current || systemMutedRef.current) return
-      const inputData = e.inputBuffer.getChannelData(0)
-      const pcmData = convertFloat32ToInt16(inputData)
-      ws.send(pcmData.buffer)
+    recorder.ondataavailable = (event) => {
+      if (
+        event.data.size > 0 &&
+        ws.readyState === WebSocket.OPEN &&
+        !mutedRef.current &&
+        !systemMutedRef.current
+      ) {
+        ws.send(event.data)
+      }
     }
 
-    source.connect(processor)
-    // Route through a silent gain node so ScriptProcessor fires but mic audio isn't played back
-    const silentGain = audioContext.createGain()
-    silentGain.gain.value = 0
-    processor.connect(silentGain)
-    silentGain.connect(audioContext.destination)
-  }
-
-  function convertFloat32ToInt16(buffer: Float32Array): Int16Array {
-    const l = buffer.length
-    const output = new Int16Array(l)
-    for (let i = 0; i < l; i++) {
-      const s = Math.max(-1, Math.min(1, buffer[i]))
-      output[i] = s < 0 ? s * 0x8000 : s * 0x7fff
-    }
-    return output
+    recorder.start(250) // 250ms chunks — low latency without excessive overhead
   }
 
   // Core TTS helper — speaks text and resolves when audio finishes playing
@@ -301,28 +289,39 @@ export default function SessionPage({ params }: SessionPageProps) {
       const audioBlob = await res.blob()
       const audioUrl = URL.createObjectURL(audioBlob)
 
+      const estDurationMs = Math.max(5000, text.length * 65)
       await new Promise<void>((resolve) => {
         if (!audioRef.current) { resolve(); return }
+        let done = false
+        const finish = () => { if (!done) { done = true; URL.revokeObjectURL(audioUrl); resolve() } }
         audioRef.current.src = audioUrl
-        audioRef.current.onended = () => { URL.revokeObjectURL(audioUrl); resolve() }
-        audioRef.current.onerror = () => { URL.revokeObjectURL(audioUrl); resolve() }
-        audioRef.current.play().catch(() => resolve())
+        audioRef.current.onended = finish
+        audioRef.current.onerror = finish
+        audioRef.current.play().catch(finish)
+        setTimeout(finish, estDurationMs + 3000)
       })
       ttsSucceeded = true
     } catch {
       // ElevenLabs unavailable — fall back to browser speech synthesis
     }
 
-    // Browser speechSynthesis fallback so the user always hears the interviewer
+    // Browser speechSynthesis fallback so the user always hears the interviewer.
+    // Chrome bug: onend may never fire if voices haven't loaded — guard with a timeout.
     if (!ttsSucceeded && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      const estDurationMs = Math.max(4000, text.length * 65) // ~65ms per char at 0.92x rate
       await new Promise<void>((resolve) => {
+        let done = false
+        const finish = () => { if (!done) { done = true; resolve() } }
+
         window.speechSynthesis.cancel()
         const utterance = new SpeechSynthesisUtterance(text)
         utterance.rate = 0.92
         utterance.pitch = 1.0
-        utterance.onend = () => resolve()
-        utterance.onerror = () => resolve()
+        utterance.onend = finish
+        utterance.onerror = finish
         window.speechSynthesis.speak(utterance)
+        // Safety timeout: if onend never fires (Chrome voices-not-loaded bug), unblock
+        setTimeout(finish, estDurationMs + 2000)
       })
     }
 
@@ -373,17 +372,9 @@ export default function SessionPage({ params }: SessionPageProps) {
   // Keep ref in sync so WebSocket callbacks always call the latest version
   useEffect(() => { handleAnswerCompleteRef.current = handleAnswerComplete }, [handleAnswerComplete])
 
-  // Must run inside the click handler so the browser counts it as a user gesture:
-  // resumes the AudioContext (otherwise it stays suspended and the mic never streams)
-  // and grants sticky activation so TTS audio is allowed to play.
-  async function handleBegin() {
-    try {
-      const ctx = new AudioContext({ sampleRate: 16000 })
-      if (ctx.state === 'suspended') await ctx.resume()
-      audioContextRef.current = ctx
-    } catch {
-      // If construction fails, setupAudioStreaming will create one as a fallback
-    }
+  // The click on this button grants sticky activation so audio.play() is
+  // allowed later in async TTS callbacks (browser autoplay policy).
+  function handleBegin() {
     setStarted(true)
   }
 
