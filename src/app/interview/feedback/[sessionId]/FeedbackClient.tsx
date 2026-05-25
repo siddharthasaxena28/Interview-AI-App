@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { usePostHog } from 'posthog-js/react'
+import { useAnalytics } from '@/hooks/useAnalytics'
 
 export default function FeedbackClient({
   sessionId,
@@ -16,11 +16,11 @@ export default function FeedbackClient({
   selectionProbability?: number
 }) {
   const router = useRouter()
-  const posthog = usePostHog()
+  const analytics = useAnalytics()
 
   useEffect(() => {
     if (hasReport) {
-      posthog?.capture('feedback_viewed', {
+      analytics.capture('feedback_viewed', {
         session_id: sessionId,
         overall_score: overallScore,
         selection_probability: selectionProbability,
@@ -31,7 +31,7 @@ export default function FeedbackClient({
       }, 5000)
       return () => clearInterval(interval)
     }
-  }, [hasReport, sessionId, overallScore, selectionProbability, posthog, router])
+  }, [hasReport, sessionId, overallScore, selectionProbability, analytics, router])
 
   return null
 }

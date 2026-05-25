@@ -4,11 +4,11 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Mic, MicOff, PhoneOff, Volume2 } from 'lucide-react'
 import { useAudioStateMachine } from '@/hooks/useAudioStateMachine'
+import { useAnalytics } from '@/hooks/useAnalytics'
 import { formatDuration } from '@/lib/utils'
 import type { Question, RoundType } from '@/types'
 import { PERSONAS } from '@/lib/personas'
 import { use } from 'react'
-import { usePostHog } from 'posthog-js/react'
 
 interface SessionPageProps {
   params: Promise<{ sessionId: string }>
@@ -29,7 +29,7 @@ interface SessionData {
 export default function SessionPage({ params }: SessionPageProps) {
   const { sessionId } = use(params)
   const router = useRouter()
-  const posthog = usePostHog()
+  const analytics = useAnalytics()
   const { state, setAiSpeaking, setListening, setUserSpeaking, setProcessing, setIdle } = useAudioStateMachine()
 
   const [sessionData, setSessionData] = useState<SessionData | null>(null)
@@ -119,7 +119,7 @@ export default function SessionPage({ params }: SessionPageProps) {
         ws.onopen = () => {
           wsRef.current = ws
           setupAudioStreaming(ws)
-          posthog?.capture('interview_started', {
+          analytics.capture('interview_started', {
             session_id: sessionId,
             round_type: sessionData?.session.round_type,
             company: sessionData?.session.company,
@@ -286,7 +286,7 @@ export default function SessionPage({ params }: SessionPageProps) {
   }, [currentQuestion, sessionData, sessionId])
 
   async function endInterview(abandoned = false) {
-    posthog?.capture(abandoned ? 'interview_abandoned' : 'interview_completed', {
+    analytics.capture(abandoned ? 'interview_abandoned' : 'interview_completed', {
       session_id: sessionId,
       round_type: sessionData?.session.round_type,
       questions_answered: questionIndex,

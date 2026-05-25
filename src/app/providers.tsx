@@ -1,7 +1,7 @@
 'use client'
 
 import posthog from 'posthog-js'
-import { PostHogProvider as PHProvider, usePostHog } from 'posthog-js/react'
+import { PostHogProvider as PHProvider } from 'posthog-js/react'
 import { useEffect } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
@@ -9,16 +9,19 @@ import { Suspense } from 'react'
 function PostHogPageView() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const ph = usePostHog()
 
   useEffect(() => {
-    if (!pathname || !ph) return
+    if (!pathname) return
     let url = window.origin + pathname
     if (searchParams?.toString()) {
       url += '?' + searchParams.toString()
     }
-    ph.capture('$pageview', { $current_url: url })
-  }, [pathname, searchParams, ph])
+    try {
+      posthog.capture('$pageview', { $current_url: url })
+    } catch {
+      // posthog not initialized
+    }
+  }, [pathname, searchParams])
 
   return null
 }
@@ -26,14 +29,22 @@ function PostHogPageView() {
 export function PostHogProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const key = process.env.NEXT_PUBLIC_POSTHOG_KEY
-    if (!key) return
+    if (!key) {
+      console.log('PostHog key not set — analytics disabled')
+      return
+    }
     posthog.init(key, {
       api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST ?? 'https://us.i.posthog.com',
-      capture_pageview: false, // manual via PostHogPageView
+      capture_pageview: false,
       capture_pageleave: true,
       persistence: 'localStorage',
     })
   }, [])
+
+  const key = process.env.NEXT_PUBLIC_POSTHOG_KEY
+  if (!key) {
+    return <>{children}</>
+  }
 
   return (
     <PHProvider client={posthog}>
@@ -44,3 +55,4 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
     </PHProvider>
   )
 }
+
