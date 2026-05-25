@@ -111,7 +111,10 @@ export default function SessionPage({ params }: SessionPageProps) {
     async function loadSession() {
       try {
         const res = await fetch(`/api/session-data/${sessionId}`)
-        if (!res.ok) throw new Error('Session not found')
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}))
+          throw new Error(body?.error ?? 'Session not found')
+        }
         const data = await res.json()
         setSessionData(data)
         setCurrentQuestion(data.questions[0] ?? null)
@@ -524,16 +527,32 @@ export default function SessionPage({ params }: SessionPageProps) {
   }
 
   if (error) {
+    const noCredits = error.toLowerCase().includes('credit')
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
         <div className="bg-red-900/30 border border-red-500 rounded-2xl p-8 max-w-md text-center">
           <p className="text-red-400 mb-4">{error}</p>
+          {noCredits && (
+            <p className="text-gray-400 text-sm mb-4">
+              You need credits to start an interview. Pick up a plan on the pricing page.
+            </p>
+          )}
+          <div className="flex gap-3 justify-center">
+            {noCredits && (
+              <button
+                onClick={() => router.push('/pricing')}
+                className="bg-blue-600 text-white px-6 py-2 rounded-xl font-medium text-sm hover:bg-blue-700 transition-colors"
+              >
+                View Pricing
+              </button>
+            )}
           <button
             onClick={() => router.push('/dashboard')}
             className="bg-white text-gray-900 px-6 py-2 rounded-xl font-medium text-sm"
           >
             Back to Dashboard
           </button>
+          </div>
         </div>
       </div>
     )
