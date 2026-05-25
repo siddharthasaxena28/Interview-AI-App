@@ -30,22 +30,30 @@ export async function POST(request: NextRequest) {
         const userId = payment.notes?.user_id
 
         if (userId) {
-          const { data: userData } = await supabase
-            .from('users')
-            .select('credit_balance')
-            .eq('id', userId)
-            .single()
-
-          await supabase
-            .from('users')
-            .update({ credit_balance: (userData?.credit_balance ?? 0) + 1 })
-            .eq('id', userId)
-
-          await supabase.from('credit_transactions').insert({
+          // Idempotent credit keyed on the payment id. /api/verify-payment may have
+          // already credited this same purchase, and Razorpay can redeliver webhooks —
+          // the unique index makes any repeat a no-op.
+          const { error: txnError } = await supabase.from('credit_transactions').insert({
             user_id: userId,
             amount: 1,
             type: 'purchase',
+            razorpay_payment_id: payment.id,
           })
+
+          if (!txnError) {
+            const { data: userData } = await supabase
+              .from('users')
+              .select('credit_balance')
+              .eq('id', userId)
+              .single()
+
+            await supabase
+              .from('users')
+              .update({ credit_balance: (userData?.credit_balance ?? 0) + 1 })
+              .eq('id', userId)
+          } else if (txnError.code !== '23505') {
+            console.error('webhook payment.captured txn error:', txnError)
+          }
         }
         break
       }
@@ -53,6 +61,7 @@ export async function POST(request: NextRequest) {
       case 'subscription.charged': {
         const subscription = event.payload.subscription.entity
         const userId = subscription.notes?.user_id
+        const chargePaymentId = event.payload.payment?.entity?.id
 
         if (userId) {
           const { data: subData } = await supabase
@@ -63,27 +72,35 @@ export async function POST(request: NextRequest) {
 
           if (subData) {
             const credits = subData.credits_per_cycle ?? 8
-            const { data: userData } = await supabase
-              .from('users')
-              .select('credit_balance')
-              .eq('id', userId)
-              .single()
 
-            await supabase
-              .from('users')
-              .update({
-                credit_balance: (userData?.credit_balance ?? 0) + credits,
-                plan: subData.plan,
-              })
-              .eq('id', userId)
-
-            await supabase.from('credit_transactions').insert({
+            // Idempotent on the cycle's payment id so a redelivered webhook doesn't
+            // top up the balance twice.
+            const { error: txnError } = await supabase.from('credit_transactions').insert({
               user_id: userId,
               amount: credits,
               type: 'subscription',
+              razorpay_payment_id: chargePaymentId ?? null,
             })
 
-            // Update subscription period end
+            if (!txnError) {
+              const { data: userData } = await supabase
+                .from('users')
+                .select('credit_balance')
+                .eq('id', userId)
+                .single()
+
+              await supabase
+                .from('users')
+                .update({
+                  credit_balance: (userData?.credit_balance ?? 0) + credits,
+                  plan: subData.plan,
+                })
+                .eq('id', userId)
+            } else if (txnError.code !== '23505') {
+              console.error('webhook subscription.charged txn error:', txnError)
+            }
+
+            // Update subscription period end (safe to run on every delivery).
             await supabase
               .from('subscriptions')
               .update({

@@ -55,6 +55,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
+    // Gate the paid generation: a user with no credits can't run the interview anyway,
+    // so don't pay for an LLM call they can't use. Also cap creation rate to stop a
+    // runaway loop from racking up Claude spend (credits are the real abuse guard).
+    const { data: gateUser } = await supabase
+      .from('users')
+      .select('credit_balance')
+      .eq('id', user.id)
+      .single()
+    if ((gateUser?.credit_balance ?? 0) <= 0) {
+      return NextResponse.json({ error: 'No credits available' }, { status: 402 })
+    }
+
+    const oneHourAgo = new Date(Date.now() - 3_600_000).toISOString()
+    const { count: recentSetups } = await supabase
+      .from('interview_sessions')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .gte('created_at', oneHourAgo)
+    if ((recentSetups ?? 0) >= 10) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Please try again in a little while.' },
+        { status: 429 }
+      )
+    }
+
     // Résumé is optional and used only to personalise question generation (not stored).
     const resume = (resume_text ?? '').trim().slice(0, 6000)
 

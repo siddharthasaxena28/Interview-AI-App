@@ -16,11 +16,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { amount } = await request.json() as { amount: number }
-    const amountPaise = amount ?? 24900  // ₹249 in paise
+    // Price is fixed server-side. Never trust a client-supplied amount — otherwise a
+    // user could order for ₹1 and still receive a full ₹249 PAYG credit on verification.
+    const PAYG_AMOUNT_PAISE = 24900 // ₹249
 
     const order = await razorpay.orders.create({
-      amount: amountPaise,
+      amount: PAYG_AMOUNT_PAISE,
       currency: 'INR',
       receipt: `receipt_${user.id.slice(0, 8)}_${Date.now()}`,
       notes: {

@@ -37,8 +37,17 @@ CREATE TABLE IF NOT EXISTS public.credit_transactions (
   amount integer NOT NULL,
   type text NOT NULL CHECK (type IN ('signup', 'purchase', 'subscription', 'referral', 'session_use')),
   session_id uuid,
+  -- Razorpay payment/charge id for idempotent crediting (verify-payment and the
+  -- webhook both fire for one purchase — the unique index makes the second a no-op).
+  razorpay_payment_id text,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- One credit grant per Razorpay payment. Partial so non-payment rows (signup,
+-- referral, session_use) with NULL ids are unconstrained.
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_credit_txn_razorpay_payment_id
+  ON public.credit_transactions(razorpay_payment_id)
+  WHERE razorpay_payment_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS public.interview_sessions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -103,10 +112,11 @@ CREATE TABLE IF NOT EXISTS public.weak_areas (
 CREATE TABLE IF NOT EXISTS public.referrals (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   referrer_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-  referred_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  referee_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed')),
+  completed_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE(referred_id)
+  UNIQUE(referee_id)
 );
 
 -- ==========================================
@@ -170,9 +180,9 @@ CREATE POLICY "reports_public_share" ON public.feedback_reports
 CREATE POLICY "weak_areas_own_rows" ON public.weak_areas
   USING (auth.uid() = user_id);
 
--- referrals: own rows (referrer or referred)
+-- referrals: own rows (referrer or referee)
 CREATE POLICY "referrals_own_rows" ON public.referrals
-  USING (auth.uid() = referrer_id OR auth.uid() = referred_id);
+  USING (auth.uid() = referrer_id OR auth.uid() = referee_id);
 
 -- ==========================================
 -- FUNCTION: handle_new_user

@@ -86,6 +86,7 @@ export interface Database {
           amount: number
           type: string
           session_id: string | null
+          razorpay_payment_id: string | null
           created_at: string
         }
         Insert: {
@@ -94,6 +95,7 @@ export interface Database {
           amount: number
           type: string
           session_id?: string | null
+          razorpay_payment_id?: string | null
           created_at?: string
         }
         Update: {
@@ -102,6 +104,7 @@ export interface Database {
           amount?: number
           type?: string
           session_id?: string | null
+          razorpay_payment_id?: string | null
           created_at?: string
         }
       }
@@ -117,6 +120,7 @@ export interface Database {
           status: string
           started_at: string | null
           ended_at: string | null
+          created_at: string
         }
         Insert: {
           id?: string
@@ -275,22 +279,25 @@ export interface Database {
         Row: {
           id: string
           referrer_id: string
-          referred_id: string
+          referee_id: string
           status: string
+          completed_at: string | null
           created_at: string
         }
         Insert: {
           id?: string
           referrer_id: string
-          referred_id: string
+          referee_id: string
           status?: string
+          completed_at?: string | null
           created_at?: string
         }
         Update: {
           id?: string
           referrer_id?: string
-          referred_id?: string
+          referee_id?: string
           status?: string
+          completed_at?: string | null
           created_at?: string
         }
       }

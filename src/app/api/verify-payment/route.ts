@@ -32,7 +32,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid payment signature' }, { status: 400 })
     }
 
-    // Add 1 credit to user
+    // Idempotent credit: insert the transaction first — the unique index on
+    // razorpay_payment_id is the lock. If this payment was already credited (here or
+    // by the payment.captured webhook), the insert hits a unique violation and we skip
+    // the balance bump, so no double credit and no replay.
+    const { error: txnError } = await supabase.from('credit_transactions').insert({
+      user_id: user.id,
+      amount: 1,
+      type: 'purchase',
+      razorpay_payment_id,
+    })
+
+    if (txnError) {
+      if (txnError.code === '23505') {
+        return NextResponse.json({ success: true, alreadyCredited: true })
+      }
+      console.error('verify-payment txn insert error:', txnError)
+      return NextResponse.json({ error: 'Payment verification failed' }, { status: 500 })
+    }
+
+    // First time for this payment — grant the credit.
     const { data: userData } = await supabase
       .from('users')
       .select('credit_balance')
@@ -43,12 +62,6 @@ export async function POST(request: NextRequest) {
       .from('users')
       .update({ credit_balance: (userData?.credit_balance ?? 0) + 1, plan: 'payg' })
       .eq('id', user.id)
-
-    await supabase.from('credit_transactions').insert({
-      user_id: user.id,
-      amount: 1,
-      type: 'purchase',
-    })
 
     return NextResponse.json({ success: true })
   } catch (error) {
