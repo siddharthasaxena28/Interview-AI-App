@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Mic, ArrowRight, ArrowLeft, Loader2 } from 'lucide-react'
+import { usePostHog } from 'posthog-js/react'
 import type { RoundType } from '@/types'
 
 interface FormData {
@@ -23,6 +24,7 @@ const ROUND_OPTIONS: { value: RoundType; label: string; desc: string }[] = [
 
 export default function SetupPage() {
   const router = useRouter()
+  const posthog = usePostHog()
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -67,6 +69,12 @@ export default function SetupPage() {
     setLoading(true)
     setError('')
 
+    posthog?.capture('setup_submitted', {
+      round_type: form.round_type,
+      company: form.company,
+      experience_years: form.experience_years,
+    })
+
     try {
       const res = await fetch('/api/generate-questions', {
         method: 'POST',
@@ -80,8 +88,14 @@ export default function SetupPage() {
       }
 
       const { session_id } = await res.json()
+      posthog?.capture('questions_generated', {
+        round_type: form.round_type,
+        company: form.company,
+        session_id,
+      })
       router.push(`/interview/briefing/${session_id}`)
     } catch (err) {
+      posthog?.capture('setup_error', { error: err instanceof Error ? err.message : 'unknown' })
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
       setLoading(false)
     }

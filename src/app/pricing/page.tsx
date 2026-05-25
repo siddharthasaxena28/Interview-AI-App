@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { CheckCircle, Mic, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
+import { usePostHog } from 'posthog-js/react'
 
 declare global {
   interface Window {
@@ -12,9 +13,11 @@ declare global {
 
 export default function PricingPage() {
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null)
+  const posthog = usePostHog()
 
   async function handlePayg() {
     setLoadingPlan('payg')
+    posthog?.capture('payment_initiated', { plan: 'payg', amount: 249 })
     try {
       const res = await fetch('/api/create-order', {
         method: 'POST',
@@ -43,6 +46,7 @@ export default function PricingPage() {
               body: JSON.stringify(response),
             })
             if (verifyRes.ok) {
+              posthog?.capture('payment_completed', { plan: 'payg', amount: 249 })
               window.location.href = '/dashboard'
             }
           },
@@ -60,6 +64,7 @@ export default function PricingPage() {
 
   async function handleSubscription(plan: 'pro' | 'unlimited') {
     setLoadingPlan(plan)
+    posthog?.capture('payment_initiated', { plan, amount: plan === 'pro' ? 399 : 699 })
     try {
       const res = await fetch('/api/create-subscription', {
         method: 'POST',
@@ -80,6 +85,7 @@ export default function PricingPage() {
           name: 'InterviewAI',
           description: plan === 'pro' ? 'Pro Plan — ₹399/month' : 'Unlimited Plan — ₹699/month',
           handler: () => {
+            posthog?.capture('payment_completed', { plan, amount: plan === 'pro' ? 399 : 699 })
             window.location.href = '/dashboard'
           },
           prefill: { name: '', email: '', contact: '' },

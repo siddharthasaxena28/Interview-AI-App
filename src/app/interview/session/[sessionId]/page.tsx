@@ -8,6 +8,7 @@ import { formatDuration } from '@/lib/utils'
 import type { Question, RoundType } from '@/types'
 import { PERSONAS } from '@/lib/personas'
 import { use } from 'react'
+import { usePostHog } from 'posthog-js/react'
 
 interface SessionPageProps {
   params: Promise<{ sessionId: string }>
@@ -28,6 +29,7 @@ interface SessionData {
 export default function SessionPage({ params }: SessionPageProps) {
   const { sessionId } = use(params)
   const router = useRouter()
+  const posthog = usePostHog()
   const { state, setAiSpeaking, setListening, setUserSpeaking, setProcessing, setIdle } = useAudioStateMachine()
 
   const [sessionData, setSessionData] = useState<SessionData | null>(null)
@@ -116,9 +118,12 @@ export default function SessionPage({ params }: SessionPageProps) {
 
         ws.onopen = () => {
           wsRef.current = ws
-          // Start streaming mic audio
           setupAudioStreaming(ws)
-          // Play first question
+          posthog?.capture('interview_started', {
+            session_id: sessionId,
+            round_type: sessionData?.session.round_type,
+            company: sessionData?.session.company,
+          })
           if (currentQuestion) {
             speakQuestion(currentQuestion.text)
           }
@@ -280,7 +285,14 @@ export default function SessionPage({ params }: SessionPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentQuestion, sessionData, sessionId])
 
-  async function endInterview() {
+  async function endInterview(abandoned = false) {
+    posthog?.capture(abandoned ? 'interview_abandoned' : 'interview_completed', {
+      session_id: sessionId,
+      round_type: sessionData?.session.round_type,
+      questions_answered: questionIndex,
+      total_questions: totalQuestions,
+      duration_seconds: elapsed,
+    })
     setEnding(true)
     wsRef.current?.close()
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop())
@@ -496,7 +508,7 @@ export default function SessionPage({ params }: SessionPageProps) {
         </button>
 
         <button
-          onClick={endInterview}
+          onClick={() => endInterview(true)}
           className="flex flex-col items-center gap-1 px-4 py-2 rounded-xl bg-red-600/20 text-red-400 hover:bg-red-600/30 transition-colors"
         >
           <PhoneOff className="w-5 h-5" />

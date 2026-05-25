@@ -78,7 +78,7 @@ export default async function FeedbackPage({
           <div className="w-12 h-12 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mx-auto mb-4" />
           <p className="text-gray-600 font-medium">Generating your feedback report...</p>
           <p className="text-sm text-gray-400 mt-1">This takes about 30 seconds</p>
-          <FeedbackClient sessionId={sessionId} />
+          <FeedbackClient sessionId={sessionId} hasReport={false} />
         </div>
       </div>
     )
@@ -103,6 +103,12 @@ export default async function FeedbackPage({
           </Link>
         </div>
       </nav>
+      <FeedbackClient
+        sessionId={sessionId}
+        hasReport={true}
+        overallScore={r.overall_score}
+        selectionProbability={r.selection_probability}
+      />
 
       <main className="max-w-4xl mx-auto px-6 py-10">
         {/* Header */}
