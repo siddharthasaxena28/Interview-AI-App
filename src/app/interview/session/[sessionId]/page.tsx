@@ -71,40 +71,8 @@ export default function SessionPage({ params }: SessionPageProps) {
   // introStep: 1 = listening for greeting reply, 3 = listening for self-intro
   const introStepRef = useRef(1)
 
-  // Diagnostics — surfaced on-screen so failures in the audio pipeline are visible
-  const chunksSentRef = useRef(0)
-  const dgMessagesRef = useRef(0)
-  const lastDgEventRef = useRef('-')
-  const wsCloseInfoRef = useRef('')
-  const [diag, setDiag] = useState({ ws: 'init', rate: 0, chunks: 0, dgMsgs: 0, lastEvent: '-', close: '' })
-  const [showDiag, setShowDiag] = useState(true)
-
   useEffect(() => { currentQuestionRef.current = currentQuestion }, [currentQuestion])
   useEffect(() => { phaseRef.current = phase }, [phase])
-
-  // Poll the diagnostic refs into state twice a second (avoids re-render storms
-  // from onaudioprocess, which fires ~10×/s)
-  useEffect(() => {
-    if (!started) return
-    const id = setInterval(() => {
-      const ws = wsRef.current
-      const wsLabel = !ws
-        ? (wsCloseInfoRef.current || 'none')
-        : ws.readyState === 0 ? 'connecting'
-        : ws.readyState === 1 ? 'open'
-        : ws.readyState === 2 ? 'closing'
-        : 'closed'
-      setDiag({
-        ws: wsLabel,
-        rate: audioContextRef.current?.sampleRate ?? 0,
-        chunks: chunksSentRef.current,
-        dgMsgs: dgMessagesRef.current,
-        lastEvent: lastDgEventRef.current,
-        close: wsCloseInfoRef.current,
-      })
-    }, 500)
-    return () => clearInterval(id)
-  }, [started])
 
   // Load session data
   useEffect(() => {
@@ -191,7 +159,6 @@ export default function SessionPage({ params }: SessionPageProps) {
 
         ws.onopen = () => {
           wsRef.current = ws
-          wsCloseInfoRef.current = ''
           setupAudioStreaming(ws)
           analytics.capture('interview_started', {
             session_id: sessionId,
@@ -210,9 +177,6 @@ export default function SessionPage({ params }: SessionPageProps) {
           if (!isMountedRef.current) return
           try {
             const msg = JSON.parse(event.data)
-
-            dgMessagesRef.current += 1
-            if (msg.type) lastDgEventRef.current = msg.type
 
             // Ignore all Deepgram events while AI is speaking — the mic is muted and any
             // residual signal (echo, noise) must not trigger transcript or answer processing.
@@ -279,14 +243,10 @@ export default function SessionPage({ params }: SessionPageProps) {
         }
 
         ws.onerror = () => {
-          wsCloseInfoRef.current = 'error'
           if (isMountedRef.current) setError('Connection error. Please refresh and try again.')
         }
 
-        ws.onclose = (event) => {
-          // Deepgram close codes are diagnostic: 1008 = auth rejected, 1011 = server error,
-          // 1000 = normal. Capture them so a silent failure becomes visible on-screen.
-          wsCloseInfoRef.current = `closed ${event.code}${event.reason ? ': ' + event.reason : ''}`
+        ws.onclose = () => {
           wsRef.current = null
         }
       } catch {
@@ -320,7 +280,6 @@ export default function SessionPage({ params }: SessionPageProps) {
       if (ws.readyState !== WebSocket.OPEN || mutedRef.current || systemMutedRef.current) return
       const pcm = convertFloat32ToInt16(e.inputBuffer.getChannelData(0))
       ws.send(pcm.buffer)
-      chunksSentRef.current += 1
     }
 
     source.connect(processor)
@@ -652,25 +611,6 @@ export default function SessionPage({ params }: SessionPageProps) {
     <div className="min-h-screen bg-gray-900 text-white flex flex-col">
       {/* Hidden audio element */}
       <audio ref={audioRef} className="hidden" />
-
-      {/* Diagnostics overlay — shows exactly where the audio pipeline stands.
-          Healthy interview: ws=open, chunks climbing while listening, dgMsgs climbing.
-          chunks stuck at 0 → mic/AudioContext dead. dgMsgs stuck at 0 → Deepgram
-          rejected the stream (check the close code). */}
-      {showDiag && (
-        <div className="fixed bottom-2 right-2 z-50 bg-black/80 border border-gray-700 rounded-lg p-2 text-[10px] font-mono text-gray-300 leading-tight max-w-[200px]">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-gray-500">diagnostics</span>
-            <button onClick={() => setShowDiag(false)} className="text-gray-500 hover:text-white ml-2">×</button>
-          </div>
-          <div>ws: <span className={diag.ws === 'open' ? 'text-green-400' : 'text-amber-400'}>{diag.ws}</span></div>
-          <div>rate: {diag.rate} Hz</div>
-          <div>chunks sent: <span className={diag.chunks > 0 ? 'text-green-400' : 'text-red-400'}>{diag.chunks}</span></div>
-          <div>dg msgs: <span className={diag.dgMsgs > 0 ? 'text-green-400' : 'text-red-400'}>{diag.dgMsgs}</span></div>
-          <div>last event: {diag.lastEvent}</div>
-          {diag.close && <div className="text-amber-400">{diag.close}</div>}
-        </div>
-      )}
 
       {/* Header */}
       <div className="px-6 py-4 border-b border-gray-800 flex items-center justify-between">
