@@ -45,6 +45,9 @@ export default function SessionPage({ params }: SessionPageProps) {
   const [loadingSession, setLoadingSession] = useState(true)
   // intro → interviewer warm-up; interview → scored questions
   const [phase, setPhase] = useState<'intro' | 'interview'>('intro')
+  // Gate the audio pipeline behind an explicit click on THIS page so the browser
+  // grants sticky activation (autoplay) and lets us resume the AudioContext.
+  const [started, setStarted] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -115,9 +118,9 @@ export default function SessionPage({ params }: SessionPageProps) {
     requestMic()
   }, [])
 
-  // Connect Deepgram WebSocket after mic is granted and session is loaded
+  // Connect Deepgram WebSocket after the user clicks "Begin", mic is granted, and session is loaded
   useEffect(() => {
-    if (micPermission !== 'granted' || !sessionData) return
+    if (!started || micPermission !== 'granted' || !sessionData) return
 
     async function setupDeepgram() {
       if (!sessionData) return
@@ -127,7 +130,7 @@ export default function SessionPage({ params }: SessionPageProps) {
         const { key } = await res.json()
 
         const ws = new WebSocket(
-          `wss://api.deepgram.com/v1/listen?model=nova-3&language=en-IN&punctuate=true&interim_results=true&vad_events=true&endpointing=1500`,
+          `wss://api.deepgram.com/v1/listen?model=nova-3&language=en-IN&punctuate=true&interim_results=true&vad_events=true&endpointing=1500&utterance_end_ms=1500`,
           ['token', key]
         )
 
@@ -226,14 +229,16 @@ export default function SessionPage({ params }: SessionPageProps) {
       processorRef.current?.disconnect()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [micPermission, sessionData])
+  }, [started, micPermission, sessionData])
 
   function setupAudioStreaming(ws: WebSocket) {
     const stream = mediaStreamRef.current
     if (!stream) return
 
-    const audioContext = new AudioContext({ sampleRate: 16000 })
+    // Reuse the AudioContext created (and resumed) inside the Begin-click gesture.
+    const audioContext = audioContextRef.current ?? new AudioContext({ sampleRate: 16000 })
     audioContextRef.current = audioContext
+    if (audioContext.state === 'suspended') audioContext.resume().catch(() => {})
 
     const source = audioContext.createMediaStreamSource(stream)
     const processor = audioContext.createScriptProcessor(4096, 1, 1)
@@ -335,6 +340,20 @@ export default function SessionPage({ params }: SessionPageProps) {
 
   // Keep ref in sync so WebSocket callbacks always call the latest version
   useEffect(() => { handleAnswerCompleteRef.current = handleAnswerComplete }, [handleAnswerComplete])
+
+  // Must run inside the click handler so the browser counts it as a user gesture:
+  // resumes the AudioContext (otherwise it stays suspended and the mic never streams)
+  // and grants sticky activation so TTS audio is allowed to play.
+  async function handleBegin() {
+    try {
+      const ctx = new AudioContext({ sampleRate: 16000 })
+      if (ctx.state === 'suspended') await ctx.resume()
+      audioContextRef.current = ctx
+    } catch {
+      // If construction fails, setupAudioStreaming will create one as a fallback
+    }
+    setStarted(true)
+  }
 
   async function endInterview(abandoned = false) {
     analytics.capture(abandoned ? 'interview_abandoned' : 'interview_completed', {
@@ -438,6 +457,45 @@ export default function SessionPage({ params }: SessionPageProps) {
           <h2 className="text-xl font-bold mb-2">Interview Complete!</h2>
           <p className="text-gray-400">Generating your feedback report...</p>
           <div className="w-8 h-8 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin mx-auto mt-4" />
+        </div>
+      </div>
+    )
+  }
+
+  // Explicit "Begin" gesture — required to unlock audio playback and the mic AudioContext
+  if (!started) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
+        <div className="text-center max-w-md">
+          <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center mx-auto mb-5">
+            <span className="text-white text-3xl font-bold">{persona?.maleName.charAt(0) ?? 'A'}</span>
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-2">
+            {persona?.maleName ?? 'Your interviewer'} is ready
+          </h1>
+          <p className="text-gray-400 text-sm mb-2">
+            {sessionData?.session.company} — {sessionData?.session.role}
+          </p>
+          <p className="text-gray-500 text-sm mb-8 leading-relaxed">
+            Pop on your headphones and find a quiet spot. When you click below, {persona?.maleName ?? 'your interviewer'} will
+            greet you and the conversation will begin.
+          </p>
+          <button
+            onClick={handleBegin}
+            disabled={micPermission !== 'granted'}
+            className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-8 py-3.5 rounded-xl font-semibold text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {micPermission === 'granted' ? (
+              <>
+                <Mic className="w-4 h-4" /> Begin Interview
+              </>
+            ) : (
+              <>
+                <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                Requesting microphone…
+              </>
+            )}
+          </button>
         </div>
       </div>
     )

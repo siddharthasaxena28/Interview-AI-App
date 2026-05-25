@@ -101,7 +101,7 @@ export default async function BriefingPage({
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-6 text-left">
             <p className="text-xs text-amber-700">
               <strong>Tips:</strong> Speak clearly, take your time, and treat this like a real call.
-              The AI listens for 3 seconds of silence before moving on.
+              Pause for a moment when you&apos;ve finished answering and the interviewer will respond.
             </p>
           </div>
 
