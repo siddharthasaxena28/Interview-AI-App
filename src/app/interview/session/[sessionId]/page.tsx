@@ -348,6 +348,16 @@ export default function SessionPage({ params }: SessionPageProps) {
     finalTranscriptRef.current = ''
     liveTranscriptRef.current = ''
 
+    // Deepgram closes the WebSocket with 1011 after ~10s of receiving no data.
+    // While AI is speaking, the mic is muted so no PCM reaches Deepgram.
+    // Send KeepAlive JSON messages every 8s to hold the connection open.
+    const keepAliveInterval = setInterval(() => {
+      const ws = wsRef.current
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'KeepAlive' }))
+      }
+    }, 8000)
+
     const persona = PERSONAS[sessionData.session.round_type]
     let ttsSucceeded = false
 
@@ -398,7 +408,8 @@ export default function SessionPage({ params }: SessionPageProps) {
       })
     }
 
-    // Re-open the mic and clear the processing guard before entering listening state
+    // Stop KeepAlive pings and re-open the mic before entering listening state
+    clearInterval(keepAliveInterval)
     systemMutedRef.current = false
     isProcessingRef.current = false
     if (startListening) {
