@@ -141,6 +141,34 @@ Candidate's answer:
       }
     }
 
+    // Generate a follow-up probe question when the candidate struggles
+    if (evaluation.generate_followup) {
+      try {
+        const followUpMsg = await client.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 128,
+          messages: [{
+            role: 'user',
+            content: `The candidate struggled to answer this interview question:\n"${q.text}"\n\nTheir answer: "${transcript || '[no answer]'}"\n\nWrite one short follow-up question to probe their basic understanding of the underlying concept. Return only the question text, nothing else.`,
+          }],
+        })
+        const followUpText = followUpMsg.content[0].type === 'text' ? followUpMsg.content[0].text.trim() : null
+        if (followUpText) {
+          const { data: fq } = await supabase.from('questions').insert({
+            session_id,
+            text: followUpText,
+            topic_tag: q.topic_tag,
+            difficulty: Math.max(1, (q.difficulty as number) - 1),
+            order_index: 999,
+            asked: false,
+          }).select().single()
+          if (fq) nextQuestion = fq as Question
+        }
+      } catch {
+        // non-fatal — continue without follow-up if generation fails
+      }
+    }
+
     return NextResponse.json({
       score,
       brief_feedback: evaluation.brief_feedback,

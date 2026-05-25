@@ -11,6 +11,12 @@ export default function LoginPage() {
     setLoading(true)
     setError(null)
     try {
+      // Persist referral code from URL query param across OAuth redirect
+      const refCode = new URLSearchParams(window.location.search).get('ref')
+      if (refCode) {
+        document.cookie = `referral_code=${encodeURIComponent(refCode)}; path=/; max-age=604800; SameSite=Lax`
+      }
+
       const { createClient } = await import('@/lib/supabase')
       const supabase = createClient()
       const { error } = await supabase.auth.signInWithOAuth({

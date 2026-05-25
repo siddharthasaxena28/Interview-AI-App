@@ -39,6 +39,21 @@ export async function GET(
 
     // Update session status to in_progress if it was setup
     if (session.status === 'setup') {
+      // Rate limit: max 3 sessions started per hour
+      const oneHourAgo = new Date(Date.now() - 3_600_000).toISOString()
+      const { count: recentCount } = await supabase
+        .from('interview_sessions')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .not('started_at', 'is', null)
+        .gte('started_at', oneHourAgo)
+      if ((recentCount ?? 0) >= 3) {
+        return NextResponse.json(
+          { error: 'Rate limit exceeded. You can start at most 3 sessions per hour.' },
+          { status: 429 }
+        )
+      }
+
       await supabase
         .from('interview_sessions')
         .update({ status: 'in_progress', started_at: new Date().toISOString() })

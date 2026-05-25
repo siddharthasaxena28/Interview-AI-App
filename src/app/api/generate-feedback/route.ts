@@ -165,6 +165,44 @@ Generate a comprehensive feedback report for this candidate.`
       .update({ status: 'completed', ended_at: new Date().toISOString() })
       .eq('id', session_id)
 
+    // Complete referral reward on user's first completed session
+    try {
+      const { count: completedCount } = await supabase
+        .from('interview_sessions')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('status', 'completed')
+      if (completedCount === 1) {
+        const { data: referral } = await supabase
+          .from('referrals')
+          .select('id, referrer_id')
+          .eq('referee_id', user.id)
+          .eq('status', 'pending')
+          .single()
+        if (referral) {
+          await supabase.from('referrals')
+            .update({ status: 'completed', completed_at: new Date().toISOString() })
+            .eq('id', referral.id)
+          const { data: referrerUser } = await supabase
+            .from('users').select('credit_balance').eq('id', referral.referrer_id).single()
+          await supabase.from('users')
+            .update({ credit_balance: (referrerUser?.credit_balance ?? 0) + 1 })
+            .eq('id', referral.referrer_id)
+          await supabase.from('credit_transactions')
+            .insert({ user_id: referral.referrer_id, amount: 1, type: 'referral_bonus' })
+          const { data: refereeUser } = await supabase
+            .from('users').select('credit_balance').eq('id', user.id).single()
+          await supabase.from('users')
+            .update({ credit_balance: (refereeUser?.credit_balance ?? 0) + 1 })
+            .eq('id', user.id)
+          await supabase.from('credit_transactions')
+            .insert({ user_id: user.id, amount: 1, type: 'referral_bonus' })
+        }
+      }
+    } catch (referralError) {
+      console.error('Referral completion error:', referralError)
+    }
+
     // Update streak
     const today = new Date().toISOString().slice(0, 10)
     const { data: currentUser } = await supabase

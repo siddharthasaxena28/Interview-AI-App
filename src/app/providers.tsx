@@ -6,6 +6,17 @@ import { useEffect } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 
+function SentryInit() {
+  useEffect(() => {
+    const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN
+    if (!dsn) return
+    import('@sentry/nextjs').then(({ init, browserTracingIntegration }) => {
+      init({ dsn, tracesSampleRate: 0.1, integrations: [browserTracingIntegration()] })
+    }).catch(() => {})
+  }, [])
+  return null
+}
+
 function PostHogPageView() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -43,6 +54,7 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <PHProvider client={posthog}>
+      <SentryInit />
       <Suspense fallback={null}>
         <PostHogPageView />
       </Suspense>

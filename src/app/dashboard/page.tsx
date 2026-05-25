@@ -1,8 +1,9 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
-import { Mic, Plus, Clock, TrendingUp, CreditCard, LogOut, Flame, Target } from 'lucide-react'
+import { Mic, Plus, Clock, TrendingUp, CreditCard, LogOut, Flame, Target, Gift } from 'lucide-react'
 import type { User, InterviewSession, FeedbackReport } from '@/types'
+import { CopyReferral } from './CopyReferral'
 
 export default async function DashboardPage() {
   const supabase = await createServerSupabaseClient()
@@ -48,6 +49,20 @@ export default async function DashboardPage() {
   const creditBalance = user?.credit_balance ?? 0
   const currentStreak = user?.current_streak ?? 0
   const longestStreak = user?.longest_streak ?? 0
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://interviewai.in'
+  const referralLink = user?.referral_code ? `${appUrl}/?ref=${user.referral_code}` : null
+
+  // Score trend: chronological order, last 8 completed sessions with reports
+  const chartData = [...(sessions ?? [])]
+    .reverse()
+    .filter((s: InterviewSession) => reportMap.has(s.id))
+    .slice(-8)
+    .map((s: InterviewSession) => ({
+      score: (reportMap.get(s.id) as { overall_score: number }).overall_score,
+      label: s.ended_at
+        ? new Date(s.ended_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+        : '',
+    }))
 
   const roundLabels: Record<string, string> = {
     tech_l1: 'Technical L1',
@@ -76,10 +91,13 @@ export default async function DashboardPage() {
             <span className="font-bold text-gray-900">InterviewAI</span>
           </div>
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-1.5 bg-blue-50 text-blue-700 text-sm px-3 py-1.5 rounded-lg font-medium">
+            <Link
+              href="/account"
+              className="flex items-center gap-1.5 bg-blue-50 text-blue-700 text-sm px-3 py-1.5 rounded-lg font-medium hover:bg-blue-100 transition-colors"
+            >
               <CreditCard className="w-3.5 h-3.5" />
               {creditBalance} credit{creditBalance !== 1 ? 's' : ''}
-            </div>
+            </Link>
             <div className="flex items-center gap-2">
               {authUser.user_metadata?.avatar_url && (
                 <img
@@ -164,6 +182,50 @@ export default async function DashboardPage() {
           </div>
         </div>
 
+        {/* Score trend chart */}
+        {chartData.length >= 2 && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
+            <h2 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-blue-600" /> Score Trend
+            </h2>
+            <svg
+              viewBox="0 0 300 60"
+              width="100%"
+              height="60"
+              preserveAspectRatio="none"
+              className="overflow-visible"
+            >
+              {[25, 50, 75].map((score) => {
+                const y = ((100 - score) / 100) * 52 + 4
+                return <line key={score} x1="0" y1={y} x2="300" y2={y} stroke="#f3f4f6" strokeWidth="1" />
+              })}
+              <polyline
+                fill="none"
+                stroke="#2563eb"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                points={chartData
+                  .map((d, i) => {
+                    const x = chartData.length === 1 ? 150 : (i / (chartData.length - 1)) * 300
+                    const y = ((100 - d.score) / 100) * 52 + 4
+                    return `${x},${y}`
+                  })
+                  .join(' ')}
+              />
+              {chartData.map((d, i) => {
+                const x = chartData.length === 1 ? 150 : (i / (chartData.length - 1)) * 300
+                const y = ((100 - d.score) / 100) * 52 + 4
+                return <circle key={i} cx={x} cy={y} r="3" fill="#2563eb" />
+              })}
+            </svg>
+            <div className="flex justify-between text-xs text-gray-400 mt-1">
+              <span>{chartData[0].label}</span>
+              <span>{chartData[chartData.length - 1].label}</span>
+            </div>
+          </div>
+        )}
+
         {/* Weak areas / focus topics */}
         {weakAreas && weakAreas.length > 0 && (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-8">
@@ -187,6 +249,19 @@ export default async function DashboardPage() {
                 )
               })}
             </div>
+          </div>
+        )}
+
+        {/* Referral programme */}
+        {referralLink && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
+            <h2 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
+              <Gift className="w-4 h-4 text-green-500" /> Refer a Friend
+            </h2>
+            <p className="text-sm text-gray-500 mb-3">
+              Share your link. When a friend signs up and completes their first interview, you both get 1 free session.
+            </p>
+            <CopyReferral link={referralLink} />
           </div>
         )}
 
