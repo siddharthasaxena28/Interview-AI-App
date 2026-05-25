@@ -41,11 +41,6 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
     })
   }, [])
 
-  const key = process.env.NEXT_PUBLIC_POSTHOG_KEY
-  if (!key) {
-    return <>{children}</>
-  }
-
   return (
     <PHProvider client={posthog}>
       <Suspense fallback={null}>
