@@ -52,6 +52,15 @@ export default function SessionPage({ params }: SessionPageProps) {
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const answerStartRef = useRef<number>(0)
   const isMountedRef = useRef(true)
+  // Refs to avoid stale closures in WebSocket callbacks
+  const finalTranscriptRef = useRef('')
+  const liveTranscriptRef = useRef('')
+  const currentQuestionRef = useRef<Question | null>(null)
+  const mutedRef = useRef(false)
+  const handleAnswerCompleteRef = useRef<(t: string) => Promise<void>>(async () => {})
+
+  // Keep currentQuestion ref in sync — read inside WebSocket callback to avoid stale closure
+  useEffect(() => { currentQuestionRef.current = currentQuestion }, [currentQuestion])
 
   // Load session data
   useEffect(() => {
@@ -134,16 +143,20 @@ export default function SessionPage({ params }: SessionPageProps) {
             const data = JSON.parse(event.data)
 
             if (data.type === 'SpeechStarted') {
-              if (isMountedRef.current) setUserSpeaking()
+              setUserSpeaking()
             }
 
             if (data.type === 'Results') {
               const transcript = data.channel?.alternatives?.[0]?.transcript ?? ''
               if (transcript) {
                 if (data.is_final) {
-                  setFinalTranscript((prev) => prev + ' ' + transcript)
+                  // Update ref first, then state — ref is read in UtteranceEnd closure
+                  finalTranscriptRef.current = (finalTranscriptRef.current + ' ' + transcript).trimStart()
+                  liveTranscriptRef.current = ''
+                  setFinalTranscript(finalTranscriptRef.current)
                   setLiveTranscript('')
                 } else {
+                  liveTranscriptRef.current = transcript
                   setLiveTranscript(transcript)
                 }
               }
@@ -151,9 +164,11 @@ export default function SessionPage({ params }: SessionPageProps) {
 
             // VAD silence detected — user finished speaking
             if (data.type === 'UtteranceEnd' || (data.type === 'Results' && data.speech_final)) {
-              const fullTranscript = (finalTranscript + ' ' + liveTranscript).trim()
-              if (fullTranscript && currentQuestion) {
-                handleAnswerComplete(fullTranscript)
+              const fullTranscript = (finalTranscriptRef.current + ' ' + liveTranscriptRef.current).trim()
+              if (fullTranscript && currentQuestionRef.current) {
+                finalTranscriptRef.current = ''
+                liveTranscriptRef.current = ''
+                handleAnswerCompleteRef.current(fullTranscript)
               }
             }
           } catch {
@@ -195,7 +210,7 @@ export default function SessionPage({ params }: SessionPageProps) {
     processorRef.current = processor
 
     processor.onaudioprocess = (e) => {
-      if (ws.readyState !== WebSocket.OPEN || muted) return
+      if (ws.readyState !== WebSocket.OPEN || mutedRef.current) return
       const inputData = e.inputBuffer.getChannelData(0)
       const pcmData = convertFloat32ToInt16(inputData)
       ws.send(pcmData.buffer)
@@ -284,6 +299,9 @@ export default function SessionPage({ params }: SessionPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentQuestion, sessionData, sessionId])
 
+  // Keep handleAnswerComplete ref in sync — read inside WebSocket callback to avoid stale closure
+  useEffect(() => { handleAnswerCompleteRef.current = handleAnswerComplete }, [handleAnswerComplete])
+
   async function endInterview(abandoned = false) {
     analytics.capture(abandoned ? 'interview_abandoned' : 'interview_completed', {
       session_id: sessionId,
@@ -297,28 +315,23 @@ export default function SessionPage({ params }: SessionPageProps) {
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop())
 
     try {
-      // Mark session as completed
-      await fetch(`/api/end-session`, {
+      await fetch('/api/end-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: sessionId }),
       })
-
-      // Generate feedback
-      const res = await fetch('/api/generate-feedback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId }),
-      })
-
-      if (res.ok) {
-        router.push(`/interview/feedback/${sessionId}`)
-      } else {
-        router.push(`/interview/feedback/${sessionId}`)
-      }
     } catch {
-      router.push(`/interview/feedback/${sessionId}`)
+      // non-fatal
     }
+
+    // Fire-and-forget — the feedback page shows a loading state and polls every 5s
+    fetch('/api/generate-feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId }),
+    }).catch(console.error)
+
+    router.push(`/interview/feedback/${sessionId}`)
   }
 
   const persona = sessionData ? PERSONAS[sessionData.session.round_type] : null
@@ -495,7 +508,7 @@ export default function SessionPage({ params }: SessionPageProps) {
       {/* Controls */}
       <div className="px-6 py-6 border-t border-gray-800 flex items-center justify-center gap-6">
         <button
-          onClick={() => setMuted((m) => !m)}
+          onClick={() => setMuted((m) => { mutedRef.current = !m; return !m })}
           className={`flex flex-col items-center gap-1 px-4 py-2 rounded-xl transition-colors ${
             muted
               ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30'
