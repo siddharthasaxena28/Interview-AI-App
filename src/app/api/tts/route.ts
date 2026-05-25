@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
         },
         body: JSON.stringify({
           text,
-          model_id: 'eleven_monolingual_v1',
+          model_id: 'eleven_multilingual_v2',
           voice_settings: {
             stability: 0.5,
             similarity_boost: 0.75,
@@ -52,9 +52,14 @@ export async function POST(request: NextRequest) {
     )
 
     if (!response.ok) {
-      const error = await response.text()
-      console.error('ElevenLabs error:', response.status, error)
-      return NextResponse.json({ error: 'TTS generation failed' }, { status: 500 })
+      const detail = await response.text()
+      console.error('ElevenLabs error:', response.status, detail)
+      // Surface the upstream status/detail so the client can decide to fall back
+      // and so failures are diagnosable from the browser network tab.
+      return NextResponse.json(
+        { error: 'TTS generation failed', upstreamStatus: response.status, detail },
+        { status: 502 }
+      )
     }
 
     const audioBuffer = await response.arrayBuffer()
