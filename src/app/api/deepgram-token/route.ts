@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const supabase = await createServerSupabaseClient()
@@ -10,9 +12,13 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Return the API key server-side — never expose raw key to browser via client JS
-    // The frontend will use this key only in a WebSocket connection
-    return NextResponse.json({ key: process.env.DEEPGRAM_API_KEY })
+    const key = process.env.DEEPGRAM_API_KEY
+    if (!key) {
+      console.error('DEEPGRAM_API_KEY is not set')
+      return NextResponse.json({ error: 'Speech recognition not configured' }, { status: 503 })
+    }
+
+    return NextResponse.json({ key })
   } catch {
     return NextResponse.json({ error: 'Failed to get token' }, { status: 500 })
   }

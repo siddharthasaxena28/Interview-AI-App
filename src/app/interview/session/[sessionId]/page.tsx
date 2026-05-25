@@ -62,6 +62,8 @@ export default function SessionPage({ params }: SessionPageProps) {
   const liveTranscriptRef = useRef('')
   const currentQuestionRef = useRef<Question | null>(null)
   const mutedRef = useRef(false)
+  // True while AI is speaking — prevents streaming mic audio to Deepgram during that time
+  const systemMutedRef = useRef(false)
   const handleAnswerCompleteRef = useRef<(t: string) => Promise<void>>(async () => {})
   const phaseRef = useRef<'intro' | 'interview'>('intro')
   // introStep: 1 = listening for greeting reply, 3 = listening for self-intro
@@ -127,7 +129,12 @@ export default function SessionPage({ params }: SessionPageProps) {
       const sd = sessionData // narrowed, non-null reference safe to use in closures below
       try {
         const res = await fetch('/api/deepgram-token')
-        const { key } = await res.json()
+        const tokenData = await res.json()
+        if (!res.ok || !tokenData.key) {
+          setError('Speech recognition is not configured. Please contact support.')
+          return
+        }
+        const { key } = tokenData
 
         const ws = new WebSocket(
           `wss://api.deepgram.com/v1/listen?model=nova-3&language=en-IN&punctuate=true&interim_results=true&vad_events=true&endpointing=1500&utterance_end_ms=1500`,
@@ -245,14 +252,18 @@ export default function SessionPage({ params }: SessionPageProps) {
     processorRef.current = processor
 
     processor.onaudioprocess = (e) => {
-      if (ws.readyState !== WebSocket.OPEN || mutedRef.current) return
+      if (ws.readyState !== WebSocket.OPEN || mutedRef.current || systemMutedRef.current) return
       const inputData = e.inputBuffer.getChannelData(0)
       const pcmData = convertFloat32ToInt16(inputData)
       ws.send(pcmData.buffer)
     }
 
     source.connect(processor)
-    processor.connect(audioContext.destination)
+    // Route through a silent gain node so ScriptProcessor fires but mic audio isn't played back
+    const silentGain = audioContext.createGain()
+    silentGain.gain.value = 0
+    processor.connect(silentGain)
+    silentGain.connect(audioContext.destination)
   }
 
   function convertFloat32ToInt16(buffer: Float32Array): Int16Array {
@@ -269,12 +280,16 @@ export default function SessionPage({ params }: SessionPageProps) {
   async function speakText(text: string, startListening = true): Promise<void> {
     if (!sessionData) return
     setAiSpeaking()
+    // Mute mic while AI speaks so Deepgram doesn't transcribe the AI's own voice
+    systemMutedRef.current = true
     setFinalTranscript('')
     setLiveTranscript('')
     finalTranscriptRef.current = ''
     liveTranscriptRef.current = ''
 
     const persona = PERSONAS[sessionData.session.round_type]
+    let ttsSucceeded = false
+
     try {
       const res = await fetch('/api/tts', {
         method: 'POST',
@@ -290,12 +305,29 @@ export default function SessionPage({ params }: SessionPageProps) {
         if (!audioRef.current) { resolve(); return }
         audioRef.current.src = audioUrl
         audioRef.current.onended = () => { URL.revokeObjectURL(audioUrl); resolve() }
+        audioRef.current.onerror = () => { URL.revokeObjectURL(audioUrl); resolve() }
         audioRef.current.play().catch(() => resolve())
       })
+      ttsSucceeded = true
     } catch {
-      // Fallback — no audio, continue flow
+      // ElevenLabs unavailable — fall back to browser speech synthesis
     }
 
+    // Browser speechSynthesis fallback so the user always hears the interviewer
+    if (!ttsSucceeded && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      await new Promise<void>((resolve) => {
+        window.speechSynthesis.cancel()
+        const utterance = new SpeechSynthesisUtterance(text)
+        utterance.rate = 0.92
+        utterance.pitch = 1.0
+        utterance.onend = () => resolve()
+        utterance.onerror = () => resolve()
+        window.speechSynthesis.speak(utterance)
+      })
+    }
+
+    // Unmute mic before switching to listening so we don't drop the first words
+    systemMutedRef.current = false
     if (startListening) {
       setListening()
       answerStartRef.current = Date.now()
