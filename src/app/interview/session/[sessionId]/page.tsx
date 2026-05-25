@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Mic, MicOff, PhoneOff, Volume2 } from 'lucide-react'
 import { useAudioStateMachine } from '@/hooks/useAudioStateMachine'
 import { useAnalytics } from '@/hooks/useAnalytics'
@@ -25,9 +25,11 @@ interface SessionData {
   questions: Question[]
 }
 
-export default function SessionPage({ params }: SessionPageProps) {
+function SessionPageInner({ params }: SessionPageProps) {
   const { sessionId } = params
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const genderParam = (searchParams.get('gender') ?? 'male') as 'male' | 'female'
   const analytics = useAnalytics()
   const { state, setAiSpeaking, setListening, setUserSpeaking, setProcessing } = useAudioStateMachine()
 
@@ -43,11 +45,9 @@ export default function SessionPage({ params }: SessionPageProps) {
   const [error, setError] = useState('')
   const [micPermission, setMicPermission] = useState<'pending' | 'granted' | 'denied'>('pending')
   const [loadingSession, setLoadingSession] = useState(true)
-  // intro → interviewer warm-up; interview → scored questions
   const [phase, setPhase] = useState<'intro' | 'interview'>('intro')
-  // Gate the audio pipeline behind an explicit click on THIS page so the browser
-  // grants sticky activation (autoplay) and lets us resume the AudioContext.
   const [started, setStarted] = useState(false)
+  const [reconnecting, setReconnecting] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -57,22 +57,25 @@ export default function SessionPage({ params }: SessionPageProps) {
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const answerStartRef = useRef<number>(0)
   const isMountedRef = useRef(true)
-  // Refs that must be read inside WebSocket callbacks (stale-closure-safe)
   const finalTranscriptRef = useRef('')
   const liveTranscriptRef = useRef('')
   const currentQuestionRef = useRef<Question | null>(null)
   const mutedRef = useRef(false)
-  // True while AI is speaking — prevents mic audio from reaching Deepgram
   const systemMutedRef = useRef(false)
-  // Prevents processing the same utterance twice (speech_final + UtteranceEnd both fire)
   const isProcessingRef = useRef(false)
   const handleAnswerCompleteRef = useRef<(t: string) => Promise<void>>(async () => {})
   const phaseRef = useRef<'intro' | 'interview'>('intro')
-  // introStep: 1 = listening for greeting reply, 3 = listening for self-intro
   const introStepRef = useRef(1)
+  // Reconnect state
+  const endingRef = useRef(false)
+  const autoEndedRef = useRef(false)
+  const hasGreetedRef = useRef(false)
+  const reconnectAttemptsRef = useRef(0)
+  const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => { currentQuestionRef.current = currentQuestion }, [currentQuestion])
   useEffect(() => { phaseRef.current = phase }, [phase])
+  useEffect(() => { endingRef.current = ending }, [ending])
 
   // Load session data
   useEffect(() => {
@@ -110,6 +113,18 @@ export default function SessionPage({ params }: SessionPageProps) {
     }
   }, [])
 
+  // 30-min auto-end (60 min for full_loop)
+  useEffect(() => {
+    if (!sessionData || !started || autoEndedRef.current || ending) return
+    const limit = sessionData.session.round_type === 'full_loop' ? 3600 : 1800
+    if (elapsed >= limit) {
+      autoEndedRef.current = true
+      endInterview(false)
+    }
+    // endInterview intentionally omitted — it's stable within the session
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [elapsed, started, sessionData, ending])
+
   // Request mic permission
   useEffect(() => {
     async function requestMic() {
@@ -125,13 +140,13 @@ export default function SessionPage({ params }: SessionPageProps) {
     requestMic()
   }, [])
 
-  // Connect Deepgram WebSocket after the user clicks "Begin", mic is granted, and session is loaded
+  // Connect Deepgram WebSocket after the user clicks "Begin"
   useEffect(() => {
     if (!started || micPermission !== 'granted' || !sessionData) return
 
+    const sd = sessionData
+
     async function setupDeepgram() {
-      if (!sessionData) return
-      const sd = sessionData // narrowed, non-null reference safe to use in closures below
       try {
         const res = await fetch('/api/deepgram-token')
         const tokenData = await res.json()
@@ -141,9 +156,6 @@ export default function SessionPage({ params }: SessionPageProps) {
         }
         const { key } = tokenData
 
-        // Ensure the AudioContext exists NOW and read its ACTUAL sample rate.
-        // Browsers may ignore a requested 16000 and run at 44100/48000; if we lie to
-        // Deepgram about the rate it decodes garbled audio and returns no transcript.
         let audioContext = audioContextRef.current
         if (!audioContext) {
           audioContext = new AudioContext()
@@ -159,18 +171,28 @@ export default function SessionPage({ params }: SessionPageProps) {
 
         ws.onopen = () => {
           wsRef.current = ws
+          reconnectAttemptsRef.current = 0
+          setReconnecting(false)
           setupAudioStreaming(ws)
-          analytics.capture('interview_started', {
-            session_id: sessionId,
-            round_type: sd.session.round_type,
-            company: sd.session.company,
-          })
-          // Start with a natural greeting before the first question
-          const persona = PERSONAS[sd.session.round_type]
-          introStepRef.current = 1
-          speakText(
-            `Hi there! Welcome, and thanks for joining us today. I'm ${persona.maleName}, and I'll be conducting your interview for the ${sd.session.role} position at ${sd.session.company}. It's great to have you here! How are you feeling today?`
-          )
+
+          if (!hasGreetedRef.current) {
+            // First connection — greet the candidate
+            hasGreetedRef.current = true
+            const persona = PERSONAS[sd.session.round_type]
+            const interviewerName = genderParam === 'female' ? persona.femaleName : persona.maleName
+            analytics.capture('interview_started', {
+              session_id: sessionId,
+              round_type: sd.session.round_type,
+              company: sd.session.company,
+            })
+            introStepRef.current = 1
+            speakText(
+              `Hi there! Welcome, and thanks for joining us today. I'm ${interviewerName}, and I'll be conducting your interview for the ${sd.session.role} position at ${sd.session.company}. It's great to have you here! How are you feeling today?`
+            )
+          } else {
+            // Reconnected mid-interview — resume listening state immediately
+            setListening()
+          }
         }
 
         ws.onmessage = (event) => {
@@ -178,8 +200,6 @@ export default function SessionPage({ params }: SessionPageProps) {
           try {
             const msg = JSON.parse(event.data)
 
-            // Ignore all Deepgram events while AI is speaking — the mic is muted and any
-            // residual signal (echo, noise) must not trigger transcript or answer processing.
             if (systemMutedRef.current) return
 
             if (msg.type === 'SpeechStarted') {
@@ -202,9 +222,6 @@ export default function SessionPage({ params }: SessionPageProps) {
             }
 
             if (msg.type === 'UtteranceEnd' || (msg.type === 'Results' && msg.speech_final)) {
-              // Guard against processing the same utterance twice:
-              // Deepgram can emit speech_final=true on a Results message AND then a
-              // separate UtteranceEnd for the same speech segment.
               if (isProcessingRef.current) return
 
               const full = (finalTranscriptRef.current + ' ' + liveTranscriptRef.current).trim()
@@ -216,14 +233,14 @@ export default function SessionPage({ params }: SessionPageProps) {
 
               if (phaseRef.current === 'intro') {
                 const step = introStepRef.current
+                const persona = PERSONAS[sd.session.round_type]
+                const interviewerName = genderParam === 'female' ? persona.femaleName : persona.maleName
                 if (step === 1) {
-                  // Candidate replied to "how are you" → ask for self-intro
                   introStepRef.current = 3
                   speakText(
-                    `That's great to hear! Before we dive in, I'd love to know a bit more about you. Could you give me a quick introduction — your background, experience, and what drew you to apply for this ${sd.session.role} role?`
+                    `That's great to hear! Before we dive in, I'd love to know a bit more about you. Could you give me a quick introduction — your background, experience, and what drew you to apply for this ${sd.session.role} role at ${sd.session.company}?`
                   )
                 } else if (step === 3) {
-                  // Candidate gave self-intro → transition to first interview question
                   phaseRef.current = 'interview'
                   setPhase('interview')
                   const q = currentQuestionRef.current
@@ -233,6 +250,7 @@ export default function SessionPage({ params }: SessionPageProps) {
                     )
                   }
                 }
+                void interviewerName // keep reference alive
               } else {
                 handleAnswerCompleteRef.current(full)
               }
@@ -243,11 +261,25 @@ export default function SessionPage({ params }: SessionPageProps) {
         }
 
         ws.onerror = () => {
-          if (isMountedRef.current) setError('Connection error. Please refresh and try again.')
+          // onclose will fire after onerror and handle reconnect
         }
 
-        ws.onclose = () => {
+        ws.onclose = (event) => {
           wsRef.current = null
+          // 1000 = normal close, 1001 = going away — don't reconnect
+          if (event.code === 1000 || event.code === 1001 || endingRef.current || !isMountedRef.current) return
+          if (reconnectAttemptsRef.current >= 3) {
+            if (isMountedRef.current) setError('Connection lost. Please refresh to continue.')
+            return
+          }
+          reconnectAttemptsRef.current++
+          setReconnecting(true)
+          const delay = Math.pow(2, reconnectAttemptsRef.current) * 1000 // 2s, 4s, 8s
+          reconnectTimerRef.current = setTimeout(() => {
+            if (!endingRef.current && isMountedRef.current) {
+              setupDeepgram()
+            }
+          }, delay)
         }
       } catch {
         setError('Failed to connect to speech recognition.')
@@ -257,7 +289,8 @@ export default function SessionPage({ params }: SessionPageProps) {
     setupDeepgram()
 
     return () => {
-      wsRef.current?.close()
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+      wsRef.current?.close(1000)
       processorRef.current?.disconnect()
       audioContextRef.current?.close().catch(() => {})
     }
@@ -266,13 +299,11 @@ export default function SessionPage({ params }: SessionPageProps) {
 
   function setupAudioStreaming(ws: WebSocket) {
     const stream = mediaStreamRef.current
-    // Reuse the SAME context whose sample rate we already reported to Deepgram.
     const audioContext = audioContextRef.current
     if (!stream || !audioContext) return
     if (audioContext.state === 'suspended') audioContext.resume().catch(() => {})
 
     const source = audioContext.createMediaStreamSource(stream)
-    // ScriptProcessorNode streams raw PCM — format-agnostic, no container to corrupt.
     const processor = audioContext.createScriptProcessor(4096, 1, 1)
     processorRef.current = processor
 
@@ -283,7 +314,6 @@ export default function SessionPage({ params }: SessionPageProps) {
     }
 
     source.connect(processor)
-    // Route through a silent gain node so the processor fires but mic isn't played back
     const silentGain = audioContext.createGain()
     silentGain.gain.value = 0
     processor.connect(silentGain)
@@ -299,20 +329,15 @@ export default function SessionPage({ params }: SessionPageProps) {
     return out
   }
 
-  // Core TTS helper — speaks text and resolves when audio finishes playing
   async function speakText(text: string, startListening = true): Promise<void> {
     if (!sessionData) return
     setAiSpeaking()
-    // Mute mic while AI speaks so Deepgram doesn't transcribe the AI's own voice
     systemMutedRef.current = true
     setFinalTranscript('')
     setLiveTranscript('')
     finalTranscriptRef.current = ''
     liveTranscriptRef.current = ''
 
-    // Deepgram closes the WebSocket with 1011 after ~10s of receiving no data.
-    // While AI is speaking, the mic is muted so no PCM reaches Deepgram.
-    // Send KeepAlive JSON messages every 8s to hold the connection open.
     const keepAliveInterval = setInterval(() => {
       const ws = wsRef.current
       if (ws?.readyState === WebSocket.OPEN) {
@@ -321,13 +346,17 @@ export default function SessionPage({ params }: SessionPageProps) {
     }, 8000)
 
     const persona = PERSONAS[sessionData.session.round_type]
+    // Use gender-appropriate voice if available
+    const voiceId = genderParam === 'female' && persona.femaleVoiceId
+      ? persona.femaleVoiceId
+      : persona.voiceId
     let ttsSucceeded = false
 
     try {
       const res = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voice_id: persona.voiceId }),
+        body: JSON.stringify({ text, voice_id: voiceId }),
       })
       if (!res.ok) throw new Error('TTS failed')
 
@@ -347,13 +376,11 @@ export default function SessionPage({ params }: SessionPageProps) {
       })
       ttsSucceeded = true
     } catch {
-      // ElevenLabs unavailable — fall back to browser speech synthesis
+      // Fall through to browser synthesis
     }
 
-    // Browser speechSynthesis fallback so the user always hears the interviewer.
-    // Chrome bug: onend may never fire if voices haven't loaded — guard with a timeout.
     if (!ttsSucceeded && typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      const estDurationMs = Math.max(4000, text.length * 65) // ~65ms per char at 0.92x rate
+      const estDurationMs = Math.max(4000, text.length * 65)
       await new Promise<void>((resolve) => {
         let done = false
         const finish = () => { if (!done) { done = true; resolve() } }
@@ -365,12 +392,10 @@ export default function SessionPage({ params }: SessionPageProps) {
         utterance.onend = finish
         utterance.onerror = finish
         window.speechSynthesis.speak(utterance)
-        // Safety timeout: if onend never fires (Chrome voices-not-loaded bug), unblock
         setTimeout(finish, estDurationMs + 2000)
       })
     }
 
-    // Stop KeepAlive pings and re-open the mic before entering listening state
     clearInterval(keepAliveInterval)
     systemMutedRef.current = false
     isProcessingRef.current = false
@@ -402,9 +427,8 @@ export default function SessionPage({ params }: SessionPageProps) {
       if (data.next_question && data.questions_remaining > 0) {
         setCurrentQuestion(data.next_question)
         setQuestionIndex((i) => i + 1)
-        // Natural acknowledgment of the answer before asking the next question
         const ackText = data.brief_feedback
-          ? `${data.brief_feedback} Let's move on to the next one. ${data.next_question.text}`
+          ? `${data.brief_feedback} Let's move on. ${data.next_question.text}`
           : data.next_question.text
         await speakText(ackText)
       } else {
@@ -416,19 +440,15 @@ export default function SessionPage({ params }: SessionPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentQuestion, sessionData, sessionId])
 
-  // Keep ref in sync so WebSocket callbacks always call the latest version
   useEffect(() => { handleAnswerCompleteRef.current = handleAnswerComplete }, [handleAnswerComplete])
 
-  // Must run inside the click handler so the browser treats it as a user gesture —
-  // this both resumes the AudioContext (required for ScriptProcessorNode to fire)
-  // and grants sticky activation so TTS audio.play() is allowed later.
   async function handleBegin() {
     try {
       const ctx = new AudioContext({ sampleRate: 16000 })
       if (ctx.state === 'suspended') await ctx.resume()
       audioContextRef.current = ctx
     } catch {
-      // If construction fails, setupAudioStreaming creates one as a fallback
+      // setupAudioStreaming creates one as fallback
     }
     setStarted(true)
   }
@@ -442,12 +462,10 @@ export default function SessionPage({ params }: SessionPageProps) {
       duration_seconds: elapsed,
     })
 
-    wsRef.current?.close()
+    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+    wsRef.current?.close(1000)
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop())
 
-    // Kick off end-session + feedback generation NOW so they run during the closing
-    // speech (~10s head start). All answers are already saved, so the report is often
-    // ready in the DB by the time the user lands on the feedback page.
     fetch('/api/end-session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -461,10 +479,9 @@ export default function SessionPage({ params }: SessionPageProps) {
     }).catch(console.error)
 
     if (!abandoned && sessionData) {
-      // Speak a natural closing before showing the ending screen
       await speakText(
         `That brings us to the end of the interview. Thank you so much for your time today — it was a pleasure speaking with you. I'll review your answers and have your detailed feedback report ready shortly. Best of luck, and we'll be in touch!`,
-        false // don't flip to listening state after closing
+        false
       ).catch(() => {})
     }
 
@@ -473,6 +490,9 @@ export default function SessionPage({ params }: SessionPageProps) {
   }
 
   const persona = sessionData ? PERSONAS[sessionData.session.round_type] : null
+  const personaName = persona
+    ? (genderParam === 'female' ? persona.femaleName : persona.maleName)
+    : 'AI Interviewer'
 
   if (loadingSession) {
     return (
@@ -505,12 +525,12 @@ export default function SessionPage({ params }: SessionPageProps) {
                 View Pricing
               </button>
             )}
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="bg-white text-gray-900 px-6 py-2 rounded-xl font-medium text-sm"
-          >
-            Back to Dashboard
-          </button>
+            <button
+              onClick={() => router.push('/dashboard')}
+              className="bg-white text-gray-900 px-6 py-2 rounded-xl font-medium text-sm"
+            >
+              Back to Dashboard
+            </button>
           </div>
         </div>
       </div>
@@ -552,22 +572,21 @@ export default function SessionPage({ params }: SessionPageProps) {
     )
   }
 
-  // Explicit "Begin" gesture — required to unlock audio playback and the mic AudioContext
   if (!started) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
         <div className="text-center max-w-md">
           <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center mx-auto mb-5">
-            <span className="text-white text-3xl font-bold">{persona?.maleName.charAt(0) ?? 'A'}</span>
+            <span className="text-white text-3xl font-bold">{personaName.charAt(0)}</span>
           </div>
           <h1 className="text-2xl font-bold text-white mb-2">
-            {persona?.maleName ?? 'Your interviewer'} is ready
+            {personaName} is ready
           </h1>
           <p className="text-gray-400 text-sm mb-2">
             {sessionData?.session.company} — {sessionData?.session.role}
           </p>
           <p className="text-gray-500 text-sm mb-8 leading-relaxed">
-            Pop on your headphones and find a quiet spot. When you click below, {persona?.maleName ?? 'your interviewer'} will
+            Pop on your headphones and find a quiet spot. When you click below, {personaName} will
             greet you and the conversation will begin.
           </p>
           <button
@@ -593,7 +612,7 @@ export default function SessionPage({ params }: SessionPageProps) {
 
   const stateLabel: Record<string, string> = {
     IDLE: 'Connecting...',
-    AI_SPEAKING: `${persona?.maleName ?? 'AI'} is speaking`,
+    AI_SPEAKING: `${personaName} is speaking`,
     LISTENING: 'Your turn — speak now',
     USER_SPEAKING: 'Listening...',
     PROCESSING: 'Processing your answer...',
@@ -607,26 +626,38 @@ export default function SessionPage({ params }: SessionPageProps) {
     PROCESSING: 'bg-amber-500',
   }
 
+  // Time limit warning (show at 25 min for 30-min sessions, 50 min for full_loop)
+  const sessionLimit = sessionData?.session.round_type === 'full_loop' ? 3600 : 1800
+  const timeWarning = elapsed >= sessionLimit - 300 && elapsed < sessionLimit
+
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col">
-      {/* Hidden audio element */}
       <audio ref={audioRef} className="hidden" />
 
       {/* Header */}
       <div className="px-6 py-4 border-b border-gray-800 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center">
-            <span className="font-bold text-sm">{persona?.maleName.charAt(0) ?? 'A'}</span>
+            <span className="font-bold text-sm">{personaName.charAt(0)}</span>
           </div>
           <div>
-            <div className="font-semibold text-sm">{persona?.maleName ?? 'AI Interviewer'}</div>
+            <div className="font-semibold text-sm">{personaName}</div>
             <div className="text-xs text-gray-400">
               {sessionData?.session.company} — {sessionData?.session.role}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <div className="text-sm text-gray-400 font-mono">{formatDuration(elapsed)}</div>
+          {reconnecting && (
+            <div className="flex items-center gap-1.5 text-xs text-amber-400">
+              <div className="w-3 h-3 border border-amber-400 border-t-transparent rounded-full animate-spin" />
+              Reconnecting…
+            </div>
+          )}
+          <div className={`text-sm font-mono ${timeWarning ? 'text-amber-400' : 'text-gray-400'}`}>
+            {formatDuration(elapsed)}
+            {timeWarning && <span className="ml-1 text-xs">⚠ wrapping up</span>}
+          </div>
           {phase === 'interview' ? (
             <div className="text-sm text-gray-400">
               Q{questionIndex + 1}/{totalQuestions}
@@ -682,7 +713,7 @@ export default function SessionPage({ params }: SessionPageProps) {
           </div>
         )}
 
-        {/* Context card — intro warm-up or interview question */}
+        {/* Context card */}
         {phase === 'intro' ? (
           <div className="bg-gray-800 rounded-2xl p-6 max-w-2xl w-full text-center">
             <div className="text-xs text-blue-400 mb-2 uppercase tracking-wide font-medium">
@@ -740,5 +771,17 @@ export default function SessionPage({ params }: SessionPageProps) {
         </button>
       </div>
     </div>
+  )
+}
+
+export default function SessionPage({ params }: SessionPageProps) {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-white border-t-blue-500 rounded-full animate-spin" />
+      </div>
+    }>
+      <SessionPageInner params={params} />
+    </Suspense>
   )
 }

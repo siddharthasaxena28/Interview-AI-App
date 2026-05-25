@@ -8,6 +8,7 @@ export const PERSONAS: Record<RoundType, InterviewerPersona> = {
     appearance: 'Casual, 28–32',
     style: 'Friendly, encouraging, fundamentals-focused. Difficulty 1–3.',
     voiceId: process.env.ELEVENLABS_VOICE_TECH_L1 || 'default',
+    femaleVoiceId: process.env.ELEVENLABS_VOICE_TECH_L1_F || undefined,
     difficulty: '1-3',
   },
   tech_l2: {
@@ -17,6 +18,7 @@ export const PERSONAS: Record<RoundType, InterviewerPersona> = {
     appearance: 'Smart casual, 34–40',
     style: 'Direct, probing, system design and architecture. Difficulty 3–5.',
     voiceId: process.env.ELEVENLABS_VOICE_TECH_L2 || 'default',
+    femaleVoiceId: process.env.ELEVENLABS_VOICE_TECH_L2_F || undefined,
     difficulty: '3-5',
   },
   managerial: {
@@ -26,6 +28,7 @@ export const PERSONAS: Record<RoundType, InterviewerPersona> = {
     appearance: 'Formal blazer, 42–50',
     style: 'Authoritative, strategic, STAR method, leadership scenarios.',
     voiceId: process.env.ELEVENLABS_VOICE_MANAGERIAL || 'default',
+    femaleVoiceId: process.env.ELEVENLABS_VOICE_MANAGERIAL_F || undefined,
     difficulty: '3-5',
   },
   hr: {
@@ -35,6 +38,7 @@ export const PERSONAS: Record<RoundType, InterviewerPersona> = {
     appearance: 'Business casual, 30–38',
     style: 'Warm, conversational, culture fit, CTC, notice period.',
     voiceId: process.env.ELEVENLABS_VOICE_HR || 'default',
+    femaleVoiceId: process.env.ELEVENLABS_VOICE_HR_F || undefined,
     difficulty: '1-3',
   },
   full_loop: {
@@ -44,6 +48,7 @@ export const PERSONAS: Record<RoundType, InterviewerPersona> = {
     appearance: 'Various',
     style: 'Full interview loop covering all rounds in sequence.',
     voiceId: process.env.ELEVENLABS_VOICE_TECH_L1 || 'default',
+    femaleVoiceId: process.env.ELEVENLABS_VOICE_TECH_L1_F || undefined,
     difficulty: '1-5',
   },
 }

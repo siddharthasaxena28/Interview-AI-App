@@ -128,6 +128,7 @@ export interface InterviewerPersona {
   appearance: string
   style: string
   voiceId: string
+  femaleVoiceId?: string
   difficulty: string
 }
 

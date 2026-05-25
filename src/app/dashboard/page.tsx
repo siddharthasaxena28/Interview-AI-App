@@ -1,9 +1,20 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
-import { Mic, Plus, Clock, TrendingUp, CreditCard, LogOut, Flame, Target, Gift } from 'lucide-react'
+import { Mic, Plus, Clock, TrendingUp, CreditCard, LogOut, Flame, Target, Gift, ArrowRight } from 'lucide-react'
 import type { User, InterviewSession, FeedbackReport } from '@/types'
+import type { RoundType } from '@/types'
 import { CopyReferral } from './CopyReferral'
+import InterviewCountdown from './InterviewCountdown'
+
+// Map topic tags to the most relevant round type for "Practice This"
+function topicToRoundType(topic: string): RoundType {
+  const t = topic.toLowerCase().replace(/_/g, ' ')
+  if (t.includes('system') || t.includes('design') || t.includes('architect') || t.includes('scalab')) return 'tech_l2'
+  if (t.includes('behav') || t.includes('leader') || t.includes('manag') || t.includes('team') || t.includes('conflict')) return 'managerial'
+  if (t.includes('culture') || t.includes('hr') || t.includes('salary') || t.includes('ctc') || t.includes('notice')) return 'hr'
+  return 'tech_l1'
+}
 
 export default async function DashboardPage() {
   const supabase = await createServerSupabaseClient()
@@ -17,13 +28,14 @@ export default async function DashboardPage() {
     .eq('id', authUser.id)
     .single()
 
+  // Fetch more sessions so we can compute progress comparison
   const { data: sessions } = await supabase
     .from('interview_sessions')
     .select('*')
     .eq('user_id', authUser.id)
     .eq('status', 'completed')
     .order('ended_at', { ascending: false })
-    .limit(10)
+    .limit(20)
 
   const sessionIds = (sessions ?? []).map((s: InterviewSession) => s.id)
 
@@ -52,10 +64,12 @@ export default async function DashboardPage() {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://interviewai.in'
   const referralLink = user?.referral_code ? `${appUrl}/?ref=${user.referral_code}` : null
 
-  // Score trend: chronological order, last 8 completed sessions with reports
-  const chartData = [...(sessions ?? [])]
+  // Score trend: chronological, last 8 completed sessions with reports (for chart)
+  const sessionsWithReports = [...(sessions ?? [])]
     .reverse()
     .filter((s: InterviewSession) => reportMap.has(s.id))
+
+  const chartData = sessionsWithReports
     .slice(-8)
     .map((s: InterviewSession) => ({
       score: (reportMap.get(s.id) as { overall_score: number }).overall_score,
@@ -63,6 +77,16 @@ export default async function DashboardPage() {
         ? new Date(s.ended_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
         : '',
     }))
+
+  // Progress comparison: first 4 sessions avg vs latest 4 sessions avg
+  let progressDelta: number | null = null
+  if (sessionsWithReports.length >= 4) {
+    const first4 = sessionsWithReports.slice(0, 4)
+    const last4 = sessionsWithReports.slice(-4)
+    const avgFirst = first4.reduce((a, s) => a + (reportMap.get(s.id) as { overall_score: number }).overall_score, 0) / 4
+    const avgLast = last4.reduce((a, s) => a + (reportMap.get(s.id) as { overall_score: number }).overall_score, 0) / 4
+    progressDelta = Math.round(avgLast - avgFirst)
+  }
 
   const roundLabels: Record<string, string> = {
     tech_l1: 'Technical L1',
@@ -147,6 +171,9 @@ export default async function DashboardPage() {
           )}
         </div>
 
+        {/* Interview countdown (client — reads localStorage) */}
+        <InterviewCountdown />
+
         {/* Stats row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -156,13 +183,23 @@ export default async function DashboardPage() {
             </div>
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="text-2xl font-bold text-gray-900">
-              {reports && reports.length > 0
-                ? Math.round((reports as Array<{overall_score: number}>).reduce((a, r) => a + r.overall_score, 0) / reports.length)
-                : '—'}
+            <div className="flex items-end gap-1">
+              <div className="text-2xl font-bold text-gray-900">
+                {reports && reports.length > 0
+                  ? Math.round((reports as Array<{overall_score: number}>).reduce((a, r) => a + r.overall_score, 0) / reports.length)
+                  : '—'}
+              </div>
+              {progressDelta !== null && progressDelta !== 0 && (
+                <div className={`text-sm font-semibold mb-0.5 ${progressDelta > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                  {progressDelta > 0 ? `+${progressDelta}` : progressDelta}
+                </div>
+              )}
             </div>
             <div className="text-sm text-gray-500 flex items-center gap-1 mt-0.5">
               <TrendingUp className="w-3.5 h-3.5" /> Avg score
+              {progressDelta !== null && (
+                <span className="text-xs text-gray-400">(trend)</span>
+              )}
             </div>
           </div>
           <div className={`rounded-xl border p-4 ${currentStreak >= 3 ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-200'}`}>
@@ -185,9 +222,22 @@ export default async function DashboardPage() {
         {/* Score trend chart */}
         {chartData.length >= 2 && (
           <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
-            <h2 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-blue-600" /> Score Trend
-            </h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-blue-600" /> Score Trend
+              </h2>
+              {progressDelta !== null && (
+                <span className={`text-sm font-semibold px-2.5 py-1 rounded-full ${
+                  progressDelta > 0
+                    ? 'text-green-700 bg-green-50'
+                    : progressDelta < 0
+                      ? 'text-red-700 bg-red-50'
+                      : 'text-gray-500 bg-gray-50'
+                }`}>
+                  {progressDelta > 0 ? `↑ +${progressDelta} pts improved` : progressDelta < 0 ? `↓ ${progressDelta} pts` : 'Holding steady'}
+                </span>
+              )}
+            </div>
             <svg
               viewBox="0 0 300 60"
               width="100%"
@@ -226,7 +276,7 @@ export default async function DashboardPage() {
           </div>
         )}
 
-        {/* Weak areas / focus topics */}
+        {/* Weak areas / focus topics — with "Practice This" links */}
         {weakAreas && weakAreas.length > 0 && (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-8">
             <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
@@ -238,13 +288,19 @@ export default async function DashboardPage() {
               {(weakAreas as Array<{topic_tag: string; avg_score: number; session_count: number}>).map((wa) => {
                 const pct = Math.round((wa.avg_score / 5) * 100)
                 const color = pct >= 60 ? 'text-green-600 bg-green-50 border-green-200' : pct >= 40 ? 'text-amber-600 bg-amber-50 border-amber-200' : 'text-red-600 bg-red-50 border-red-200'
+                const roundType = topicToRoundType(wa.topic_tag)
                 return (
-                  <div key={wa.topic_tag} className={`border rounded-lg px-4 py-2.5 flex items-center gap-3 ${color}`}>
+                  <div key={wa.topic_tag} className={`border rounded-xl px-4 py-3 flex items-center gap-4 ${color}`}>
                     <div>
                       <div className="font-medium text-sm capitalize">{wa.topic_tag.replace(/_/g, ' ')}</div>
-                      <div className="text-xs opacity-70">{wa.session_count} session{wa.session_count !== 1 ? 's' : ''}</div>
+                      <div className="text-xs opacity-70">{wa.session_count} session{wa.session_count !== 1 ? 's' : ''} · {pct}%</div>
                     </div>
-                    <div className="text-lg font-bold">{pct}%</div>
+                    <Link
+                      href={`/interview/setup?round_type=${roundType}`}
+                      className="flex items-center gap-1 text-xs font-semibold bg-white/60 border border-current rounded-lg px-2.5 py-1.5 hover:bg-white transition-colors whitespace-nowrap"
+                    >
+                      Practice <ArrowRight className="w-3 h-3" />
+                    </Link>
                   </div>
                 )
               })}
@@ -286,7 +342,7 @@ export default async function DashboardPage() {
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
-              {(sessions as InterviewSession[]).map((session) => {
+              {(sessions as InterviewSession[]).slice(0, 10).map((session) => {
                 const report = reportMap.get(session.id)
                 return (
                   <div key={session.id} className="px-6 py-4 flex items-center justify-between hover:bg-gray-50">

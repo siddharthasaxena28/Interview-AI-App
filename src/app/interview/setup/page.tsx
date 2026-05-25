@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Mic, ArrowRight, ArrowLeft, Loader2 } from 'lucide-react'
 import { useAnalytics } from '@/hooks/useAnalytics'
 import type { RoundType } from '@/types'
@@ -22,18 +22,25 @@ const ROUND_OPTIONS: { value: RoundType; label: string; desc: string }[] = [
   { value: 'full_loop', label: 'Full Interview Loop', desc: 'All rounds back-to-back (60 minutes)' },
 ]
 
-export default function SetupPage() {
+function SetupPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const analytics = useAnalytics()
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  // Pre-fill round_type from query param (e.g. from "Practice This" on dashboard)
+  const prefillRoundType = (searchParams.get('round_type') as RoundType | null) ?? 'tech_l1'
+  const validRoundTypes: RoundType[] = ['tech_l1', 'tech_l2', 'managerial', 'hr', 'full_loop']
+  const initialRoundType = validRoundTypes.includes(prefillRoundType) ? prefillRoundType : 'tech_l1'
+
   const [form, setForm] = useState<FormData>({
     jd_text: '',
     company: '',
     role: '',
     experience_years: 0,
-    round_type: 'tech_l1',
+    round_type: initialRoundType,
   })
 
   function updateForm(field: keyof FormData, value: string | number) {
@@ -300,5 +307,17 @@ export default function SetupPage() {
         </p>
       </div>
     </div>
+  )
+}
+
+export default function SetupPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin" />
+      </div>
+    }>
+      <SetupPageInner />
+    </Suspense>
   )
 }

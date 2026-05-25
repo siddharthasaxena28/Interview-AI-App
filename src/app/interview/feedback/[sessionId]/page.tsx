@@ -6,6 +6,7 @@ import { getRoundLabel } from '@/lib/personas'
 import { CheckCircle, AlertCircle, ChevronDown, Share2, RotateCcw, Mic } from 'lucide-react'
 import type { FeedbackReport, InterviewSession, StrengthItem, GapItem, PerQuestionFeedback, RoundType } from '@/types'
 import FeedbackClient from './FeedbackClient'
+import ScoreCard from './ScoreCard'
 
 export default async function FeedbackPage({
   params,
@@ -213,7 +214,7 @@ export default async function FeedbackPage({
         )}
 
         {/* Actions */}
-        <div className="flex flex-col sm:flex-row gap-4">
+        <div className="flex flex-col sm:flex-row gap-4 mb-6">
           <Link
             href="/interview/setup"
             className="flex items-center justify-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl font-semibold text-sm hover:bg-blue-700 transition-colors flex-1"
@@ -229,6 +230,16 @@ export default async function FeedbackPage({
             <Share2 className="w-4 h-4" /> Share Report
           </a>
         </div>
+
+        {/* Score card download + LinkedIn share */}
+        <ScoreCard
+          company={s.company}
+          role={s.role}
+          roundLabel={getRoundLabel(s.round_type as RoundType)}
+          overallScore={r.overall_score}
+          selectionProbability={r.selection_probability}
+          appUrl={appUrl}
+        />
       </main>
     </div>
   )

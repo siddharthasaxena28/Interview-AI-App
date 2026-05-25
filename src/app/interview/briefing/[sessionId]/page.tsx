@@ -1,16 +1,21 @@
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
-import { getPersona, getRoundLabel, getRoundDuration } from '@/lib/personas'
+import { PERSONAS, getRoundLabel, getRoundDuration } from '@/lib/personas'
 import { Mic, Clock, ChevronRight, Shield } from 'lucide-react'
 import type { InterviewSession, Question, RoundType } from '@/types'
 
 export default async function BriefingPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ sessionId: string }>
+  searchParams: Promise<{ gender?: string }>
 }) {
   const { sessionId } = await params
+  const { gender: genderParam } = await searchParams
+  const gender = genderParam === 'female' ? 'female' : 'male'
+
   const supabase = await createServerSupabaseClient()
 
   const { data: { user } } = await supabase.auth.getUser()
@@ -33,9 +38,13 @@ export default async function BriefingPage({
 
   const questions = questionsData as Question[]
   const interviewSession = session as InterviewSession
-  const persona = getPersona(interviewSession.round_type as RoundType)
+  const persona = PERSONAS[interviewSession.round_type as RoundType]
+  const personaName = gender === 'female' ? persona.femaleName : persona.maleName
   const duration = getRoundDuration(interviewSession.round_type as RoundType)
   const roundLabel = getRoundLabel(interviewSession.round_type as RoundType)
+
+  // Session URL includes gender so the interview page uses the right name/voice
+  const sessionUrl = `/interview/session/${sessionId}${gender === 'female' ? '?gender=female' : ''}`
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-12">
@@ -51,7 +60,7 @@ export default async function BriefingPage({
           {/* Interviewer avatar */}
           <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center mx-auto mb-4">
             <span className="text-white text-3xl font-bold">
-              {persona.name.charAt(0)}
+              {personaName.charAt(0)}
             </span>
           </div>
 
@@ -60,9 +69,34 @@ export default async function BriefingPage({
           </div>
 
           <h1 className="text-2xl font-bold text-gray-900 mb-1">
-            Hi, I&apos;m {persona.name}
+            Hi, I&apos;m {personaName}
           </h1>
           <p className="text-gray-500 text-sm mb-2">Your interviewer for today</p>
+
+          {/* Gender toggle */}
+          <div className="flex items-center justify-center gap-2 mb-5">
+            <span className="text-xs text-gray-400">Interviewer:</span>
+            <Link
+              href={`/interview/briefing/${sessionId}`}
+              className={`text-xs px-3 py-1 rounded-full border transition-colors ${
+                gender === 'male'
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              {persona.maleName} (M)
+            </Link>
+            <Link
+              href={`/interview/briefing/${sessionId}?gender=female`}
+              className={`text-xs px-3 py-1 rounded-full border transition-colors ${
+                gender === 'female'
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              {persona.femaleName} (F)
+            </Link>
+          </div>
 
           <p className="text-gray-600 text-sm leading-relaxed mb-6 max-w-sm mx-auto">
             {persona.style}
@@ -106,7 +140,7 @@ export default async function BriefingPage({
           </div>
 
           <Link
-            href={`/interview/session/${sessionId}`}
+            href={sessionUrl}
             className="flex items-center justify-center gap-2 w-full bg-blue-600 text-white py-4 rounded-xl font-semibold text-sm hover:bg-blue-700 transition-colors"
           >
             Start Interview
