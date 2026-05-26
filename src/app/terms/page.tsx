@@ -32,12 +32,23 @@ const SECTIONS = [
   {
     title: '2. Eligibility',
     content: (
-      <p>
-        You must be at least <strong>18 years of age</strong> to use the Platform. By creating
-        an account, you represent and warrant that you are 18 or older and have the legal
-        capacity to enter into these Terms. Accounts created on behalf of a minor will be
-        terminated and associated data deleted.
-      </p>
+      <>
+        <p>
+          You must be at least <strong>18 years of age</strong> to use the Platform. By creating
+          an account, you represent and warrant that you are 18 or older and have the legal
+          capacity to enter into these Terms. Accounts created on behalf of a minor will be
+          terminated and associated data deleted.
+        </p>
+        <p className="mt-2">
+          <strong>Geographic availability:</strong> InterviewAI is currently designed and
+          optimised for users in <strong>India</strong>. Payments are processed in Indian Rupees
+          (INR) via Razorpay, which is available to Indian users only. Users outside India are
+          welcome to use the interview practice features, but payment and subscription
+          functionality may not be available in their region. We are actively working to expand
+          our services globally — international payments and localised support will be added in
+          future releases.
+        </p>
+      </>
     ),
   },
   {
