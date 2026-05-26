@@ -301,8 +301,7 @@ async function completeReferral(
 async function sendFeedbackEmail(
   supabase: Awaited<ReturnType<typeof import('@/lib/supabase-server').createServerSupabaseClient>>,
   userId: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  session: any,
+  session: { company: string; role: string; [key: string]: unknown },
   feedback: FeedbackJSON,
   sessionId: string,
   shareToken: string,

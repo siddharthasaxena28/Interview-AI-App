@@ -18,9 +18,9 @@ function extractGoogleDriveId(url: string): { id: string; type: 'doc' | 'file' }
 
 async function extractTextFromPdf(buffer: Buffer): Promise<string> {
   // pdf-parse v2 ESM: the /node export is a named export, not a default.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const mod = await import('pdf-parse/node') as any
-  const pdfParse = mod.default ?? mod
+  type PdfParseFn = (b: Buffer) => Promise<{ text: string }>
+  const mod = await import('pdf-parse/node') as unknown as { default?: PdfParseFn } & PdfParseFn
+  const pdfParse: PdfParseFn = mod.default ?? (mod as unknown as PdfParseFn)
   const result = await pdfParse(buffer)
   return result.text.trim()
 }

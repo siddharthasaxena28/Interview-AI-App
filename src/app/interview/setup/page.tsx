@@ -358,7 +358,7 @@ function SetupPageInner() {
                   {resumeTab === 'drive' && (
                     <div className="space-y-2">
                       <p className="text-xs text-gray-500">
-                        Share your résumé in Google Drive or Google Docs as <strong>"Anyone with the link"</strong>, then paste the share URL below.
+                        Share your résumé in Google Drive or Google Docs as <strong>&quot;Anyone with the link&quot;</strong>, then paste the share URL below.
                       </p>
                       <div className="flex gap-2">
                         <input

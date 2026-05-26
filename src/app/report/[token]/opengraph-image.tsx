@@ -46,7 +46,6 @@ export default async function Image({ params }: { params: { token: string } }) {
     )
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const session = data.interview_sessions as unknown as { company: string; role: string; round_type: string } | null
   const company = session?.company ?? 'Company'
   const role = session?.role ?? 'Role'

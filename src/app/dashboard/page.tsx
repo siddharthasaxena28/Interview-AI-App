@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import Image from 'next/image'
 import { Mic, Plus, Clock, TrendingUp, CreditCard, LogOut, Flame, Target, Gift, ArrowRight } from 'lucide-react'
 import type { User, InterviewSession, FeedbackReport } from '@/types'
 import type { RoundType } from '@/types'
@@ -143,9 +144,11 @@ export default async function DashboardPage() {
             </Link>
             <div className="flex items-center gap-2">
               {authUser.user_metadata?.avatar_url && (
-                <img
+                <Image
                   src={authUser.user_metadata.avatar_url}
                   alt="avatar"
+                  width={32}
+                  height={32}
                   className="w-8 h-8 rounded-full"
                 />
               )}

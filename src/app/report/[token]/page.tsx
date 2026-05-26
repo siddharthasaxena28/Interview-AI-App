@@ -20,7 +20,6 @@ export async function generateMetadata({
 
   if (!data) return { title: 'Interview Report — InterviewAI' }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const session = data.interview_sessions as unknown as { company: string; role: string } | null
   const company = session?.company ?? 'Company'
   const role = session?.role ?? 'Role'
