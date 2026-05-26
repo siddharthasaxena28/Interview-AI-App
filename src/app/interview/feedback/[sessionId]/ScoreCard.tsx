@@ -156,16 +156,43 @@ export default function ScoreCard({
   }
 
   function shareOnLinkedIn() {
-    // Share the public report URL so recipients can click through to the report.
-    // LinkedIn pulls the preview from the target page's OG tags; the summary param
-    // is best-effort (newer LinkedIn largely ignores it).
-    const summary = encodeURIComponent(
-      `Just completed a mock ${company} ${role} interview on InterviewAI. Scored ${overallScore}/100 (${selectionProbability}% selection chance). Practise like it's real at ${appUrl.replace('https://', '')}`
-    )
+    const performanceEmoji = selectionProbability >= 75 ? '🔥' : selectionProbability >= 55 ? '💪' : '📈'
+    const performanceLine =
+      selectionProbability >= 75
+        ? 'Strong performance — feeling confident about the real thing!'
+        : selectionProbability >= 55
+        ? 'Decent run — identified key areas to sharpen before the real interview.'
+        : 'Great learning experience — pinpointed exactly where to improve.'
+
+    // Opening the LinkedIn post composer with pre-written text.
+    // Including the report URL in the body text triggers LinkedIn's link-card
+    // detection, which pulls the og:image (the scorecard graphic) automatically.
+    const text = [
+      `${performanceEmoji} Just completed a mock interview on InterviewAI!`,
+      '',
+      `🏢 Company: ${company}`,
+      `💼 Role: ${role}`,
+      `📊 Round: ${roundLabel}`,
+      '',
+      `📈 My Results:`,
+      `   • Overall Score: ${overallScore} / 100`,
+      `   • Chance of Selection: ${selectionProbability}%`,
+      '',
+      performanceLine,
+      '',
+      `View my full feedback report 👇`,
+      shareUrl,
+      '',
+      `If you're prepping for interviews, give InterviewAI a try — it's free to start.`,
+      '',
+      `#InterviewPrep #MockInterview #CareerGrowth #JobSearch #TechInterview`,
+    ].join('\n')
+
+    // feed/?shareActive=true pre-fills the LinkedIn post composer with the text.
     window.open(
-      `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}&summary=${summary}`,
+      `https://www.linkedin.com/feed/?shareActive=true&text=${encodeURIComponent(text)}`,
       '_blank',
-      'noopener,noreferrer'
+      'noopener,noreferrer,width=700,height=600'
     )
   }
 

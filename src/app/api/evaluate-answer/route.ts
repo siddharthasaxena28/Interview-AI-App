@@ -14,11 +14,33 @@ Score the answer on a scale of 1-5:
 4 = Good / Well-explained
 5 = Excellent / Demonstrates deep expertise
 
-Then decide whether to PROBE before moving on. A real interviewer pushes back when:
+--- SKIP DETECTION (check this FIRST) ---
+Set "candidate_wants_to_skip": true whenever the candidate signals — explicitly or implicitly — that they want to move on:
+
+Explicit signals (any of these phrases or close variants):
+  "pass", "skip", "next question", "move on", "can we move on", "let's move on",
+  "I'd like to skip", "I want to skip", "I don't know", "I have no idea",
+  "I'm not sure about this one", "I'll pass on this"
+
+Implicit signals (read tone and content, not just keywords):
+  - Answer is 1-3 words with no substance (e.g. "hmm", "not sure", "uh", "yeah")
+  - Candidate explicitly expresses discomfort or unwillingness ("I'd rather not", "I'm blanking")
+  - Candidate has already given a weak or incomplete answer AND is now asking to move forward
+  - Candidate trails off with no attempt at the question
+
+When candidate_wants_to_skip is true:
+  - ALWAYS set "probe": false and "probe_question": ""
+  - Score the answer honestly but lean towards 2 if there was no real attempt
+  - "brief_feedback" must be gracious and non-pressuring — acknowledge and let go.
+    Examples: "No worries at all, let's move on." / "That's fine, we'll come back to it if needed." / "Sure, let's skip that one."
+
+--- PROBING (only when candidate has NOT signalled skip) ---
+A real interviewer probes when:
 - the answer is vague, hand-wavy, or uses buzzwords without substance
 - the candidate gave a correct but shallow answer and there is an obvious deeper follow-up
 - the answer is incomplete or the candidate clearly guessed
-Do NOT probe when the answer was thorough and confident (score 4-5 with specifics) — just acknowledge and move on.
+Do NOT probe when the answer was thorough and confident (score 4-5 with specifics).
+Do NOT probe more than once on the same topic — if this is already a probe follow-up, do not probe again.
 
 "brief_feedback" must sound like a real interviewer speaking out loud — natural, warm but honest, ONE short sentence. Never robotic. Examples: "Okay, that gives me a rough idea." / "Good — I like that you mentioned trade-offs." / "Hmm, let's dig into that a bit."
 
@@ -29,7 +51,8 @@ Return ONLY a JSON object with this exact structure:
   "score": <number 1-5>,
   "brief_feedback": "<one natural spoken sentence>",
   "probe": <true|false>,
-  "probe_question": "<the follow-up question to ask aloud, or empty string if probe is false>"
+  "probe_question": "<the follow-up question to ask aloud, or empty string if probe is false>",
+  "candidate_wants_to_skip": <true|false>
 }`
 
 export async function POST(request: NextRequest) {
@@ -104,12 +127,18 @@ Candidate's answer:
     const content = message.content[0]
     if (content.type !== 'text') throw new Error('Unexpected response type')
 
-    let evaluation: { score: number; brief_feedback: string; probe: boolean; probe_question: string }
+    let evaluation: { score: number; brief_feedback: string; probe: boolean; probe_question: string; candidate_wants_to_skip: boolean }
     try {
       const jsonMatch = content.text.match(/\{[\s\S]*\}/)
       evaluation = JSON.parse(jsonMatch ? jsonMatch[0] : content.text)
     } catch {
-      evaluation = { score: 3, brief_feedback: '', probe: false, probe_question: '' }
+      evaluation = { score: 3, brief_feedback: '', probe: false, probe_question: '', candidate_wants_to_skip: false }
+    }
+
+    // Safety net: never probe a candidate who wants to skip regardless of what the model returned.
+    if (evaluation.candidate_wants_to_skip) {
+      evaluation.probe = false
+      evaluation.probe_question = ''
     }
 
     const score = Math.min(5, Math.max(1, evaluation.score ?? 3))
@@ -180,6 +209,7 @@ Candidate's answer:
       brief_feedback: evaluation.brief_feedback,
       next_question: nextQuestion,
       is_probe: isProbe,
+      candidate_wants_to_skip: evaluation.candidate_wants_to_skip ?? false,
       // Count the freshly-inserted probe so the client doesn't end the interview
       // prematurely when the candidate is probed on the last scripted question.
       questions_remaining: (remainingQuestions?.length ?? 0) + (isProbe ? 1 : 0),

@@ -73,6 +73,9 @@ function SessionPageInner({ params }: SessionPageProps) {
   const hasGreetedRef = useRef(false)
   const reconnectAttemptsRef = useRef(0)
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null)
+  // Holds a resolve() callback for the currently-playing speakText promise so
+  // stopAllAudio() can resolve it immediately from outside the function.
+  const cancelSpeakRef = useRef<(() => void) | null>(null)
 
   useEffect(() => { currentQuestionRef.current = currentQuestion }, [currentQuestion])
   useEffect(() => { phaseRef.current = phase }, [phase])
@@ -344,6 +347,21 @@ function SessionPageInner({ params }: SessionPageProps) {
     return out
   }
 
+  // Immediately silences the AI: stops the <audio> element, cancels browser
+  // speech synthesis, and resolves the pending speakText promise so callers
+  // awaiting it unblock right away.
+  function stopAllAudio() {
+    cancelSpeakRef.current?.()
+    cancelSpeakRef.current = null
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.src = ''
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+    }
+  }
+
   async function speakText(text: string, startListening = true): Promise<void> {
     if (!sessionData) return
     setAiSpeaking()
@@ -361,7 +379,6 @@ function SessionPageInner({ params }: SessionPageProps) {
     }, 8000)
 
     const persona = PERSONAS[sessionData.session.round_type]
-    // Use gender-appropriate voice if available
     const voiceId = genderParam === 'female' && persona.femaleVoiceId
       ? persona.femaleVoiceId
       : persona.voiceId
@@ -383,14 +400,18 @@ function SessionPageInner({ params }: SessionPageProps) {
         if (!audioRef.current) { resolve(); return }
         let done = false
         const finish = () => { if (!done) { done = true; URL.revokeObjectURL(audioUrl); resolve() } }
+        // Register cancel hook so stopAllAudio() can resolve this promise immediately.
+        cancelSpeakRef.current = finish
         audioRef.current.src = audioUrl
         audioRef.current.onended = finish
         audioRef.current.onerror = finish
         audioRef.current.play().catch(finish)
         setTimeout(finish, estDurationMs + 3000)
       })
+      cancelSpeakRef.current = null
       ttsSucceeded = true
     } catch {
+      cancelSpeakRef.current = null
       // Fall through to browser synthesis
     }
 
@@ -399,7 +420,7 @@ function SessionPageInner({ params }: SessionPageProps) {
       await new Promise<void>((resolve) => {
         let done = false
         const finish = () => { if (!done) { done = true; resolve() } }
-
+        cancelSpeakRef.current = finish
         window.speechSynthesis.cancel()
         const utterance = new SpeechSynthesisUtterance(text)
         utterance.rate = 0.92
@@ -409,9 +430,12 @@ function SessionPageInner({ params }: SessionPageProps) {
         window.speechSynthesis.speak(utterance)
         setTimeout(finish, estDurationMs + 2000)
       })
+      cancelSpeakRef.current = null
     }
 
     clearInterval(keepAliveInterval)
+    // Don't transition to LISTENING if the interview has already ended.
+    if (endingRef.current) return
     systemMutedRef.current = false
     isProcessingRef.current = false
     if (startListening) {
@@ -449,6 +473,11 @@ function SessionPageInner({ params }: SessionPageProps) {
           ackText = data.brief_feedback
             ? `${data.brief_feedback} ${data.next_question.text}`
             : data.next_question.text
+        } else if (data.candidate_wants_to_skip) {
+          // Candidate asked to pass — acknowledge graciously, no pressure.
+          ackText = data.brief_feedback
+            ? `${data.brief_feedback} ${data.next_question.text}`
+            : `Sure, let's move on. ${data.next_question.text}`
         } else {
           ackText = data.brief_feedback
             ? `${data.brief_feedback} Let's move on. ${data.next_question.text}`
@@ -477,7 +506,26 @@ function SessionPageInner({ params }: SessionPageProps) {
     setStarted(true)
   }
 
-  async function endInterview(abandoned = false) {
+  function endInterview(abandoned = false) {
+    // Guard against double-calls (e.g. auto-end races with manual click).
+    if (endingRef.current) return
+    endingRef.current = true
+
+    // Step 1 — silence the AI immediately, regardless of what it's saying.
+    stopAllAudio()
+    systemMutedRef.current = false
+    isProcessingRef.current = false
+
+    // Step 2 — show the "generating report" screen right away so the user
+    //           gets instant feedback that the call has ended.
+    setEnding(true)
+
+    // Step 3 — tear down mic / WebSocket.
+    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+    wsRef.current?.close(1000)
+    mediaStreamRef.current?.getTracks().forEach((t) => t.stop())
+
+    // Step 4 — analytics + fire-and-forget API calls (non-blocking).
     analytics.capture(abandoned ? 'interview_abandoned' : 'interview_completed', {
       session_id: sessionId,
       round_type: sessionData?.session.round_type,
@@ -485,10 +533,6 @@ function SessionPageInner({ params }: SessionPageProps) {
       total_questions: totalQuestions,
       duration_seconds: elapsed,
     })
-
-    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
-    wsRef.current?.close(1000)
-    mediaStreamRef.current?.getTracks().forEach((t) => t.stop())
 
     fetch('/api/end-session', {
       method: 'POST',
@@ -502,14 +546,7 @@ function SessionPageInner({ params }: SessionPageProps) {
       body: JSON.stringify({ session_id: sessionId }),
     }).catch(console.error)
 
-    if (!abandoned && sessionData) {
-      await speakText(
-        `That brings us to the end of the interview. Thank you so much for your time today — it was a pleasure speaking with you. I'll review your answers and have your detailed feedback report ready shortly. Best of luck, and we'll be in touch!`,
-        false
-      ).catch(() => {})
-    }
-
-    setEnding(true)
+    // Step 5 — navigate to the feedback page.
     router.push(`/interview/feedback/${sessionId}`)
   }
 
@@ -598,25 +635,25 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   if (!started) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
-        <div className="text-center max-w-md">
-          <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center mx-auto mb-5">
-            <span className="text-white text-3xl font-bold">{personaName.charAt(0)}</span>
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4 py-12">
+        <div className="text-center max-w-md w-full">
+          <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-5">
+            <span className="text-white text-2xl sm:text-3xl font-bold">{personaName.charAt(0)}</span>
           </div>
-          <h1 className="text-2xl font-bold text-white mb-2">
+          <h1 className="text-xl sm:text-2xl font-bold text-white mb-2">
             {personaName} is ready
           </h1>
           <p className="text-gray-400 text-sm mb-2">
             {sessionData?.session.company} — {sessionData?.session.role}
           </p>
-          <p className="text-gray-500 text-sm mb-8 leading-relaxed">
+          <p className="text-gray-500 text-sm mb-7 sm:mb-8 leading-relaxed px-2">
             Pop on your headphones and find a quiet spot. When you click below, {personaName} will
             greet you and the conversation will begin.
           </p>
           <button
             onClick={handleBegin}
             disabled={micPermission !== 'granted'}
-            className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-8 py-3.5 rounded-xl font-semibold text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl font-semibold text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
           >
             {micPermission === 'granted' ? (
               <>
@@ -659,54 +696,54 @@ function SessionPageInner({ params }: SessionPageProps) {
       <audio ref={audioRef} className="hidden" />
 
       {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-800 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center">
-            <span className="font-bold text-sm">{personaName.charAt(0)}</span>
+      <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-800 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center shrink-0">
+            <span className="font-bold text-xs sm:text-sm">{personaName.charAt(0)}</span>
           </div>
-          <div>
-            <div className="font-semibold text-sm">{personaName}</div>
-            <div className="text-xs text-gray-400">
+          <div className="min-w-0">
+            <div className="font-semibold text-sm truncate">{personaName}</div>
+            <div className="text-xs text-gray-400 truncate">
               {sessionData?.session.company} — {sessionData?.session.role}
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           {reconnecting && (
-            <div className="flex items-center gap-1.5 text-xs text-amber-400">
+            <div className="flex items-center gap-1 text-xs text-amber-400">
               <div className="w-3 h-3 border border-amber-400 border-t-transparent rounded-full animate-spin" />
-              Reconnecting…
+              <span className="hidden sm:inline">Reconnecting…</span>
             </div>
           )}
-          <div className={`text-sm font-mono ${timeWarning ? 'text-amber-400' : 'text-gray-400'}`}>
+          <div className={`text-xs sm:text-sm font-mono ${timeWarning ? 'text-amber-400' : 'text-gray-400'}`}>
             {formatDuration(elapsed)}
-            {timeWarning && <span className="ml-1 text-xs">⚠ wrapping up</span>}
+            {timeWarning && <span className="ml-1 text-xs hidden sm:inline">⚠ wrapping up</span>}
           </div>
           {phase === 'interview' ? (
-            <div className="text-sm text-gray-400">
+            <div className="text-xs sm:text-sm text-gray-400 tabular-nums">
               Q{questionIndex + 1}/{totalQuestions}
             </div>
           ) : (
-            <div className="text-xs text-blue-400 bg-blue-900/30 px-2.5 py-1 rounded-full font-medium">
+            <div className="text-xs text-blue-400 bg-blue-900/30 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full font-medium">
               Intro
             </div>
           )}
         </div>
       </div>
 
-      {/* Main area */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-8 gap-8">
+      {/* Main area — flex-1 + min-h-0 so it scrolls on very small screens */}
+      <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-6 py-5 sm:py-8 gap-5 sm:gap-8 overflow-y-auto">
         {/* Status indicator */}
-        <div className="flex items-center gap-3">
-          <div className={`w-3 h-3 rounded-full ${stateColor[state]} ${state !== 'IDLE' ? 'animate-pulse' : ''}`} />
-          <span className="text-gray-300 text-sm">{stateLabel[state]}</span>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <div className={`w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full ${stateColor[state]} ${state !== 'IDLE' ? 'animate-pulse' : ''}`} />
+          <span className="text-gray-300 text-xs sm:text-sm">{stateLabel[state]}</span>
         </div>
 
         {/* AI speaking animation */}
         {state === 'AI_SPEAKING' && (
           <div className="relative">
-            <div className="w-24 h-24 bg-blue-600 rounded-full flex items-center justify-center">
-              <Volume2 className="w-10 h-10 text-white" />
+            <div className="w-20 h-20 sm:w-24 sm:h-24 bg-blue-600 rounded-full flex items-center justify-center">
+              <Volume2 className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
             </div>
             <div className="absolute inset-0 rounded-full bg-blue-500 animate-pulse-ring opacity-50" />
           </div>
@@ -715,13 +752,13 @@ function SessionPageInner({ params }: SessionPageProps) {
         {/* Mic animation */}
         {(state === 'LISTENING' || state === 'USER_SPEAKING') && (
           <div className="relative">
-            <div className={`w-24 h-24 rounded-full flex items-center justify-center ${
+            <div className={`w-20 h-20 sm:w-24 sm:h-24 rounded-full flex items-center justify-center ${
               state === 'USER_SPEAKING' ? 'bg-green-600' : 'bg-gray-700'
             }`}>
               {muted ? (
-                <MicOff className="w-10 h-10 text-gray-400" />
+                <MicOff className="w-8 h-8 sm:w-10 sm:h-10 text-gray-400" />
               ) : (
-                <Mic className={`w-10 h-10 ${state === 'USER_SPEAKING' ? 'text-white' : 'text-gray-400'}`} />
+                <Mic className={`w-8 h-8 sm:w-10 sm:h-10 ${state === 'USER_SPEAKING' ? 'text-white' : 'text-gray-400'}`} />
               )}
             </div>
             {state === 'USER_SPEAKING' && !muted && (
@@ -732,18 +769,18 @@ function SessionPageInner({ params }: SessionPageProps) {
 
         {/* Processing */}
         {state === 'PROCESSING' && (
-          <div className="w-24 h-24 bg-amber-600/20 border-2 border-amber-500 rounded-full flex items-center justify-center">
-            <div className="w-8 h-8 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+          <div className="w-20 h-20 sm:w-24 sm:h-24 bg-amber-600/20 border-2 border-amber-500 rounded-full flex items-center justify-center">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
           </div>
         )}
 
         {/* Context card */}
         {phase === 'intro' ? (
-          <div className="bg-gray-800 rounded-2xl p-6 max-w-2xl w-full text-center">
+          <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 max-w-2xl w-full text-center">
             <div className="text-xs text-blue-400 mb-2 uppercase tracking-wide font-medium">
               Introductory Conversation
             </div>
-            <p className="text-gray-300 text-base leading-relaxed">
+            <p className="text-gray-300 text-sm sm:text-base leading-relaxed">
               {state === 'LISTENING' || state === 'USER_SPEAKING'
                 ? introStepRef.current === 1
                   ? 'How are you feeling today?'
@@ -752,19 +789,19 @@ function SessionPageInner({ params }: SessionPageProps) {
             </p>
           </div>
         ) : currentQuestion ? (
-          <div className="bg-gray-800 rounded-2xl p-6 max-w-2xl w-full text-center">
-            <div className="text-xs text-gray-500 mb-2 uppercase tracking-wide">
+          <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 max-w-2xl w-full text-center">
+            <div className="text-xs text-gray-500 mb-2 uppercase tracking-wide capitalize">
               Q{questionIndex + 1} · {currentQuestion.topic_tag.replace(/_/g, ' ')} · Difficulty {currentQuestion.difficulty}/5
             </div>
-            <p className="text-white text-lg leading-relaxed">{currentQuestion.text}</p>
+            <p className="text-white text-sm sm:text-base lg:text-lg leading-relaxed">{currentQuestion.text}</p>
           </div>
         ) : null}
 
-        {/* Live transcript */}
+        {/* Live transcript — capped height on mobile so it doesn't push controls off-screen */}
         {(liveTranscript || finalTranscript) && (
-          <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-4 max-w-2xl w-full">
+          <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-3 sm:p-4 max-w-2xl w-full max-h-28 sm:max-h-none overflow-y-auto">
             <div className="text-xs text-gray-500 mb-1.5">Live transcript</div>
-            <p className="text-gray-200 text-sm">
+            <p className="text-gray-200 text-xs sm:text-sm">
               {finalTranscript}
               <span className="text-gray-400">{liveTranscript}</span>
             </p>
@@ -773,10 +810,10 @@ function SessionPageInner({ params }: SessionPageProps) {
       </div>
 
       {/* Controls */}
-      <div className="px-6 py-6 border-t border-gray-800 flex items-center justify-center gap-6">
+      <div className="px-4 sm:px-6 py-4 sm:py-6 border-t border-gray-800 flex items-center justify-center gap-4 sm:gap-6">
         <button
           onClick={() => setMuted((m) => { mutedRef.current = !m; return !m })}
-          className={`flex flex-col items-center gap-1 px-4 py-2 rounded-xl transition-colors ${
+          className={`flex flex-col items-center gap-1 px-5 py-2.5 rounded-xl transition-colors ${
             muted
               ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30'
               : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
@@ -788,7 +825,7 @@ function SessionPageInner({ params }: SessionPageProps) {
 
         <button
           onClick={() => endInterview(true)}
-          className="flex flex-col items-center gap-1 px-4 py-2 rounded-xl bg-red-600/20 text-red-400 hover:bg-red-600/30 transition-colors"
+          className="flex flex-col items-center gap-1 px-5 py-2.5 rounded-xl bg-red-600/20 text-red-400 hover:bg-red-600/30 transition-colors"
         >
           <PhoneOff className="w-5 h-5" />
           <span className="text-xs">End Interview</span>

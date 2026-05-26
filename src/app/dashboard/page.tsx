@@ -1,20 +1,38 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
-import { Mic, Plus, Clock, TrendingUp, CreditCard, LogOut, Flame, Target, Gift, ArrowRight } from 'lucide-react'
+import { Mic, Plus, Clock, TrendingUp, CreditCard, Flame, Target, Gift, ArrowRight } from 'lucide-react'
 import type { User, InterviewSession, FeedbackReport } from '@/types'
 import type { RoundType } from '@/types'
 import { CopyReferral } from './CopyReferral'
 import InterviewCountdown from './InterviewCountdown'
 import EnableReminders from './EnableReminders'
+import OnboardingModal from './OnboardingModal'
+import UserMenu from './UserMenu'
 
-// Map topic tags to the most relevant round type for "Practice This"
+// Exact lookup — mirrors the controlled vocabulary enforced in generate-questions.
+const TOPIC_ROUND_MAP: Record<string, RoundType> = {
+  // tech_l1
+  fundamentals: 'tech_l1', data_structures: 'tech_l1', algorithms: 'tech_l1',
+  networking: 'tech_l1', code_quality: 'tech_l1', debugging: 'tech_l1',
+  language_concepts: 'tech_l1', problem_solving: 'tech_l1', system_basics: 'tech_l1',
+  // tech_l2 — databases appears in both; l2 wins for deeper practice
+  system_design: 'tech_l2', architecture: 'tech_l2', scalability: 'tech_l2',
+  distributed_systems: 'tech_l2', performance: 'tech_l2', databases: 'tech_l2',
+  security: 'tech_l2', trade_offs: 'tech_l2', data_modeling: 'tech_l2', technical_depth: 'tech_l2',
+  // managerial
+  leadership: 'managerial', team_management: 'managerial', conflict_resolution: 'managerial',
+  stakeholder_management: 'managerial', decision_making: 'managerial', project_delivery: 'managerial',
+  mentoring: 'managerial', strategy: 'managerial', ownership: 'managerial', cross_functional: 'managerial',
+  // hr
+  motivation: 'hr', culture_fit: 'hr', career_goals: 'hr', salary_negotiation: 'hr',
+  notice_period: 'hr', work_style: 'hr', company_research: 'hr', role_clarity: 'hr',
+  strengths_weaknesses: 'hr', behavioral: 'hr',
+}
+
 function topicToRoundType(topic: string): RoundType {
-  const t = topic.toLowerCase().replace(/_/g, ' ')
-  if (t.includes('system') || t.includes('design') || t.includes('architect') || t.includes('scalab')) return 'tech_l2'
-  if (t.includes('behav') || t.includes('leader') || t.includes('manag') || t.includes('team') || t.includes('conflict')) return 'managerial'
-  if (t.includes('culture') || t.includes('hr') || t.includes('salary') || t.includes('ctc') || t.includes('notice')) return 'hr'
-  return 'tech_l1'
+  const key = topic.toLowerCase().replace(/[\s-]+/g, '_')
+  return TOPIC_ROUND_MAP[key] ?? 'tech_l1'
 }
 
 export default async function DashboardPage() {
@@ -99,15 +117,14 @@ export default async function DashboardPage() {
     full_loop: 'Full Loop',
   }
 
-  async function handleSignOut() {
-    'use server'
-    const supabase = await createServerSupabaseClient()
-    await supabase.auth.signOut()
-    redirect('/auth/login')
-  }
-
   return (
     <div className="min-h-screen bg-gray-50">
+      <OnboardingModal
+        show={!sessions?.length}
+        userName={authUser.user_metadata?.full_name?.split(' ')[0] ?? 'there'}
+        creditBalance={creditBalance}
+      />
+
       {/* Top nav */}
       <nav className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
@@ -117,32 +134,13 @@ export default async function DashboardPage() {
             </div>
             <span className="font-bold text-gray-900">InterviewAI</span>
           </div>
-          <div className="flex items-center gap-4">
-            <Link
-              href="/account"
-              className="flex items-center gap-1.5 bg-blue-50 text-blue-700 text-sm px-3 py-1.5 rounded-lg font-medium hover:bg-blue-100 transition-colors"
-            >
-              <CreditCard className="w-3.5 h-3.5" />
-              {creditBalance} credit{creditBalance !== 1 ? 's' : ''}
-            </Link>
-            <div className="flex items-center gap-2">
-              {authUser.user_metadata?.avatar_url && (
-                <img
-                  src={authUser.user_metadata.avatar_url}
-                  alt="avatar"
-                  className="w-8 h-8 rounded-full"
-                />
-              )}
-              <span className="text-sm text-gray-700 hidden sm:block">
-                {authUser.user_metadata?.full_name ?? authUser.email}
-              </span>
-            </div>
-            <form action={handleSignOut}>
-              <button type="submit" className="text-gray-400 hover:text-gray-600">
-                <LogOut className="w-4 h-4" />
-              </button>
-            </form>
-          </div>
+          <UserMenu
+            name={authUser.user_metadata?.full_name ?? ''}
+            email={authUser.email ?? ''}
+            avatarUrl={authUser.user_metadata?.avatar_url}
+            creditBalance={creditBalance}
+            plan={user?.plan ?? 'free'}
+          />
         </div>
       </nav>
 

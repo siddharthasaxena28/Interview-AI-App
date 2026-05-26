@@ -6,6 +6,8 @@ import { Mic } from 'lucide-react'
 export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const deleted = typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('message') === 'account_deleted'
 
   async function signInWithGoogle() {
     setLoading(true)
@@ -42,9 +44,15 @@ export default function LoginPage() {
           <Mic className="w-6 h-6 text-white" />
         </div>
         <h1 className="text-2xl font-bold text-gray-900 mb-1">Welcome to InterviewAI</h1>
-        <p className="text-gray-500 text-sm mb-8">
+        <p className="text-gray-500 text-sm mb-6">
           Sign in to start practicing. 1 free session included.
         </p>
+
+        {deleted && (
+          <div className="bg-green-50 border border-green-200 text-green-800 text-xs rounded-xl px-4 py-3 mb-6 text-left">
+            Your account and personal data have been permanently deleted. You can sign in again — your previous data will not be restored.
+          </div>
+        )}
 
         <button
           onClick={signInWithGoogle}

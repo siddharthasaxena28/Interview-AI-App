@@ -19,7 +19,27 @@ Requirements:
   - tech_l2: Direct, probing, system design and architecture, difficulty 3-5
   - managerial: Authoritative, STAR method, leadership scenarios, difficulty 3-5
   - hr: Warm, conversational, culture fit, CTC, notice period, difficulty 1-3
-- Tag each question with: difficulty (1-5), topic_tag (e.g. "system_design", "leadership", "dsa", "fundamentals"), expected_keywords (array of terms a good answer would include)
+
+TOPIC TAG RULES — you MUST use ONLY the tags from the list for the given round type. Do not invent new tags.
+
+tech_l1 allowed tags:
+  fundamentals | data_structures | algorithms | databases | networking
+  code_quality | debugging | language_concepts | problem_solving | system_basics
+
+tech_l2 allowed tags:
+  system_design | architecture | scalability | distributed_systems | performance
+  databases | security | trade_offs | data_modeling | technical_depth
+
+managerial allowed tags:
+  leadership | team_management | conflict_resolution | stakeholder_management | decision_making
+  project_delivery | mentoring | strategy | ownership | cross_functional
+
+hr allowed tags:
+  motivation | culture_fit | career_goals | salary_negotiation | notice_period
+  work_style | company_research | role_clarity | strengths_weaknesses | behavioral
+
+full_loop: use tags from all four lists above as appropriate for each question's nature.
+
 - Return ONLY a valid JSON array — no preamble, no markdown, no explanation
 
 Return format:
@@ -31,6 +51,30 @@ Return format:
     "expected_keywords": ["keyword1", "keyword2"]
   }
 ]`
+
+// Valid tag sets per round — used server-side to normalise any tag the model invents.
+const VALID_TAGS: Record<string, string[]> = {
+  tech_l1: ['fundamentals', 'data_structures', 'algorithms', 'databases', 'networking', 'code_quality', 'debugging', 'language_concepts', 'problem_solving', 'system_basics'],
+  tech_l2: ['system_design', 'architecture', 'scalability', 'distributed_systems', 'performance', 'databases', 'security', 'trade_offs', 'data_modeling', 'technical_depth'],
+  managerial: ['leadership', 'team_management', 'conflict_resolution', 'stakeholder_management', 'decision_making', 'project_delivery', 'mentoring', 'strategy', 'ownership', 'cross_functional'],
+  hr: ['motivation', 'culture_fit', 'career_goals', 'salary_negotiation', 'notice_period', 'work_style', 'company_research', 'role_clarity', 'strengths_weaknesses', 'behavioral'],
+}
+VALID_TAGS.full_loop = [
+  ...VALID_TAGS.tech_l1,
+  ...VALID_TAGS.tech_l2,
+  ...VALID_TAGS.managerial,
+  ...VALID_TAGS.hr,
+]
+
+function normalizeTag(raw: string, roundType: string): string {
+  const allowed = VALID_TAGS[roundType] ?? VALID_TAGS.tech_l1
+  const cleaned = raw.toLowerCase().replace(/[\s-]+/g, '_').replace(/[^a-z_]/g, '')
+  if (allowed.includes(cleaned)) return cleaned
+  // Best-effort partial match: pick the first allowed tag that shares a word root
+  const partial = allowed.find((t) => t.includes(cleaned) || cleaned.includes(t))
+  if (partial) return partial
+  return allowed[0]
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -155,7 +199,7 @@ Generate 15 interview questions for this ${round_type} round at ${company}.${res
       text: q.text,
       round_type,
       difficulty: Math.min(5, Math.max(1, q.difficulty ?? 2)),
-      topic_tag: q.topic_tag ?? 'general',
+      topic_tag: normalizeTag(q.topic_tag ?? '', round_type),
       order_index: index,
       asked: false,
     }))
