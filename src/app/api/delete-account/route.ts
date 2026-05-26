@@ -21,9 +21,8 @@ export async function POST() {
     //
     // ── What is retained (not PII, or legally required) ──────────────────────
     // - auth.users row              → prevents re-granting free signup credit on re-login
-    // - public.users row            → anonymised; credit_balance + plan preserved so
-    //                                 the user keeps what they paid for when they return
-    // - subscriptions               → retained so active/paid plans survive deletion
+    // - public.users row            → anonymised; credit_balance preserved so the user
+    //                                 keeps purchased credits when they return
     // - credit_transactions         → 7-year retention required by Income Tax Act 1961
 
     await Promise.all([

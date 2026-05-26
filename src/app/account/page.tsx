@@ -1,28 +1,21 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Mic, CreditCard, Calendar, CheckCircle, AlertCircle, ArrowLeft, Loader2, Trash2 } from 'lucide-react'
+import { Mic, CreditCard, CheckCircle, ArrowLeft, Loader2, Trash2 } from 'lucide-react'
 
 interface AccountData {
   user: { email: string; name: string; plan: string; credit_balance: number; referral_code: string }
-  subscription: { plan: string; status: string; current_period_end: string; credits_per_cycle: number } | null
 }
 
 const planLabels: Record<string, string> = {
   free: 'Free',
   payg: 'Pay-as-you-go',
-  pro: 'Pro',
-  unlimited: 'Unlimited',
 }
 
 export default function AccountPage() {
-  const router = useRouter()
   const [data, setData] = useState<AccountData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [cancelling, setCancelling] = useState(false)
-  const [cancelled, setCancelled] = useState(false)
   const [error, setError] = useState('')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
@@ -56,19 +49,6 @@ export default function AccountPage() {
     }
   }
 
-  async function handleCancel() {
-    if (!confirm('Cancel your subscription? You\'ll keep access until the end of your current billing cycle.')) return
-    setCancelling(true)
-    const res = await fetch('/api/cancel-subscription', { method: 'POST' })
-    if (res.ok) {
-      setCancelled(true)
-      setData((prev) => prev ? { ...prev, user: { ...prev.user, plan: 'payg' }, subscription: prev.subscription ? { ...prev.subscription, status: 'cancelled' } : null } : prev)
-    } else {
-      setError('Failed to cancel. Please try again or contact support.')
-    }
-    setCancelling(false)
-  }
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -85,8 +65,7 @@ export default function AccountPage() {
     )
   }
 
-  const { user, subscription } = data
-  const isPaid = subscription && subscription.status === 'active'
+  const { user } = data
   const appUrl = typeof window !== 'undefined' ? window.location.origin : 'https://interviewai.in'
   const referralLink = `${appUrl}/?ref=${user.referral_code}`
 
@@ -109,89 +88,29 @@ export default function AccountPage() {
       <main className="max-w-3xl mx-auto px-6 py-10 space-y-6">
         <h1 className="text-2xl font-bold text-gray-900">Account & Billing</h1>
 
-        {/* Current plan */}
+        {/* Credits & plan */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <CreditCard className="w-4 h-4 text-blue-600" /> Current Plan
+            <CreditCard className="w-4 h-4 text-blue-600" /> Credits
           </h2>
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-6">
             <div>
               <div className="text-xl font-bold text-gray-900">{planLabels[user.plan] ?? user.plan}</div>
-              {subscription && (
-                <div className="text-sm text-gray-500 mt-0.5">
-                  {subscription.status === 'active' ? (
-                    <span className="text-green-600 font-medium">Active</span>
-                  ) : (
-                    <span className="text-amber-600 font-medium">Cancelled</span>
-                  )}
-                  {subscription.status === 'active' && user.plan !== 'unlimited' && (
-                    <span> · {subscription.credits_per_cycle} sessions/month</span>
-                  )}
-                  {subscription.status === 'active' && user.plan === 'unlimited' && (
-                    <span> · Unlimited sessions</span>
-                  )}
-                </div>
-              )}
-              {!subscription && (
-                <div className="text-sm text-gray-500">
-                  {user.plan === 'free' ? '1 session included' : user.plan === 'unlimited' ? 'Unlimited sessions' : 'Pay per session'}
-                </div>
-              )}
+              <div className="text-sm text-gray-500 mt-0.5">
+                {user.plan === 'free' ? '1 free session included with signup' : 'Credits never expire'}
+              </div>
             </div>
             <div className="text-right">
-              {user.plan === 'unlimited' ? (
-                <>
-                  <div className="text-2xl font-bold text-blue-600">∞</div>
-                  <div className="text-xs text-gray-400">unlimited</div>
-                </>
-              ) : (
-                <>
-                  <div className="text-2xl font-bold text-blue-600">{user.credit_balance}</div>
-                  <div className="text-xs text-gray-400">credits left</div>
-                </>
-              )}
+              <div className="text-3xl font-bold text-blue-600">{user.credit_balance}</div>
+              <div className="text-xs text-gray-400">credits left</div>
             </div>
           </div>
-
-          {subscription?.status === 'active' && (
-            <div className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 rounded-lg px-4 py-3 mb-4">
-              <Calendar className="w-4 h-4 text-gray-400 flex-shrink-0" />
-              Next billing date:{' '}
-              <span className="font-medium text-gray-900">
-                {new Date(subscription.current_period_end).toLocaleDateString('en-IN', {
-                  day: 'numeric', month: 'long', year: 'numeric',
-                })}
-              </span>
-            </div>
-          )}
-
-          {cancelled && (
-            <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 mb-4">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              Subscription cancelled. You retain access until the end of your billing cycle.
-            </div>
-          )}
-
-          {error && <p className="text-sm text-red-500 mb-4">{error}</p>}
-
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Link
-              href="/pricing"
-              className="flex-1 text-center bg-blue-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors"
-            >
-              {isPaid ? 'Change Plan' : 'Upgrade Plan'}
-            </Link>
-            {isPaid && !cancelled && (
-              <button
-                onClick={handleCancel}
-                disabled={cancelling}
-                className="flex items-center justify-center gap-2 text-sm text-red-600 border border-red-200 py-2.5 px-4 rounded-xl hover:bg-red-50 transition-colors disabled:opacity-50"
-              >
-                {cancelling ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                {cancelling ? 'Cancelling...' : 'Cancel Subscription'}
-              </button>
-            )}
-          </div>
+          <Link
+            href="/pricing"
+            className="block text-center bg-blue-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors"
+          >
+            Buy more sessions
+          </Link>
         </div>
 
         {/* Referral */}
@@ -248,7 +167,7 @@ export default function AccountPage() {
               <h2 className="font-semibold text-gray-900 mb-2">Data deleted successfully</h2>
               <p className="text-sm text-gray-500 mb-6">
                 Your interview history, transcripts, feedback reports, and personal profile
-                have been permanently removed. Your credits and subscription remain intact.
+                have been permanently removed. Your remaining credits are still here if you return.
               </p>
               <Link
                 href="/dashboard"
@@ -268,9 +187,8 @@ export default function AccountPage() {
                 This action <strong>cannot be undone</strong>.
               </p>
               <p className="text-sm text-gray-500 mb-4">
-                <strong>What is kept:</strong> your remaining credit balance, active subscription,
-                and payment records — so if you return, your paid plan and unused credits are still
-                here waiting for you. See our{' '}
+                <strong>What is kept:</strong> your remaining credit balance and payment records —
+                so if you return, your unused credits are still here. See our{' '}
                 <Link href="/privacy" className="text-blue-600 hover:underline">Privacy Policy</Link>{' '}
                 for full details.
               </p>
@@ -295,9 +213,7 @@ export default function AccountPage() {
                     className="w-full border border-red-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 font-mono"
                     autoFocus
                   />
-                  {deleteError && (
-                    <p className="text-sm text-red-500">{deleteError}</p>
-                  )}
+                  {deleteError && <p className="text-sm text-red-500">{deleteError}</p>}
                   <div className="flex gap-3">
                     <button
                       onClick={handleDeleteAccount}
