@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, Suspense } from 'react'
+import { useState, Suspense, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Mic, ArrowRight, ArrowLeft, Loader2 } from 'lucide-react'
+import { Mic, ArrowRight, ArrowLeft, Loader2, Upload, Link, FileText, X } from 'lucide-react'
 import { useAnalytics } from '@/hooks/useAnalytics'
 import type { RoundType } from '@/types'
 
@@ -14,6 +14,14 @@ interface FormData {
   round_type: RoundType
   resume_text: string
 }
+
+type ResumeTab = 'text' | 'file' | 'drive'
+
+const RESUME_TABS: { key: ResumeTab; label: string }[] = [
+  { key: 'text', label: 'Paste text' },
+  { key: 'file', label: 'Upload file' },
+  { key: 'drive', label: 'Google Drive' },
+]
 
 const ROUND_OPTIONS: { value: RoundType; label: string; desc: string }[] = [
   { value: 'tech_l1', label: 'Technical Round 1', desc: 'Fundamentals, coding basics, conceptual questions' },
@@ -30,6 +38,11 @@ function SetupPageInner() {
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [resumeTab, setResumeTab] = useState<ResumeTab>('text')
+  const [resumeParsing, setResumeParsing] = useState(false)
+  const [resumeFileName, setResumeFileName] = useState('')
+  const [driveUrl, setDriveUrl] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Pre-fill round_type from query param (e.g. from "Practice This" on dashboard)
   const prefillRoundType = (searchParams.get('round_type') as RoundType | null) ?? 'tech_l1'
@@ -48,6 +61,56 @@ function SetupPageInner() {
   function updateForm(field: keyof FormData, value: string | number) {
     setForm((prev) => ({ ...prev, [field]: value }))
     setError('')
+  }
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setResumeParsing(true)
+    setResumeFileName(file.name)
+    setError('')
+    try {
+      const body = new FormData()
+      body.append('file', file)
+      const res = await fetch('/api/parse-resume', { method: 'POST', body })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Failed to parse file')
+      updateForm('resume_text', data.text)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to parse resume file.')
+      setResumeFileName('')
+    } finally {
+      setResumeParsing(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  async function handleDriveImport() {
+    if (!driveUrl.trim()) return
+    setResumeParsing(true)
+    setError('')
+    try {
+      const res = await fetch('/api/parse-resume', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: driveUrl.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Failed to import from Google Drive')
+      updateForm('resume_text', data.text)
+      setResumeFileName('Imported from Google Drive')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to import from Google Drive.')
+    } finally {
+      setResumeParsing(false)
+    }
+  }
+
+  function clearResume() {
+    updateForm('resume_text', '')
+    setResumeFileName('')
+    setDriveUrl('')
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   function validateStep1() {
@@ -215,21 +278,122 @@ function SetupPageInner() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Paste your résumé
+                    Your résumé
                     <span className="text-gray-400 font-normal ml-1">(optional — makes questions personal)</span>
                   </label>
-                  <textarea
-                    value={form.resume_text}
-                    onChange={(e) => updateForm('resume_text', e.target.value)}
-                    placeholder="Paste your résumé text here. The AI will ask about your actual projects, skills and experience — just like a real interviewer who has read your CV."
-                    maxLength={6000}
-                    rows={5}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                  />
-                  <p className="text-xs text-gray-400 mt-1">
+
+                  {/* Tab selector */}
+                  <div className="flex gap-1 mb-3 bg-gray-100 rounded-lg p-1">
+                    {RESUME_TABS.map(({ key, label }) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setResumeTab(key)}
+                        className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                          resumeTab === key
+                            ? 'bg-white text-gray-900 shadow-sm'
+                            : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Paste text */}
+                  {resumeTab === 'text' && (
+                    <textarea
+                      value={form.resume_text}
+                      onChange={(e) => updateForm('resume_text', e.target.value)}
+                      placeholder="Paste your résumé text here. The AI will ask about your actual projects, skills, and experience — just like a real interviewer who has read your CV."
+                      maxLength={8000}
+                      rows={5}
+                      className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                    />
+                  )}
+
+                  {/* Upload file */}
+                  {resumeTab === 'file' && (
+                    <div>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".pdf,.doc,.docx"
+                        className="hidden"
+                        onChange={handleFileUpload}
+                      />
+                      {resumeFileName && resumeTab === 'file' ? (
+                        <div className="flex items-center gap-2 border border-green-200 bg-green-50 rounded-xl px-4 py-3">
+                          <FileText className="w-4 h-4 text-green-600 shrink-0" />
+                          <span className="text-sm text-green-800 truncate flex-1">{resumeFileName}</span>
+                          <button type="button" onClick={clearResume} className="text-green-600 hover:text-green-800">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={resumeParsing}
+                          className="w-full border-2 border-dashed border-gray-200 rounded-xl px-4 py-8 text-center hover:border-blue-400 hover:bg-blue-50 transition-colors disabled:opacity-50"
+                        >
+                          {resumeParsing ? (
+                            <div className="flex flex-col items-center gap-2 text-blue-600">
+                              <Loader2 className="w-6 h-6 animate-spin" />
+                              <span className="text-sm font-medium">Parsing résumé…</span>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center gap-2 text-gray-400">
+                              <Upload className="w-6 h-6" />
+                              <span className="text-sm font-medium text-gray-600">Click to upload PDF or Word file</span>
+                              <span className="text-xs">.pdf, .doc, .docx — max 5 MB</span>
+                            </div>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Google Drive */}
+                  {resumeTab === 'drive' && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-gray-500">
+                        Share your résumé in Google Drive or Google Docs as <strong>"Anyone with the link"</strong>, then paste the share URL below.
+                      </p>
+                      <div className="flex gap-2">
+                        <input
+                          type="url"
+                          value={driveUrl}
+                          onChange={(e) => setDriveUrl(e.target.value)}
+                          placeholder="https://drive.google.com/file/d/… or docs.google.com/document/d/…"
+                          className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleDriveImport}
+                          disabled={resumeParsing || !driveUrl.trim()}
+                          className="flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {resumeParsing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link className="w-4 h-4" />}
+                          Import
+                        </button>
+                      </div>
+                      {resumeFileName === 'Imported from Google Drive' && (
+                        <div className="flex items-center gap-2 border border-green-200 bg-green-50 rounded-xl px-4 py-2.5">
+                          <FileText className="w-4 h-4 text-green-600" />
+                          <span className="text-sm text-green-800 flex-1">Imported from Google Drive</span>
+                          <button type="button" onClick={clearResume} className="text-green-600 hover:text-green-800">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <p className="text-xs text-gray-400 mt-1.5">
                     {form.resume_text.length > 0
-                      ? `${form.resume_text.length}/6000 characters — questions will reference your background`
-                      : 'Skip this and we’ll generate questions from the job description alone.'}
+                      ? `${form.resume_text.length} characters extracted — questions will reference your background`
+                      : 'Skip this and questions are generated from the job description alone.'}
                   </p>
                 </div>
               </div>
