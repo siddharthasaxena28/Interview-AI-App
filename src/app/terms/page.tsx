@@ -40,13 +40,10 @@ const SECTIONS = [
           terminated and associated data deleted.
         </p>
         <p className="mt-2">
-          <strong>Geographic availability:</strong> InterviewAI is currently designed and
-          optimised for users in <strong>India</strong>. Payments are processed in Indian Rupees
-          (INR) via Razorpay, which is available to Indian users only. Users outside India are
-          welcome to use the interview practice features, but payment and subscription
-          functionality may not be available in their region. We are actively working to expand
-          our services globally — international payments and localised support will be added in
-          future releases.
+          <strong>Geographic availability:</strong> InterviewAI is currently available
+          exclusively to users in <strong>India</strong>. If you are located outside India,
+          please discontinue use until we announce availability in your region. We are actively
+          working to expand our services globally and will update these Terms accordingly.
         </p>
       </>
     ),

@@ -55,11 +55,10 @@ export default function PrivacyPage() {
               Policy and consent to the processing of your personal data as described herein.
             </p>
             <div className="mt-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800">
-              <strong>Geographic scope:</strong> InterviewAI is currently designed and operated
-              for users in <strong>India</strong>. Payments are processed in INR and the Platform
-              is governed by Indian law (DPDP Act 2023). We are actively working to expand
-              coverage globally — including localised payment options and regional data-protection
-              compliance (e.g. GDPR for EU users) — and will update this policy accordingly.
+              <strong>Geographic scope:</strong> InterviewAI is currently available exclusively
+              to users in <strong>India</strong>. If you are accessing the Platform from outside
+              India, please discontinue use until we announce availability in your region. We are
+              working to expand globally and will update this policy when we do.
             </div>
           </section>
 
