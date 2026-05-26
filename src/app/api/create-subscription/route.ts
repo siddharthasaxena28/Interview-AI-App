@@ -49,11 +49,14 @@ export async function POST(request: NextRequest) {
 
     // Save subscription to DB via the service client (subscriptions is SELECT-only
     // for clients to prevent self-editing plan / credits_per_cycle).
+    // Created as 'pending' — not surfaced as paid access until the Razorpay webhook
+    // (subscription.charged) activates it. Otherwise an abandoned checkout would leave
+    // a phantom "active" subscription the user never paid for.
     const svc = await createServiceClient()
     await svc.from('subscriptions').upsert({
       user_id: user.id,
       plan: config.plan_name,
-      status: 'active',
+      status: 'pending',
       razorpay_sub_id: subscription.id,
       current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       credits_per_cycle: config.credits_per_cycle,

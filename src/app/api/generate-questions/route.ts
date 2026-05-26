@@ -104,10 +104,10 @@ export async function POST(request: NextRequest) {
     // runaway loop from racking up Claude spend (credits are the real abuse guard).
     const { data: gateUser } = await supabase
       .from('users')
-      .select('credit_balance')
+      .select('credit_balance, plan')
       .eq('id', user.id)
       .single()
-    if ((gateUser?.credit_balance ?? 0) <= 0) {
+    if (gateUser?.plan !== 'unlimited' && (gateUser?.credit_balance ?? 0) <= 0) {
       return NextResponse.json({ error: 'No credits available' }, { status: 402 })
     }
 

@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS public.subscriptions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   plan text NOT NULL CHECK (plan IN ('pro', 'unlimited')),
-  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'past_due', 'cancelled')),
+  status text NOT NULL DEFAULT 'active' CHECK (status IN ('pending', 'active', 'past_due', 'cancelled')),
   razorpay_sub_id text NOT NULL,
   current_period_end timestamptz NOT NULL,
   credits_per_cycle integer NOT NULL DEFAULT 8
@@ -191,6 +191,54 @@ CREATE POLICY "weak_areas_own_rows" ON public.weak_areas
 -- referrals: own rows (referrer or referee)
 CREATE POLICY "referrals_own_rows" ON public.referrals
   USING (auth.uid() = referrer_id OR auth.uid() = referee_id);
+
+-- ==========================================
+-- FUNCTION: start_interview_session
+-- Atomically claims a session (setup -> in_progress) and consumes one credit in a
+-- single transaction. Idempotent against double-fired requests; serialises concurrent
+-- starts so the balance can't go negative. Unlimited subscribers don't spend a credit.
+-- ==========================================
+
+CREATE OR REPLACE FUNCTION public.start_interview_session(p_session_id uuid, p_user_id uuid)
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_rows integer;
+  v_plan text;
+BEGIN
+  UPDATE public.interview_sessions
+    SET status = 'in_progress', started_at = now()
+    WHERE id = p_session_id AND user_id = p_user_id AND status = 'setup';
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 0 THEN
+    RETURN 'already_started';
+  END IF;
+
+  SELECT plan INTO v_plan FROM public.users WHERE id = p_user_id;
+  IF v_plan = 'unlimited' THEN
+    RETURN 'started';
+  END IF;
+
+  UPDATE public.users
+    SET credit_balance = credit_balance - 1
+    WHERE id = p_user_id AND credit_balance > 0;
+  IF NOT FOUND THEN
+    UPDATE public.interview_sessions
+      SET status = 'setup', started_at = NULL
+      WHERE id = p_session_id;
+    RETURN 'no_credits';
+  END IF;
+
+  INSERT INTO public.credit_transactions (user_id, amount, type, session_id)
+    VALUES (p_user_id, -1, 'session_use', p_session_id);
+
+  RETURN 'started';
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.start_interview_session(uuid, uuid) TO authenticated, service_role;
 
 -- ==========================================
 -- FUNCTION: handle_new_user
