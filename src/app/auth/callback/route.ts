@@ -64,14 +64,12 @@ export async function GET(request: NextRequest) {
           data.user.user_metadata?.avatar_url ??
           data.user.user_metadata?.picture ??
           null
-        // Replicate the handle_new_user trigger: 8-char uppercase hex referral code
-        const referralCode = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()
-
         await svc.from('users').update({
           email: googleEmail,
           name: googleName,
           avatar_url: googleAvatar,
-          referral_code: referralCode,
+          // referral_code intentionally not touched — retained through deletion so
+          // any links the user shared before deleting their data continue to work
         }).eq('id', data.user.id)
       }
     } catch (err) {
