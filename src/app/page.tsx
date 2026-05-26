@@ -7,11 +7,43 @@ export default async function LandingPage() {
   const { data: { user } } = await supabase.auth.getUser()
   const isLoggedIn = !!user
 
-  // Logged-in visitors are sent to their dashboard, which already adapts to their
-  // credit balance / subscription. Pricing CTAs go to the real /pricing page so
-  // returning users can upgrade without bouncing through the login screen.
-  const primaryHref = isLoggedIn ? '/dashboard' : '/auth/login'
+  let userPlan: string | null = null
+  let creditBalance: number = 0
+
+  if (user) {
+    const { data: userData } = await supabase
+      .from('users')
+      .select('plan, credit_balance')
+      .eq('id', user.id)
+      .single()
+    userPlan = userData?.plan ?? 'free'
+    creditBalance = userData?.credit_balance ?? 0
+  }
+
+  const isUnlimited = userPlan === 'unlimited'
+  const hasCredits = isUnlimited || creditBalance > 0
+
+  // Resolve primary CTA destination and label based on user state.
+  const primaryHref = isLoggedIn
+    ? hasCredits ? '/interview/setup' : '/pricing'
+    : '/auth/login'
+
   const pricingHref = isLoggedIn ? '/pricing' : '/auth/login'
+
+  const heroCta = isLoggedIn
+    ? hasCredits ? 'Start Another Interview' : 'Buy More Sessions'
+    : 'Start Free Interview'
+
+  const heroSubtext = isLoggedIn
+    ? isUnlimited
+      ? 'You\'re on Unlimited — practice as much as you want.'
+      : creditBalance > 0
+        ? `${creditBalance} credit${creditBalance !== 1 ? 's' : ''} remaining on your account.`
+        : 'You\'re out of credits — grab a session or upgrade your plan.'
+    : 'No credit card • 1 free session included'
+
+  const navCta = isLoggedIn ? 'Dashboard' : 'Get Started Free'
+  const navHref = isLoggedIn ? '/dashboard' : '/auth/login'
 
   return (
     <div className="min-h-screen bg-white">
@@ -27,10 +59,10 @@ export default async function LandingPage() {
           <div className="flex items-center gap-4">
             <Link href="/pricing" className="text-sm text-gray-600 hover:text-gray-900">Pricing</Link>
             <Link
-              href={primaryHref}
+              href={navHref}
               className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
             >
-              {isLoggedIn ? 'Dashboard' : 'Get Started Free'}
+              {navCta}
             </Link>
           </div>
         </div>
@@ -56,11 +88,11 @@ export default async function LandingPage() {
               href={primaryHref}
               className="bg-blue-600 text-white text-lg px-8 py-4 rounded-xl hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 font-semibold"
             >
-              {isLoggedIn ? 'Go to Dashboard' : 'Start Free Interview'}
+              {heroCta}
               <ArrowRight className="w-5 h-5" />
             </Link>
             <p className="text-sm text-gray-500 flex items-center justify-center">
-              {isLoggedIn ? 'Welcome back — pick up where you left off' : 'No credit card • 1 free session included'}
+              {heroSubtext}
             </p>
           </div>
         </div>
@@ -243,16 +275,24 @@ export default async function LandingPage() {
       <section className="px-6 py-20 bg-blue-600 text-white text-center">
         <div className="max-w-2xl mx-auto">
           <h2 className="text-3xl font-bold mb-4">
-            {isLoggedIn ? 'Ready for your next round of practice?' : 'Your interview is in 9 hours. Are you ready?'}
+            {isLoggedIn
+              ? hasCredits
+                ? 'Ready for your next round of practice?'
+                : 'Run out of sessions? Keep the momentum going.'
+              : 'Your interview is in 9 hours. Are you ready?'}
           </h2>
           <p className="text-blue-100 mb-8">
-            {isLoggedIn ? 'Jump back in and keep sharpening your edge.' : 'One free session. No credit card. Just practice.'}
+            {isLoggedIn
+              ? hasCredits
+                ? 'Jump back in and keep sharpening your edge.'
+                : 'Grab a credit pack or upgrade to Pro — no gaps in practice.'
+              : 'One free session. No credit card. Just practice.'}
           </p>
           <Link
             href={primaryHref}
             className="inline-flex items-center gap-2 bg-white text-blue-600 font-semibold px-8 py-4 rounded-xl hover:bg-blue-50 transition-colors text-lg"
           >
-            {isLoggedIn ? 'Go to Dashboard' : 'Start your free interview'}
+            {heroCta}
             <ArrowRight className="w-5 h-5" />
           </Link>
         </div>
