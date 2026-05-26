@@ -277,6 +277,7 @@ export default async function FeedbackPage({
               perQuestion={perQuestion}
               questions={questionList}
               answers={answerList}
+              sessionId={sessionId}
             />
           </div>
         )}

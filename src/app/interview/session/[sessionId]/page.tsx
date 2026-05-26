@@ -8,6 +8,7 @@ import { useAnalytics } from '@/hooks/useAnalytics'
 import { formatDuration } from '@/lib/utils'
 import type { Question, RoundType } from '@/types'
 import { PERSONAS } from '@/lib/personas'
+import { saveAnswerAudio, clearOldAudio } from '@/lib/audio-storage'
 
 interface SessionPageProps {
   params: { sessionId: string }
@@ -81,6 +82,10 @@ function SessionPageInner({ params }: SessionPageProps) {
   const audioStateRef = useRef(state)
   // Throttle thinking-time prompts — only one per 30 s so we don't nag the candidate.
   const lastThinkingPromptRef = useRef(0)
+  // Answer audio recording (stored locally in IndexedDB, never uploaded)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const recordedChunksRef = useRef<Blob[]>([])
+  const recordingQuestionIdRef = useRef<string | null>(null)
 
   useEffect(() => { currentQuestionRef.current = currentQuestion }, [currentQuestion])
   useEffect(() => { phaseRef.current = phase }, [phase])
@@ -128,6 +133,8 @@ function SessionPageInner({ params }: SessionPageProps) {
         setSessionData(data)
         setCurrentQuestion(data.questions[0] ?? null)
         setTotalQuestions(data.questions.length)
+        // Evict audio from previous sessions so IndexedDB doesn't grow unboundedly
+        clearOldAudio(sessionId).catch(() => {})
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load session')
       } finally {
@@ -384,6 +391,39 @@ function SessionPageInner({ params }: SessionPageProps) {
     return out
   }
 
+  function startAnswerRecording() {
+    const stream = mediaStreamRef.current
+    const qId = currentQuestionRef.current?.id
+    if (!stream || !qId || phaseRef.current !== 'interview') return
+    // Stop any previous recording cleanly
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop()
+    }
+    recordingQuestionIdRef.current = qId
+    recordedChunksRef.current = []
+    try {
+      const mr = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' })
+      mr.ondataavailable = e => { if (e.data.size > 0) recordedChunksRef.current.push(e.data) }
+      mr.start(500)
+      mediaRecorderRef.current = mr
+    } catch {
+      // MediaRecorder or codec not supported — silently skip recording
+    }
+  }
+
+  function stopAnswerRecording(questionId: string) {
+    const mr = mediaRecorderRef.current
+    if (!mr || mr.state === 'inactive') return
+    mr.onstop = () => {
+      if (recordedChunksRef.current.length === 0) return
+      const blob = new Blob(recordedChunksRef.current, { type: 'audio/webm' })
+      recordedChunksRef.current = []
+      mediaRecorderRef.current = null
+      saveAnswerAudio(sessionId, questionId, blob).catch(() => {})
+    }
+    mr.stop()
+  }
+
   // Immediately silences the AI: stops the <audio> element, cancels browser
   // speech synthesis, and resolves the pending speakText promise so callers
   // awaiting it unblock right away.
@@ -478,6 +518,7 @@ function SessionPageInner({ params }: SessionPageProps) {
     if (startListening) {
       setListening()
       answerStartRef.current = Date.now()
+      startAnswerRecording()
     }
   }
 
@@ -485,6 +526,7 @@ function SessionPageInner({ params }: SessionPageProps) {
     if (!currentQuestion || !sessionData) return
     setProcessing()
     setFinalTranscript('')
+    stopAnswerRecording(currentQuestion.id)
 
     try {
       const res = await fetch('/api/evaluate-answer', {

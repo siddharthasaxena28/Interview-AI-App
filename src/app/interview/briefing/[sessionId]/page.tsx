@@ -2,8 +2,9 @@ import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { PERSONAS, getRoundLabel, getRoundDuration } from '@/lib/personas'
-import { Mic, Clock, ChevronRight, Shield } from 'lucide-react'
+import { Mic, Clock, Shield } from 'lucide-react'
 import type { InterviewSession, Question, RoundType } from '@/types'
+import MicCheckGate from './MicCheckGate'
 
 export default async function BriefingPage({
   params,
@@ -139,13 +140,7 @@ export default async function BriefingPage({
             </p>
           </div>
 
-          <Link
-            href={sessionUrl}
-            className="flex items-center justify-center gap-2 w-full bg-blue-600 text-white py-4 rounded-xl font-semibold text-sm hover:bg-blue-700 transition-colors"
-          >
-            Start Interview
-            <ChevronRight className="w-4 h-4" />
-          </Link>
+          <MicCheckGate sessionUrl={sessionUrl} />
 
           <Link href="/dashboard" className="block text-sm text-gray-400 hover:text-gray-600 mt-4">
             ← Back to dashboard
