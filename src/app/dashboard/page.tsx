@@ -1,14 +1,14 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
-import Image from 'next/image'
-import { Mic, Plus, Clock, TrendingUp, CreditCard, LogOut, Flame, Target, Gift, ArrowRight } from 'lucide-react'
+import { Mic, Plus, Clock, TrendingUp, CreditCard, Flame, Target, Gift, ArrowRight } from 'lucide-react'
 import type { User, InterviewSession, FeedbackReport } from '@/types'
 import type { RoundType } from '@/types'
 import { CopyReferral } from './CopyReferral'
 import InterviewCountdown from './InterviewCountdown'
 import EnableReminders from './EnableReminders'
 import OnboardingModal from './OnboardingModal'
+import UserMenu from './UserMenu'
 
 // Exact lookup — mirrors the controlled vocabulary enforced in generate-questions.
 const TOPIC_ROUND_MAP: Record<string, RoundType> = {
@@ -117,13 +117,6 @@ export default async function DashboardPage() {
     full_loop: 'Full Loop',
   }
 
-  async function handleSignOut() {
-    'use server'
-    const supabase = await createServerSupabaseClient()
-    await supabase.auth.signOut()
-    redirect('/auth/login')
-  }
-
   return (
     <div className="min-h-screen bg-gray-50">
       <OnboardingModal
@@ -141,34 +134,13 @@ export default async function DashboardPage() {
             </div>
             <span className="font-bold text-gray-900">InterviewAI</span>
           </div>
-          <div className="flex items-center gap-4">
-            <Link
-              href="/account"
-              className="flex items-center gap-1.5 bg-blue-50 text-blue-700 text-sm px-3 py-1.5 rounded-lg font-medium hover:bg-blue-100 transition-colors"
-            >
-              <CreditCard className="w-3.5 h-3.5" />
-              {creditBalance} credit{creditBalance !== 1 ? 's' : ''}
-            </Link>
-            <div className="flex items-center gap-2">
-              {authUser.user_metadata?.avatar_url && (
-                <Image
-                  src={authUser.user_metadata.avatar_url}
-                  alt="avatar"
-                  width={32}
-                  height={32}
-                  className="w-8 h-8 rounded-full"
-                />
-              )}
-              <span className="text-sm text-gray-700 hidden sm:block">
-                {authUser.user_metadata?.full_name ?? authUser.email}
-              </span>
-            </div>
-            <form action={handleSignOut}>
-              <button type="submit" className="text-gray-400 hover:text-gray-600">
-                <LogOut className="w-4 h-4" />
-              </button>
-            </form>
-          </div>
+          <UserMenu
+            name={authUser.user_metadata?.full_name ?? ''}
+            email={authUser.email ?? ''}
+            avatarUrl={authUser.user_metadata?.avatar_url}
+            creditBalance={creditBalance}
+            plan={user?.plan ?? 'free'}
+          />
         </div>
       </nav>
 

@@ -21,9 +21,8 @@ export async function POST() {
     //
     // ── What is retained (not PII, or legally required) ──────────────────────
     // - auth.users row              → prevents re-granting free signup credit on re-login
-    // - public.users row            → anonymised (name/email/avatar scrubbed), but
-    //                                 credit_balance and plan are preserved so the user
-    //                                 keeps what they paid for when they return
+    // - public.users row            → anonymised; credit_balance + plan preserved so
+    //                                 the user keeps what they paid for when they return
     // - subscriptions               → retained so active/paid plans survive deletion
     // - credit_transactions         → 7-year retention required by Income Tax Act 1961
 
@@ -37,19 +36,22 @@ export async function POST() {
     // interview_sessions cascades to questions, answers, and feedback_reports
     await serviceClient.from('interview_sessions').delete().eq('user_id', userId)
 
-    // Anonymise the public.users row — strip all PII fields but intentionally
-    // preserve credit_balance, plan so paid users return to their rightful credits.
+    // Anonymise the public.users row — strip all PII.
+    // email, name, and referral_code are NOT NULL in the schema so we use
+    // placeholder values rather than null. The deleted_ prefix + userId ensures
+    // uniqueness constraints are still satisfied.
     const { error: scrubError } = await serviceClient
       .from('users')
       .update({
-        name: null,
-        email: null,
+        name: '',
+        email: `deleted_${userId}@deleted.invalid`,
         avatar_url: null,
-        referral_code: null,
+        referral_code: '',
         current_streak: 0,
         longest_streak: 0,
         last_session_date: null,
-        // credit_balance and plan are intentionally NOT touched
+        // credit_balance and plan are intentionally NOT touched —
+        // user keeps what they paid for and can return to use remaining credits
       })
       .eq('id', userId)
 
