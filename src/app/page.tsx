@@ -7,43 +7,9 @@ export default async function LandingPage() {
   const { data: { user } } = await supabase.auth.getUser()
   const isLoggedIn = !!user
 
-  let userPlan: string | null = null
-  let creditBalance: number = 0
-
-  if (user) {
-    const { data: userData } = await supabase
-      .from('users')
-      .select('plan, credit_balance')
-      .eq('id', user.id)
-      .single()
-    userPlan = userData?.plan ?? 'free'
-    creditBalance = userData?.credit_balance ?? 0
-  }
-
-  const isUnlimited = userPlan === 'unlimited'
-  const hasCredits = isUnlimited || creditBalance > 0
-
-  // Resolve primary CTA destination and label based on user state.
-  const primaryHref = isLoggedIn
-    ? hasCredits ? '/interview/setup' : '/pricing'
-    : '/auth/login'
-
+  const dashboardHref = '/dashboard'
+  const signupHref = '/auth/login'
   const pricingHref = isLoggedIn ? '/pricing' : '/auth/login'
-
-  const heroCta = isLoggedIn
-    ? hasCredits ? 'Start Another Interview' : 'Buy More Sessions'
-    : 'Start Free Interview'
-
-  const heroSubtext = isLoggedIn
-    ? isUnlimited
-      ? 'You\'re on Unlimited — practice as much as you want.'
-      : creditBalance > 0
-        ? `${creditBalance} credit${creditBalance !== 1 ? 's' : ''} remaining on your account.`
-        : 'You\'re out of credits — grab a session or upgrade your plan.'
-    : 'No credit card • 1 free session included'
-
-  const navCta = isLoggedIn ? 'Dashboard' : 'Get Started Free'
-  const navHref = isLoggedIn ? '/dashboard' : '/auth/login'
 
   return (
     <div className="min-h-screen bg-white">
@@ -58,15 +24,34 @@ export default async function LandingPage() {
           </div>
           <div className="flex items-center gap-4">
             <Link href="/pricing" className="text-sm text-gray-600 hover:text-gray-900">Pricing</Link>
-            <Link
-              href={navHref}
-              className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              {navCta}
-            </Link>
+            {isLoggedIn ? (
+              <Link
+                href={dashboardHref}
+                className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Go to Dashboard
+              </Link>
+            ) : (
+              <Link
+                href={signupHref}
+                className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Get Started Free
+              </Link>
+            )}
           </div>
         </div>
       </nav>
+
+      {/* Returning-user banner — only shown when logged in */}
+      {isLoggedIn && (
+        <div className="bg-blue-50 border-b border-blue-100 px-6 py-3 text-center text-sm text-blue-700">
+          Welcome back!{' '}
+          <Link href={dashboardHref} className="font-semibold underline underline-offset-2 hover:text-blue-900">
+            Go to your dashboard →
+          </Link>
+        </div>
+      )}
 
       {/* Hero */}
       <section className="px-6 py-20 text-center">
@@ -83,17 +68,25 @@ export default async function LandingPage() {
             Simulate a real telephonic interview with AI. Get JD-specific questions,
             real-time adaptive difficulty, and a detailed feedback report — available 24/7.
           </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link
-              href={primaryHref}
-              className="bg-blue-600 text-white text-lg px-8 py-4 rounded-xl hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 font-semibold"
-            >
-              {heroCta}
-              <ArrowRight className="w-5 h-5" />
-            </Link>
-            <p className="text-sm text-gray-500 flex items-center justify-center">
-              {heroSubtext}
-            </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+            {isLoggedIn ? (
+              <Link
+                href={dashboardHref}
+                className="bg-blue-600 text-white text-lg px-8 py-4 rounded-xl hover:bg-blue-700 transition-colors flex items-center gap-2 font-semibold"
+              >
+                Go to Dashboard <ArrowRight className="w-5 h-5" />
+              </Link>
+            ) : (
+              <>
+                <Link
+                  href={signupHref}
+                  className="bg-blue-600 text-white text-lg px-8 py-4 rounded-xl hover:bg-blue-700 transition-colors flex items-center gap-2 font-semibold"
+                >
+                  Start Free Interview <ArrowRight className="w-5 h-5" />
+                </Link>
+                <p className="text-sm text-gray-500">No credit card • 1 free session included</p>
+              </>
+            )}
           </div>
         </div>
       </section>
@@ -271,28 +264,18 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      {/* CTA */}
+      {/* Bottom CTA */}
       <section className="px-6 py-20 bg-blue-600 text-white text-center">
         <div className="max-w-2xl mx-auto">
           <h2 className="text-3xl font-bold mb-4">
-            {isLoggedIn
-              ? hasCredits
-                ? 'Ready for your next round of practice?'
-                : 'Run out of sessions? Keep the momentum going.'
-              : 'Your interview is in 9 hours. Are you ready?'}
+            Your interview is in 9 hours. Are you ready?
           </h2>
-          <p className="text-blue-100 mb-8">
-            {isLoggedIn
-              ? hasCredits
-                ? 'Jump back in and keep sharpening your edge.'
-                : 'Grab a credit pack or upgrade to Pro — no gaps in practice.'
-              : 'One free session. No credit card. Just practice.'}
-          </p>
+          <p className="text-blue-100 mb-8">One free session. No credit card. Just practice.</p>
           <Link
-            href={primaryHref}
+            href={isLoggedIn ? dashboardHref : signupHref}
             className="inline-flex items-center gap-2 bg-white text-blue-600 font-semibold px-8 py-4 rounded-xl hover:bg-blue-50 transition-colors text-lg"
           >
-            {heroCta}
+            {isLoggedIn ? 'Go to Dashboard' : 'Start your free interview'}
             <ArrowRight className="w-5 h-5" />
           </Link>
         </div>
