@@ -1,7 +1,18 @@
 import Link from 'next/link'
 import { Mic, Brain, BarChart3, CheckCircle, Star, ArrowRight, Zap, Users, Award } from 'lucide-react'
+import { createServerSupabaseClient } from '@/lib/supabase-server'
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const supabase = await createServerSupabaseClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const isLoggedIn = !!user
+
+  // Logged-in visitors are sent to their dashboard, which already adapts to their
+  // credit balance / subscription. Pricing CTAs go to the real /pricing page so
+  // returning users can upgrade without bouncing through the login screen.
+  const primaryHref = isLoggedIn ? '/dashboard' : '/auth/login'
+  const pricingHref = isLoggedIn ? '/pricing' : '/auth/login'
+
   return (
     <div className="min-h-screen bg-white">
       {/* Nav */}
@@ -16,10 +27,10 @@ export default function LandingPage() {
           <div className="flex items-center gap-4">
             <Link href="/pricing" className="text-sm text-gray-600 hover:text-gray-900">Pricing</Link>
             <Link
-              href="/auth/login"
+              href={primaryHref}
               className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
             >
-              Get Started Free
+              {isLoggedIn ? 'Dashboard' : 'Get Started Free'}
             </Link>
           </div>
         </div>
@@ -42,14 +53,14 @@ export default function LandingPage() {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
-              href="/auth/login"
+              href={primaryHref}
               className="bg-blue-600 text-white text-lg px-8 py-4 rounded-xl hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 font-semibold"
             >
-              Start Free Interview
+              {isLoggedIn ? 'Go to Dashboard' : 'Start Free Interview'}
               <ArrowRight className="w-5 h-5" />
             </Link>
             <p className="text-sm text-gray-500 flex items-center justify-center">
-              No credit card • 1 free session included
+              {isLoggedIn ? 'Welcome back — pick up where you left off' : 'No credit card • 1 free session included'}
             </p>
           </div>
         </div>
@@ -213,7 +224,7 @@ export default function LandingPage() {
                   ))}
                 </ul>
                 <Link
-                  href="/auth/login"
+                  href={pricingHref}
                   className={`block text-center py-2.5 rounded-xl text-sm font-semibold transition-colors ${
                     highlighted
                       ? 'bg-white text-blue-600 hover:bg-blue-50'
@@ -231,15 +242,17 @@ export default function LandingPage() {
       {/* CTA */}
       <section className="px-6 py-20 bg-blue-600 text-white text-center">
         <div className="max-w-2xl mx-auto">
-          <h2 className="text-3xl font-bold mb-4">Your interview is in 9 hours. Are you ready?</h2>
+          <h2 className="text-3xl font-bold mb-4">
+            {isLoggedIn ? 'Ready for your next round of practice?' : 'Your interview is in 9 hours. Are you ready?'}
+          </h2>
           <p className="text-blue-100 mb-8">
-            One free session. No credit card. Just practice.
+            {isLoggedIn ? 'Jump back in and keep sharpening your edge.' : 'One free session. No credit card. Just practice.'}
           </p>
           <Link
-            href="/auth/login"
+            href={primaryHref}
             className="inline-flex items-center gap-2 bg-white text-blue-600 font-semibold px-8 py-4 rounded-xl hover:bg-blue-50 transition-colors text-lg"
           >
-            Start your free interview
+            {isLoggedIn ? 'Go to Dashboard' : 'Start your free interview'}
             <ArrowRight className="w-5 h-5" />
           </Link>
         </div>
