@@ -31,7 +31,9 @@ export default function FeedbackPerQuestion({ perQuestion, questions, answers }:
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [copied, setCopied] = useState<string | null>(null)
 
-  const qMap = new Map(questions.map(q => [q.id, q]))
+  // Answers are keyed by the real question UUID from the DB.
+  // Questions are looked up by position (index) rather than by pq.question_id because
+  // older reports may have fabricated IDs from Claude that don't match the DB.
   const aMap = new Map(answers.map(a => [a.question_id, a]))
 
   const allOpen = expanded.size === perQuestion.length && perQuestion.length > 0
@@ -70,8 +72,10 @@ export default function FeedbackPerQuestion({ perQuestion, questions, answers }:
 
       <div className="space-y-2">
         {perQuestion.map((pq, i) => {
-          const q = qMap.get(pq.question_id)
-          const a = aMap.get(pq.question_id)
+          // Use index to find the question — reliable even when pq.question_id is wrong.
+          // Use the real question ID (from questions[i]) to find the answer.
+          const q = questions[i]
+          const a = aMap.get(q?.id ?? pq.question_id)
           const open = expanded.has(i)
 
           return (

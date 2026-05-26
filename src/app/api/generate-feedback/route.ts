@@ -117,10 +117,12 @@ export async function POST(request: NextRequest) {
         summary: 'This interview session ended before any questions were answered. No scored feedback can be generated. Start a new session and try to answer at least a few questions to receive a detailed report.',
       }
     } else {
-      // Build transcript for Claude
+      // Build transcript for Claude — include the real question UUID on each entry
+      // so Claude can echo it back in per_question_json. Without the ID in the prompt,
+      // Claude invents UUIDs that never match the DB, breaking the per-question display.
       const transcript = (questions as Question[]).map((q, i) => {
         const answer = answerMap.get(q.id)
-        return `Q${i + 1} [${q.topic_tag}, difficulty ${q.difficulty}/5]:
+        return `Q${i + 1} [question_id:${q.id}, topic:${q.topic_tag}, difficulty:${q.difficulty}/5]:
 "${q.text}"
 
 Candidate's answer:
@@ -167,6 +169,15 @@ Generate a comprehensive feedback report for this candidate.`
       } catch {
         throw new Error('Failed to parse feedback from AI')
       }
+
+      // Re-assign question_id by position — safety net in case Claude echoed the IDs
+      // incorrectly. The transcript is ordered, Claude returns per_question in the same
+      // order, so index 0 in per_question always corresponds to questions[0].
+      const orderedQuestions = questions as Question[]
+      feedback.per_question = feedback.per_question.map((pq, i) => ({
+        ...pq,
+        question_id: orderedQuestions[i]?.id ?? pq.question_id,
+      }))
     }
 
     const shareToken = generateShareToken()
