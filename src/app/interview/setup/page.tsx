@@ -28,7 +28,6 @@ const ROUND_OPTIONS: { value: RoundType; label: string; desc: string }[] = [
   { value: 'tech_l2', label: 'Technical Round 2', desc: 'System design, architecture, deep technical' },
   { value: 'managerial', label: 'Managerial Round', desc: 'Leadership, STAR method, strategic thinking' },
   { value: 'hr', label: 'HR Round', desc: 'Culture fit, CTC, notice period, motivation' },
-  { value: 'full_loop', label: 'Full Interview Loop', desc: 'All rounds back-to-back (60 minutes)' },
 ]
 
 function SetupPageInner() {
@@ -44,10 +43,11 @@ function SetupPageInner() {
   const [driveUrl, setDriveUrl] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Pre-fill round_type from query param (e.g. from "Practice This" on dashboard)
-  const prefillRoundType = (searchParams.get('round_type') as RoundType | null) ?? 'tech_l1'
+  // Pre-fill round_type from query param (e.g. from "Practice This" on dashboard).
+  // Default to full_loop so first-time users get comprehensive coverage for their 1 credit.
+  const prefillRoundType = (searchParams.get('round_type') as RoundType | null) ?? 'full_loop'
   const validRoundTypes: RoundType[] = ['tech_l1', 'tech_l2', 'managerial', 'hr', 'full_loop']
-  const initialRoundType = validRoundTypes.includes(prefillRoundType) ? prefillRoundType : 'tech_l1'
+  const initialRoundType = validRoundTypes.includes(prefillRoundType) ? prefillRoundType : 'full_loop'
 
   const [form, setForm] = useState<FormData>({
     jd_text: '',
@@ -404,38 +404,89 @@ function SetupPageInner() {
           {step === 3 && (
             <div>
               <h2 className="text-xl font-bold text-gray-900 mb-1">Choose Your Interview Round</h2>
-              <p className="text-sm text-gray-500 mb-6">
-                Each round has a different AI interviewer with a distinct style.
+              <p className="text-sm text-gray-500 mb-5">
+                All options cost <strong>1 credit</strong>. Pick based on what you need today.
               </p>
-              <div className="space-y-3">
-                {ROUND_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    onClick={() => updateForm('round_type', option.value)}
-                    className={`w-full text-left border rounded-xl px-4 py-4 transition-colors ${
-                      form.round_type === option.value
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+
+              {/* ── Full Interview Loop (primary, recommended) ─────────── */}
+              <button
+                onClick={() => updateForm('round_type', 'full_loop')}
+                className={`w-full text-left rounded-xl px-5 py-4 mb-5 transition-colors border-2 ${
+                  form.round_type === 'full_loop'
+                    ? 'border-blue-500 bg-blue-50'
+                    : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/40'
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div
+                    className={`mt-0.5 w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${
+                      form.round_type === 'full_loop' ? 'border-blue-600' : 'border-gray-300'
                     }`}
                   >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                          form.round_type === option.value ? 'border-blue-600' : 'border-gray-300'
-                        }`}
-                      >
-                        {form.round_type === option.value && (
-                          <div className="w-2 h-2 bg-blue-600 rounded-full" />
-                        )}
-                      </div>
-                      <div>
-                        <div className="font-medium text-gray-900 text-sm">{option.label}</div>
-                        <div className="text-xs text-gray-500 mt-0.5">{option.desc}</div>
-                      </div>
+                    {form.round_type === 'full_loop' && (
+                      <div className="w-2 h-2 bg-blue-600 rounded-full" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-gray-900">Full Interview</span>
+                      <span className="text-xs font-semibold bg-blue-600 text-white px-2 py-0.5 rounded-full">
+                        Recommended
+                      </span>
+                      <span className="text-xs text-gray-400 ml-auto">~60 min · 1 credit</span>
                     </div>
-                  </button>
-                ))}
+                    <p className="text-sm text-gray-600 mt-1 leading-relaxed">
+                      Covers all 4 round types in one session — Technical L1, Technical L2, Managerial &amp; HR.
+                      Best value if you&rsquo;re unsure which rounds are coming or want comprehensive prep.
+                    </p>
+                    <div className="flex flex-wrap gap-1.5 mt-2.5">
+                      {['Tech L1', 'Tech L2', 'Managerial', 'HR'].map(tag => (
+                        <span key={tag} className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{tag}</span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </button>
+
+              {/* ── Individual rounds (targeted practice) ────────────── */}
+              <div className="mb-1">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2.5">
+                  Targeted round practice &mdash; use when you know your weak area
+                </p>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {ROUND_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      onClick={() => updateForm('round_type', option.value)}
+                      className={`text-left rounded-xl px-4 py-3.5 transition-colors border ${
+                        form.round_type === option.value
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <div
+                          className={`mt-0.5 w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${
+                            form.round_type === option.value ? 'border-blue-600' : 'border-gray-300'
+                          }`}
+                        >
+                          {form.round_type === option.value && (
+                            <div className="w-2 h-2 bg-blue-600 rounded-full" />
+                          )}
+                        </div>
+                        <div>
+                          <div className="font-medium text-gray-900 text-sm leading-snug">{option.label}</div>
+                          <div className="text-xs text-gray-500 mt-0.5 leading-snug">{option.desc}</div>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              <p className="text-xs text-gray-400 mt-3 text-center">
+                ~30 min for individual rounds &nbsp;·&nbsp; Each option costs 1 credit
+              </p>
             </div>
           )}
 
