@@ -124,20 +124,32 @@ export default function AccountPage() {
                   ) : (
                     <span className="text-amber-600 font-medium">Cancelled</span>
                   )}
-                  {subscription.status === 'active' && (
+                  {subscription.status === 'active' && user.plan !== 'unlimited' && (
                     <span> · {subscription.credits_per_cycle} sessions/month</span>
+                  )}
+                  {subscription.status === 'active' && user.plan === 'unlimited' && (
+                    <span> · Unlimited sessions</span>
                   )}
                 </div>
               )}
               {!subscription && (
                 <div className="text-sm text-gray-500">
-                  {user.plan === 'free' ? '1 session included' : 'Pay per session'}
+                  {user.plan === 'free' ? '1 session included' : user.plan === 'unlimited' ? 'Unlimited sessions' : 'Pay per session'}
                 </div>
               )}
             </div>
             <div className="text-right">
-              <div className="text-2xl font-bold text-blue-600">{user.credit_balance}</div>
-              <div className="text-xs text-gray-400">credits left</div>
+              {user.plan === 'unlimited' ? (
+                <>
+                  <div className="text-2xl font-bold text-blue-600">∞</div>
+                  <div className="text-xs text-gray-400">unlimited</div>
+                </>
+              ) : (
+                <>
+                  <div className="text-2xl font-bold text-blue-600">{user.credit_balance}</div>
+                  <div className="text-xs text-gray-400">credits left</div>
+                </>
+              )}
             </div>
           </div>
 

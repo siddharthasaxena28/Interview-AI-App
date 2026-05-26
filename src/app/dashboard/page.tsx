@@ -79,6 +79,7 @@ export default async function DashboardPage() {
   )
 
   const user = userData as User | null
+  const isUnlimited = user?.plan === 'unlimited'
   const creditBalance = user?.credit_balance ?? 0
   const currentStreak = user?.current_streak ?? 0
   const longestStreak = user?.longest_streak ?? 0
@@ -158,7 +159,7 @@ export default async function DashboardPage() {
               <EnableReminders />
             </div>
           </div>
-          {creditBalance > 0 ? (
+          {isUnlimited || creditBalance > 0 ? (
             <Link
               href="/interview/setup"
               className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl font-semibold hover:bg-blue-700 transition-colors text-sm"
@@ -218,9 +219,11 @@ export default async function DashboardPage() {
             </div>
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="text-2xl font-bold text-blue-600">{creditBalance}</div>
+            <div className="text-2xl font-bold text-blue-600">
+              {isUnlimited ? '∞' : creditBalance}
+            </div>
             <div className="text-sm text-gray-500 flex items-center gap-1 mt-0.5">
-              <CreditCard className="w-3.5 h-3.5" /> Credits left
+              <CreditCard className="w-3.5 h-3.5" /> {isUnlimited ? 'Unlimited' : 'Credits left'}
             </div>
           </div>
         </div>
@@ -337,7 +340,7 @@ export default async function DashboardPage() {
               <Mic className="w-10 h-10 text-gray-300 mx-auto mb-3" />
               <p className="text-gray-500 font-medium">No interviews yet</p>
               <p className="text-sm text-gray-400 mt-1">Your completed sessions will appear here.</p>
-              {creditBalance > 0 && (
+              {(isUnlimited || creditBalance > 0) && (
                 <Link
                   href="/interview/setup"
                   className="inline-flex items-center gap-2 mt-4 text-sm text-blue-600 font-medium hover:underline"
