@@ -7,6 +7,7 @@ import { CheckCircle, AlertCircle, ChevronDown, Share2, RotateCcw, Mic } from 'l
 import type { FeedbackReport, InterviewSession, StrengthItem, GapItem, PerQuestionFeedback, RoundType } from '@/types'
 import FeedbackClient from './FeedbackClient'
 import ScoreCard from './ScoreCard'
+import AppFeedbackWidget from './AppFeedbackWidget'
 
 export default async function FeedbackPage({
   params,
@@ -241,6 +242,9 @@ export default async function FeedbackPage({
           appUrl={appUrl}
           shareUrl={shareUrl}
         />
+
+        {/* App experience feedback */}
+        <AppFeedbackWidget sessionId={sessionId} />
       </main>
     </div>
   )
