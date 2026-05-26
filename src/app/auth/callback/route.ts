@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { Resend } from 'resend'
+import { createServiceClient } from '@/lib/supabase-server'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
@@ -38,6 +39,45 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase.auth.exchangeCodeForSession(code)
   if (error) {
     return NextResponse.redirect(`${origin}/auth/login?error=auth_failed`)
+  }
+
+  // Re-hydrate profile if this user previously deleted their data.
+  // handle_new_user() only fires on auth.users INSERT (first signup ever). Returning
+  // deleted users keep their auth.users row to prevent free-credit abuse, so the
+  // trigger never re-fires — we must restore their PII from Google OAuth here.
+  if (data.user) {
+    try {
+      const svc = await createServiceClient()
+      const { data: profile } = await svc
+        .from('users')
+        .select('email')
+        .eq('id', data.user.id)
+        .single()
+
+      if (profile?.email?.endsWith('@deleted.invalid')) {
+        const googleEmail = data.user.email ?? ''
+        const googleName =
+          data.user.user_metadata?.full_name ??
+          data.user.user_metadata?.name ??
+          googleEmail.split('@')[0]
+        const googleAvatar =
+          data.user.user_metadata?.avatar_url ??
+          data.user.user_metadata?.picture ??
+          null
+        // Replicate the handle_new_user trigger: 8-char uppercase hex referral code
+        const referralCode = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()
+
+        await svc.from('users').update({
+          email: googleEmail,
+          name: googleName,
+          avatar_url: googleAvatar,
+          referral_code: referralCode,
+        }).eq('id', data.user.id)
+      }
+    } catch (err) {
+      console.error('Profile re-hydration error:', err)
+      // non-fatal — user can still log in, profile just won't be repopulated
+    }
   }
 
   // Send welcome email once on signup. created_at is set at first OAuth login and
