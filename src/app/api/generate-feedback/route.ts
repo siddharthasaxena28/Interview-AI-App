@@ -20,20 +20,29 @@ Return ONLY a valid JSON object with this exact structure:
   "overall_score": <0-100>,
   "selection_probability": <0-100>,
   "strengths": [
-    {"title": "strength name", "example": "quote from their answer", "advice": "how to leverage this"}
+    {"title": "strength name", "example": "quote from their answer", "advice": "how to leverage this in future interviews"}
   ],
   "gaps": [
-    {"title": "gap name", "example": "specific instance from answers", "advice": "how to improve"}
+    {"title": "gap name", "example": "specific instance from answers", "advice": "concrete 1-2 sentence improvement action"}
   ],
   "per_question": [
-    {"question_id": "uuid", "score": <1-5>, "feedback": "specific feedback on this answer"}
+    {
+      "question_id": "uuid",
+      "score": <1-5>,
+      "feedback": "specific feedback referencing what they actually said",
+      "ideal_answer_hint": "For scores 1-3 only: 2-3 bullet points (use • character) covering what a strong answer must include. Omit this field entirely for scores 4-5."
+    }
   ],
   "communication": {
-    "score": <0-100>,
-    "clarity": "assessment of clarity",
-    "pacing": "assessment of pacing",
-    "confidence": "assessment of confidence",
-    "filler_words": "assessment of filler words"
+    "score": <0-100, overall communication score>,
+    "clarity": <0-100, how clearly ideas were expressed>,
+    "clarity_note": "one concise sentence assessment",
+    "pacing": <0-100, appropriate speed and rhythm — 100=perfect pacing>,
+    "pacing_note": "one concise sentence assessment",
+    "confidence": <0-100, assertiveness and conviction in delivery>,
+    "confidence_note": "one concise sentence assessment",
+    "filler_words": <0-100, where 100=no fillers at all, lower=more filler words>,
+    "filler_note": "one concise sentence assessment"
   },
   "summary": "2-3 paragraph honest narrative assessment"
 }
@@ -45,7 +54,8 @@ Rules:
 - gaps: exactly 3, specific to what was actually said (or not said)
 - Be specific — reference actual words and phrases used
 - No generic feedback — every point must trace back to something in the transcript
-- Be honest but constructive — this helps candidates improve`
+- Be honest but constructive — this helps candidates improve
+- ideal_answer_hint: only include for per_question scores 1-3; use bullet points starting with •`
 
 export async function POST(request: NextRequest) {
   try {
@@ -103,7 +113,7 @@ export async function POST(request: NextRequest) {
           { title: 'N/A', example: '', advice: '' },
         ],
         per_question: [],
-        communication: { score: 0, clarity: 'N/A', pacing: 'N/A', confidence: 'N/A', filler_words: 'N/A' },
+        communication: { score: 0, clarity: 0, pacing: 0, confidence: 0, filler_words: 0 },
         summary: 'This interview session ended before any questions were answered. No scored feedback can be generated. Start a new session and try to answer at least a few questions to receive a detailed report.',
       }
     } else {
@@ -171,6 +181,7 @@ Generate a comprehensive feedback report for this candidate.`
         gaps_json: feedback.gaps,
         per_question_json: feedback.per_question,
         communication_score: feedback.communication.score,
+        communication_json: feedback.communication,
         report_text: feedback.summary,
         share_token: shareToken,
       }).select().single(),
