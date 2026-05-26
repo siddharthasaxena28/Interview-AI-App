@@ -181,16 +181,20 @@ Generate a comprehensive feedback report for this candidate.`
 
     if (reportError) console.error('Report save error:', reportError)
 
-    // Side effects: streak, weak areas, referral, email — run in parallel with a 4 s budget.
-    // If they don't finish in time that's acceptable; the report is already saved.
+    // Streak + weak areas: await directly — these power the dashboard stats and
+    // must always complete. Both are small DB writes that finish in < 2 s.
+    await Promise.allSettled([
+      updateStreak(supabase, user.id),
+      updateWeakAreas(supabase, user.id, questions as Question[] ?? [], answerMap),
+    ])
+
+    // Referral credit + email: non-critical, 3 s budget so they don't stall the response.
     await Promise.race([
       Promise.allSettled([
-        updateStreak(supabase, user.id),
-        updateWeakAreas(supabase, user.id, questions as Question[] ?? [], answerMap),
         completeReferral(supabase, user.id),
         sendFeedbackEmail(supabase, user.id, session, feedback, session_id, shareToken),
       ]),
-      new Promise((resolve) => setTimeout(resolve, 4000)),
+      new Promise((resolve) => setTimeout(resolve, 3000)),
     ])
 
     return NextResponse.json({ report, feedback })
@@ -254,10 +258,11 @@ async function updateWeakAreas(
     const existingCount = existing?.session_count ?? 0
     const newCount = existingCount + 1
     const newAvg = ((existing?.avg_score ?? 0) * existingCount + sessionAvg) / newCount
-    await supabase.from('weak_areas').upsert(
+    const { error: upsertErr } = await supabase.from('weak_areas').upsert(
       { user_id: userId, topic_tag: topicTag, avg_score: Math.round(newAvg * 100) / 100, session_count: newCount, last_updated: new Date().toISOString() },
       { onConflict: 'user_id,topic_tag' }
     )
+    if (upsertErr) console.error('weak_areas upsert error:', topicTag, upsertErr)
   }))
 }
 
