@@ -34,6 +34,9 @@ export async function POST(request: NextRequest) {
       case 'payment.captured': {
         const payment = event.payload.payment.entity
         const userId = payment.notes?.user_id
+        // notes.credits is set by create-order and copied to the payment by Razorpay.
+        // Falls back to 1 for legacy PAYG orders that predate the pack system.
+        const credits = Math.max(1, parseInt(payment.notes?.credits ?? '1', 10))
 
         if (userId) {
           // Idempotent credit keyed on the payment id. /api/verify-payment may have
@@ -41,7 +44,7 @@ export async function POST(request: NextRequest) {
           // the unique index makes any repeat a no-op.
           const { error: txnError } = await supabase.from('credit_transactions').insert({
             user_id: userId,
-            amount: 1,
+            amount: credits,
             type: 'purchase',
             razorpay_payment_id: payment.id,
           })
@@ -55,7 +58,7 @@ export async function POST(request: NextRequest) {
 
             await supabase
               .from('users')
-              .update({ credit_balance: (userData?.credit_balance ?? 0) + 1 })
+              .update({ credit_balance: (userData?.credit_balance ?? 0) + credits, plan: 'payg' })
               .eq('id', userId)
           } else if (txnError.code !== '23505') {
             console.error('webhook payment.captured txn error:', txnError)

@@ -179,88 +179,55 @@ export default async function LandingPage() {
 
       {/* Pricing */}
       <section className="px-6 py-20">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="text-3xl font-bold text-center text-gray-900 mb-4">
-            Simple, honest pricing
+        <div className="max-w-4xl mx-auto">
+          <h2 className="text-3xl font-bold text-center text-gray-900 mb-3">
+            Buy sessions when you need them
           </h2>
-          <p className="text-center text-gray-600 mb-12">Priced for Indian students and professionals</p>
-          <div className="grid md:grid-cols-4 gap-4">
+          <p className="text-center text-gray-600 mb-10">
+            No subscription. No monthly bills. Credits never expire.
+          </p>
+          <div className="grid md:grid-cols-3 gap-5">
             {[
-              {
-                name: 'Free',
-                price: '₹0',
-                period: 'forever',
-                sessions: '1 session ever',
-                features: ['All 4 round types', 'Full feedback report', 'Selection probability'],
-                cta: 'Start Free',
-                highlighted: false,
-              },
-              {
-                name: 'Pay-as-you-go',
-                price: '₹249',
-                period: 'per session',
-                sessions: '1 session at a time',
-                features: ['All 4 round types', 'Full feedback report', 'Interview history'],
-                cta: 'Buy a Session',
-                highlighted: false,
-              },
-              {
-                name: 'Pro',
-                price: '₹399',
-                period: 'per month',
-                sessions: '8 sessions/month',
-                features: ['All 4 round types', 'Full feedback report', 'Progress analytics', 'Shareable reports'],
-                cta: 'Start Pro',
-                highlighted: true,
-              },
-              {
-                name: 'Unlimited',
-                price: '₹699',
-                period: 'per month',
-                sessions: 'Unlimited sessions',
-                features: ['Everything in Pro', 'Unlimited practice', 'Priority support'],
-                cta: 'Go Unlimited',
-                highlighted: false,
-              },
-            ].map(({ name, price, period, sessions, features, cta, highlighted }) => (
+              { name: 'Single', price: '₹249', per: '₹249/session', sessions: '1 session', saving: null, highlighted: false },
+              { name: 'Starter Pack', price: '₹999', per: '₹200/session', sessions: '5 sessions', saving: 'Save 20%', highlighted: true },
+              { name: 'Serious Prep', price: '₹1,799', per: '₹180/session', sessions: '10 sessions', saving: 'Save 28%', highlighted: false },
+            ].map(({ name, price, per, sessions, saving, highlighted }) => (
               <div
                 key={name}
-                className={`rounded-2xl p-6 border ${
+                className={`rounded-2xl p-6 border text-center ${
                   highlighted
                     ? 'border-blue-500 bg-blue-600 text-white shadow-lg scale-105'
                     : 'border-gray-200 bg-white'
                 }`}
               >
-                {highlighted && (
-                  <div className="text-xs font-semibold bg-white text-blue-600 px-2 py-0.5 rounded-full w-fit mb-3">
-                    Most Popular
+                {saving && (
+                  <div className={`text-xs font-bold px-2 py-0.5 rounded-full w-fit mx-auto mb-3 ${
+                    highlighted ? 'bg-white text-blue-600' : 'bg-green-100 text-green-700'
+                  }`}>
+                    {saving}
                   </div>
                 )}
                 <div className="font-bold text-lg mb-1">{name}</div>
-                <div className="text-3xl font-bold mb-0.5">{price}</div>
-                <div className={`text-sm mb-4 ${highlighted ? 'text-blue-100' : 'text-gray-500'}`}>{period}</div>
-                <div className={`text-sm font-medium mb-4 ${highlighted ? 'text-blue-100' : 'text-gray-700'}`}>{sessions}</div>
-                <ul className="space-y-2 mb-6">
-                  {features.map((f) => (
-                    <li key={f} className="flex items-center gap-2 text-sm">
-                      <CheckCircle className={`w-4 h-4 flex-shrink-0 ${highlighted ? 'text-blue-200' : 'text-green-500'}`} />
-                      <span className={highlighted ? 'text-blue-50' : 'text-gray-700'}>{f}</span>
-                    </li>
-                  ))}
-                </ul>
+                <div className="text-3xl font-bold mb-1">{price}</div>
+                <div className={`text-sm mb-1 ${highlighted ? 'text-blue-200' : 'text-gray-500'}`}>{per}</div>
+                <div className={`text-sm font-medium mb-5 ${highlighted ? 'text-blue-100' : 'text-gray-600'}`}>{sessions}</div>
                 <Link
                   href={pricingHref}
-                  className={`block text-center py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+                  className={`block py-2.5 rounded-xl text-sm font-semibold transition-colors ${
                     highlighted
                       ? 'bg-white text-blue-600 hover:bg-blue-50'
                       : 'bg-blue-600 text-white hover:bg-blue-700'
                   }`}
                 >
-                  {cta}
+                  Buy now →
                 </Link>
               </div>
             ))}
           </div>
+          <p className="text-center text-sm text-gray-500 mt-6">
+            New? Every account includes 1 free session — no payment needed.{' '}
+            <Link href={isLoggedIn ? '/dashboard' : '/auth/login'} className="text-blue-600 hover:underline">Get started →</Link>
+          </p>
         </div>
       </section>
 
