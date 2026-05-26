@@ -1,11 +1,20 @@
 import Link from 'next/link'
-import { Mic, Brain, BarChart3, CheckCircle, Star, ArrowRight, Zap, Users, Award } from 'lucide-react'
+import { Mic, Brain, BarChart3, CheckCircle, Star, ArrowRight, Zap, Users, Award, Clock } from 'lucide-react'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 
 export default async function LandingPage() {
   const supabase = await createServerSupabaseClient()
   const { data: { user } } = await supabase.auth.getUser()
   const isLoggedIn = !!user
+
+  const { count: sessionCount } = await supabase
+    .from('interview_sessions')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'completed')
+  const completedCount = sessionCount ?? 0
+  const displayCount = completedCount >= 1000
+    ? `${Math.floor(completedCount / 1000)}k+`
+    : completedCount > 0 ? `${completedCount}+` : '1,000+'
 
   const dashboardHref = '/dashboard'
   const signupHref = '/auth/login'
@@ -95,9 +104,9 @@ export default async function LandingPage() {
       <section className="px-6 py-8 bg-gray-50 border-y border-gray-100">
         <div className="max-w-4xl mx-auto flex flex-wrap justify-center gap-8 text-center">
           {[
-            { icon: Users, value: '10,000+', label: 'Interviews practiced' },
-            { icon: Star, value: '4.9/5', label: 'Average rating' },
-            { icon: Award, value: '78%', label: 'Got job after practicing' },
+            { icon: Mic, value: displayCount, label: 'Mock interviews completed' },
+            { icon: Zap, value: 'No subscription', label: 'Pay as you go, credits never expire' },
+            { icon: Clock, value: '24 / 7', label: 'Practice any time, no scheduling' },
           ].map(({ icon: Icon, value, label }) => (
             <div key={label} className="flex items-center gap-3">
               <Icon className="w-5 h-5 text-blue-600" />

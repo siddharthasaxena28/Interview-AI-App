@@ -1,9 +1,38 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { ChevronDown, ChevronUp, MessageSquare, Lightbulb, Copy, Check, Play, Square, Mic } from 'lucide-react'
+import { ChevronDown, ChevronUp, MessageSquare, Lightbulb, Copy, Check, Play, Square, Mic, RotateCcw } from 'lucide-react'
 import type { PerQuestionFeedback } from '@/types'
 import { getAnswerAudio } from '@/lib/audio-storage'
+
+const IDEAL_WORDS: Record<string, [number, number]> = {
+  system_design: [150, 400], architecture: [150, 400], scalability: [150, 350],
+  distributed_systems: [150, 350], trade_offs: [100, 300],
+  leadership: [100, 250], team_management: [100, 250], conflict_resolution: [100, 250],
+  stakeholder_management: [100, 250], decision_making: [100, 250],
+  behavioral: [100, 250], ownership: [100, 250], mentoring: [100, 250],
+  salary_negotiation: [50, 150], notice_period: [30, 100], culture_fit: [60, 150],
+  motivation: [60, 150], career_goals: [60, 150],
+}
+const DEFAULT_IDEAL: [number, number] = [80, 200]
+
+function getIdealWords(topicTag: string): [number, number] {
+  return IDEAL_WORDS[topicTag] ?? DEFAULT_IDEAL
+}
+
+const TOPIC_ROUND: Record<string, string> = {
+  fundamentals: 'tech_l1', data_structures: 'tech_l1', algorithms: 'tech_l1',
+  networking: 'tech_l1', code_quality: 'tech_l1', debugging: 'tech_l1',
+  language_concepts: 'tech_l1', problem_solving: 'tech_l1', system_basics: 'tech_l1',
+  system_design: 'tech_l2', architecture: 'tech_l2', scalability: 'tech_l2',
+  distributed_systems: 'tech_l2', performance: 'tech_l2', databases: 'tech_l2',
+  security: 'tech_l2', trade_offs: 'tech_l2', technical_depth: 'tech_l2',
+  leadership: 'managerial', team_management: 'managerial', conflict_resolution: 'managerial',
+  stakeholder_management: 'managerial', decision_making: 'managerial', project_delivery: 'managerial',
+  mentoring: 'managerial', strategy: 'managerial', ownership: 'managerial',
+  motivation: 'hr', culture_fit: 'hr', career_goals: 'hr', salary_negotiation: 'hr',
+  notice_period: 'hr', work_style: 'hr', company_research: 'hr', strengths_weaknesses: 'hr', behavioral: 'hr',
+}
 
 interface QuestionRow {
   id: string
@@ -250,6 +279,27 @@ export default function FeedbackPerQuestion({ perQuestion, questions, answers, s
                           <span className="text-gray-400">Words: </span>
                           <span className="font-semibold text-gray-700">{metrics.wordCount}</span>
                         </div>
+                        {(() => {
+                          if (!q?.topic_tag) return null
+                          const [min, max] = getIdealWords(q.topic_tag)
+                          const wc = metrics.wordCount
+                          const tooShort = wc < min * 0.7
+                          const tooLong = wc > max * 1.3
+                          if (tooShort || tooLong) {
+                            return (
+                              <div>
+                                <span className="text-gray-400">Ideal length: </span>
+                                <span className={`font-semibold ${tooShort ? 'text-red-600' : tooLong ? 'text-amber-600' : 'text-gray-700'}`}>
+                                  {min}–{max} words
+                                </span>
+                                <span className={`ml-1 ${tooShort ? 'text-red-500' : 'text-amber-500'}`}>
+                                  ({tooShort ? `too short — expand by ${min - wc}+ words` : `consider trimming to ${max} words`})
+                                </span>
+                              </div>
+                            )
+                          }
+                          return null
+                        })()}
                         {metrics.fillerCount > 0 && (
                           <div>
                             <span className="text-gray-400">Filler words: </span>
@@ -280,6 +330,17 @@ export default function FeedbackPerQuestion({ perQuestion, questions, answers, s
                         {pq.ideal_answer_hint}
                       </p>
                     </div>
+                  )}
+
+                  {/* Retry This Topic CTA */}
+                  {pq.score <= 3 && q?.topic_tag && (
+                    <a
+                      href={`/interview/setup?round_type=${TOPIC_ROUND[q.topic_tag] ?? 'tech_l1'}`}
+                      className="flex items-center gap-2 text-xs text-blue-600 hover:text-blue-800 font-medium pt-1"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      Practice {q.topic_tag.replace(/_/g, ' ')} questions in a full interview →
+                    </a>
                   )}
                 </div>
               )}

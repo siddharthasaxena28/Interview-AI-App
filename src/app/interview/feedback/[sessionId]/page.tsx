@@ -10,6 +10,7 @@ import ScoreCard from './ScoreCard'
 import ScoreRing from './ScoreRing'
 import FeedbackPerQuestion from './FeedbackPerQuestion'
 import AppFeedbackWidget from './AppFeedbackWidget'
+import CoachChat from './CoachChat'
 
 export default async function FeedbackPage({
   params,
@@ -151,6 +152,25 @@ export default async function FeedbackPage({
               sublabel="Delivery & Clarity"
             />
           </div>
+
+          {/* Benchmark note */}
+          {(() => {
+            const benchmark: Record<string, number> = {
+              tech_l1: 55, tech_l2: 52, managerial: 54, hr: 62, full_loop: 53,
+            }
+            const avg = benchmark[s.round_type as string] ?? 55
+            const diff = r.selection_probability - avg
+            return (
+              <p className="text-xs text-center text-gray-400 mt-4 pt-4 border-t border-gray-100">
+                Industry average for this round:{' '}
+                <span className="font-semibold text-gray-600">{avg}%</span>
+                {' · '}
+                <span className={diff >= 0 ? 'text-green-600 font-semibold' : 'text-amber-600 font-semibold'}>
+                  {diff >= 0 ? `+${diff}% above average` : `${diff}% below average`}
+                </span>
+              </p>
+            )
+          })()}
         </div>
 
         {/* ── Overall assessment ──────────────────────────────────────── */}
@@ -310,6 +330,9 @@ export default async function FeedbackPage({
           appUrl={appUrl}
           shareUrl={shareUrl}
         />
+
+        {/* ── AI Interview Coach ───────────────────────────────────────── */}
+        <CoachChat sessionId={sessionId} />
 
         {/* ── App experience feedback ─────────────────────────────────── */}
         <AppFeedbackWidget sessionId={sessionId} />
