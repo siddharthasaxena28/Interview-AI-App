@@ -73,6 +73,9 @@ function SessionPageInner({ params }: SessionPageProps) {
   const hasGreetedRef = useRef(false)
   const reconnectAttemptsRef = useRef(0)
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null)
+  // Holds a resolve() callback for the currently-playing speakText promise so
+  // stopAllAudio() can resolve it immediately from outside the function.
+  const cancelSpeakRef = useRef<(() => void) | null>(null)
 
   useEffect(() => { currentQuestionRef.current = currentQuestion }, [currentQuestion])
   useEffect(() => { phaseRef.current = phase }, [phase])
@@ -344,6 +347,21 @@ function SessionPageInner({ params }: SessionPageProps) {
     return out
   }
 
+  // Immediately silences the AI: stops the <audio> element, cancels browser
+  // speech synthesis, and resolves the pending speakText promise so callers
+  // awaiting it unblock right away.
+  function stopAllAudio() {
+    cancelSpeakRef.current?.()
+    cancelSpeakRef.current = null
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.src = ''
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+    }
+  }
+
   async function speakText(text: string, startListening = true): Promise<void> {
     if (!sessionData) return
     setAiSpeaking()
@@ -361,7 +379,6 @@ function SessionPageInner({ params }: SessionPageProps) {
     }, 8000)
 
     const persona = PERSONAS[sessionData.session.round_type]
-    // Use gender-appropriate voice if available
     const voiceId = genderParam === 'female' && persona.femaleVoiceId
       ? persona.femaleVoiceId
       : persona.voiceId
@@ -383,14 +400,18 @@ function SessionPageInner({ params }: SessionPageProps) {
         if (!audioRef.current) { resolve(); return }
         let done = false
         const finish = () => { if (!done) { done = true; URL.revokeObjectURL(audioUrl); resolve() } }
+        // Register cancel hook so stopAllAudio() can resolve this promise immediately.
+        cancelSpeakRef.current = finish
         audioRef.current.src = audioUrl
         audioRef.current.onended = finish
         audioRef.current.onerror = finish
         audioRef.current.play().catch(finish)
         setTimeout(finish, estDurationMs + 3000)
       })
+      cancelSpeakRef.current = null
       ttsSucceeded = true
     } catch {
+      cancelSpeakRef.current = null
       // Fall through to browser synthesis
     }
 
@@ -399,7 +420,7 @@ function SessionPageInner({ params }: SessionPageProps) {
       await new Promise<void>((resolve) => {
         let done = false
         const finish = () => { if (!done) { done = true; resolve() } }
-
+        cancelSpeakRef.current = finish
         window.speechSynthesis.cancel()
         const utterance = new SpeechSynthesisUtterance(text)
         utterance.rate = 0.92
@@ -409,9 +430,12 @@ function SessionPageInner({ params }: SessionPageProps) {
         window.speechSynthesis.speak(utterance)
         setTimeout(finish, estDurationMs + 2000)
       })
+      cancelSpeakRef.current = null
     }
 
     clearInterval(keepAliveInterval)
+    // Don't transition to LISTENING if the interview has already ended.
+    if (endingRef.current) return
     systemMutedRef.current = false
     isProcessingRef.current = false
     if (startListening) {
@@ -482,7 +506,26 @@ function SessionPageInner({ params }: SessionPageProps) {
     setStarted(true)
   }
 
-  async function endInterview(abandoned = false) {
+  function endInterview(abandoned = false) {
+    // Guard against double-calls (e.g. auto-end races with manual click).
+    if (endingRef.current) return
+    endingRef.current = true
+
+    // Step 1 — silence the AI immediately, regardless of what it's saying.
+    stopAllAudio()
+    systemMutedRef.current = false
+    isProcessingRef.current = false
+
+    // Step 2 — show the "generating report" screen right away so the user
+    //           gets instant feedback that the call has ended.
+    setEnding(true)
+
+    // Step 3 — tear down mic / WebSocket.
+    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+    wsRef.current?.close(1000)
+    mediaStreamRef.current?.getTracks().forEach((t) => t.stop())
+
+    // Step 4 — analytics + fire-and-forget API calls (non-blocking).
     analytics.capture(abandoned ? 'interview_abandoned' : 'interview_completed', {
       session_id: sessionId,
       round_type: sessionData?.session.round_type,
@@ -490,10 +533,6 @@ function SessionPageInner({ params }: SessionPageProps) {
       total_questions: totalQuestions,
       duration_seconds: elapsed,
     })
-
-    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
-    wsRef.current?.close(1000)
-    mediaStreamRef.current?.getTracks().forEach((t) => t.stop())
 
     fetch('/api/end-session', {
       method: 'POST',
@@ -507,14 +546,7 @@ function SessionPageInner({ params }: SessionPageProps) {
       body: JSON.stringify({ session_id: sessionId }),
     }).catch(console.error)
 
-    if (!abandoned && sessionData) {
-      await speakText(
-        `That brings us to the end of the interview. Thank you so much for your time today — it was a pleasure speaking with you. I'll review your answers and have your detailed feedback report ready shortly. Best of luck, and we'll be in touch!`,
-        false
-      ).catch(() => {})
-    }
-
-    setEnding(true)
+    // Step 5 — navigate to the feedback page.
     router.push(`/interview/feedback/${sessionId}`)
   }
 
