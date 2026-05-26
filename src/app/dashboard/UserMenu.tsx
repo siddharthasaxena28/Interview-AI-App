@@ -110,10 +110,7 @@ export default function UserMenu({ name, email, avatarUrl, creditBalance, plan }
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <CreditCard className="w-4 h-4 text-blue-500" />
-                {plan === 'unlimited'
-                  ? <span>Unlimited sessions</span>
-                  : <span>{creditBalance} credit{creditBalance !== 1 ? 's' : ''} left</span>
-                }
+                <span>{creditBalance} credit{creditBalance !== 1 ? 's' : ''} left</span>
               </div>
               <span className="text-xs font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
                 {planLabels[plan] ?? plan}

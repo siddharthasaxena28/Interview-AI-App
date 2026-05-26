@@ -32,10 +32,8 @@ export async function GET(
       .eq('id', user.id)
       .single()
 
-    const isUnlimited = userData?.plan === 'unlimited'
-
     // Fast UX gate; the authoritative atomic check is in start_interview_session().
-    if (session.status === 'setup' && !isUnlimited && (userData?.credit_balance ?? 0) <= 0) {
+    if (session.status === 'setup' && (userData?.credit_balance ?? 0) <= 0) {
       return NextResponse.json({ error: 'No credits available' }, { status: 402 })
     }
 
@@ -77,7 +75,7 @@ export async function GET(
           .select('id')
           .maybeSingle()
 
-        if (claimed && !isUnlimited) {
+        if (claimed) {
           const balance = userData?.credit_balance ?? 0
           if (balance > 0) {
             await svc.from('users').update({ credit_balance: balance - 1 }).eq('id', user.id)

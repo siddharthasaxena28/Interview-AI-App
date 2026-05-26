@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
       .select('credit_balance, plan')
       .eq('id', user.id)
       .single()
-    if (gateUser?.plan !== 'unlimited' && (gateUser?.credit_balance ?? 0) <= 0) {
+    if ((gateUser?.credit_balance ?? 0) <= 0) {
       return NextResponse.json({ error: 'No credits available' }, { status: 402 })
     }
 
