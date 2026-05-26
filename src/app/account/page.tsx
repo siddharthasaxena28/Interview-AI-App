@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Mic, CreditCard, Calendar, CheckCircle, AlertCircle, ArrowLeft, Loader2 } from 'lucide-react'
+import { Mic, CreditCard, Calendar, CheckCircle, AlertCircle, ArrowLeft, Loader2, Trash2 } from 'lucide-react'
 
 interface AccountData {
   user: { email: string; name: string; plan: string; credit_balance: number; referral_code: string }
@@ -24,6 +24,11 @@ export default function AccountPage() {
   const [cancelling, setCancelling] = useState(false)
   const [cancelled, setCancelled] = useState(false)
   const [error, setError] = useState('')
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+  const [deleteSuccess, setDeleteSuccess] = useState(false)
 
   useEffect(() => {
     fetch('/api/account-data')
@@ -31,6 +36,25 @@ export default function AccountPage() {
       .then((d) => { setData(d); setLoading(false) })
       .catch(() => { setError('Failed to load account'); setLoading(false) })
   }, [])
+
+  async function handleDeleteAccount() {
+    if (deleteConfirmText !== 'DELETE') return
+    setDeleting(true)
+    setDeleteError('')
+    try {
+      const res = await fetch('/api/delete-account', { method: 'POST' })
+      if (res.ok) {
+        setDeleteSuccess(true)
+      } else {
+        const body = await res.json() as { error?: string }
+        setDeleteError(body.error ?? 'Failed to delete account data. Please try again.')
+        setDeleting(false)
+      }
+    } catch {
+      setDeleteError('Network error. Please try again.')
+      setDeleting(false)
+    }
+  }
 
   async function handleCancel() {
     if (!confirm('Cancel your subscription? You\'ll keep access until the end of your current billing cycle.')) return
@@ -194,6 +218,94 @@ export default function AccountPage() {
               <span className="text-gray-900">{user.email}</span>
             </div>
           </div>
+        </div>
+
+        {/* Legal */}
+        <div className="text-xs text-gray-400 flex gap-4 px-1">
+          <Link href="/privacy" className="hover:text-gray-600 hover:underline">Privacy Policy</Link>
+          <Link href="/terms" className="hover:text-gray-600 hover:underline">Terms of Service</Link>
+        </div>
+
+        {/* Danger zone */}
+        <div className={`bg-white rounded-xl border p-6 ${deleteSuccess ? 'border-green-200' : 'border-red-200'}`}>
+          {deleteSuccess ? (
+            <div className="text-center py-4">
+              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <CheckCircle className="w-6 h-6 text-green-600" />
+              </div>
+              <h2 className="font-semibold text-gray-900 mb-2">Data deleted successfully</h2>
+              <p className="text-sm text-gray-500 mb-6">
+                Your interview history, transcripts, feedback reports, and personal profile
+                have been permanently removed. Your credits and subscription remain intact.
+              </p>
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center gap-2 bg-blue-600 text-white text-sm font-semibold px-6 py-2.5 rounded-xl hover:bg-blue-700 transition-colors"
+              >
+                Go to Dashboard
+              </Link>
+            </div>
+          ) : (
+            <>
+              <h2 className="font-semibold text-red-700 mb-1 flex items-center gap-2">
+                <Trash2 className="w-4 h-4" /> Danger Zone
+              </h2>
+              <p className="text-sm text-gray-500 mb-2">
+                Deletes your personal data — interview transcripts, feedback reports, session
+                history, focus areas, and profile information (name, email, photo).
+                This action <strong>cannot be undone</strong>.
+              </p>
+              <p className="text-sm text-gray-500 mb-4">
+                <strong>What is kept:</strong> your remaining credit balance, active subscription,
+                and payment records — so if you return, your paid plan and unused credits are still
+                here waiting for you. See our{' '}
+                <Link href="/privacy" className="text-blue-600 hover:underline">Privacy Policy</Link>{' '}
+                for full details.
+              </p>
+
+              {!showDeleteConfirm ? (
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="text-sm text-red-600 border border-red-200 px-4 py-2.5 rounded-xl hover:bg-red-50 transition-colors font-medium"
+                >
+                  Delete my data
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-red-700 font-medium">
+                    Type <code className="bg-red-50 px-1.5 py-0.5 rounded font-mono">DELETE</code> to confirm:
+                  </p>
+                  <input
+                    type="text"
+                    value={deleteConfirmText}
+                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                    placeholder="DELETE"
+                    className="w-full border border-red-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 font-mono"
+                    autoFocus
+                  />
+                  {deleteError && (
+                    <p className="text-sm text-red-500">{deleteError}</p>
+                  )}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={handleDeleteAccount}
+                      disabled={deleteConfirmText !== 'DELETE' || deleting}
+                      className="flex items-center gap-2 bg-red-600 text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      {deleting ? 'Deleting…' : 'Permanently delete'}
+                    </button>
+                    <button
+                      onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(''); setDeleteError('') }}
+                      className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2.5 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </main>
     </div>
