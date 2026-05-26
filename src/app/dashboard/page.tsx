@@ -8,6 +8,7 @@ import type { RoundType } from '@/types'
 import { CopyReferral } from './CopyReferral'
 import InterviewCountdown from './InterviewCountdown'
 import EnableReminders from './EnableReminders'
+import OnboardingModal from './OnboardingModal'
 
 // Exact lookup — mirrors the controlled vocabulary enforced in generate-questions.
 const TOPIC_ROUND_MAP: Record<string, RoundType> = {
@@ -125,6 +126,12 @@ export default async function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <OnboardingModal
+        show={!sessions?.length}
+        userName={authUser.user_metadata?.full_name?.split(' ')[0] ?? 'there'}
+        creditBalance={creditBalance}
+      />
+
       {/* Top nav */}
       <nav className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
