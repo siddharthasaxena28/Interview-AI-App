@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Razorpay from 'razorpay'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { createServerSupabaseClient, createServiceClient } from '@/lib/supabase-server'
 
 const PLAN_CONFIG = {
   pro: {
@@ -47,8 +47,10 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Save subscription to DB
-    await supabase.from('subscriptions').upsert({
+    // Save subscription to DB via the service client (subscriptions is SELECT-only
+    // for clients to prevent self-editing plan / credits_per_cycle).
+    const svc = await createServiceClient()
+    await svc.from('subscriptions').upsert({
       user_id: user.id,
       plan: config.plan_name,
       status: 'active',

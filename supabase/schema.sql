@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   email text UNIQUE NOT NULL,
   name text NOT NULL DEFAULT '',
   avatar_url text,
-  credit_balance integer NOT NULL DEFAULT 1,
+  credit_balance integer NOT NULL DEFAULT 1 CHECK (credit_balance >= 0),
   plan text NOT NULL DEFAULT 'free' CHECK (plan IN ('free', 'payg', 'pro', 'unlimited')),
   referral_code text UNIQUE NOT NULL DEFAULT '',
   created_at timestamptz NOT NULL DEFAULT now()
@@ -133,17 +133,24 @@ ALTER TABLE public.feedback_reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.weak_areas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.referrals ENABLE ROW LEVEL SECURITY;
 
--- users: own row only
-CREATE POLICY "users_own_row" ON public.users
-  USING (auth.uid() = id);
+-- users: a user may READ only their own row. There is intentionally NO write policy:
+-- credit_balance / plan / referral_code are mutated exclusively server-side via the
+-- service-role client (verify-payment, webhook, session start, referral, deletion).
+-- A FOR ALL / write policy here would let a user self-grant credits or upgrade their
+-- plan straight from the browser with the anon key.
+CREATE POLICY "users_select_own" ON public.users
+  FOR SELECT USING (auth.uid() = id);
 
--- subscriptions: own rows only
-CREATE POLICY "subscriptions_own_rows" ON public.subscriptions
-  USING (auth.uid() = user_id);
+-- subscriptions: read-only for the owner. Writes are server-side (service role) via
+-- create-subscription / cancel-subscription / the Razorpay webhook. A write policy
+-- would let a user self-edit plan, status, or credits_per_cycle from the browser.
+CREATE POLICY "subscriptions_select_own" ON public.subscriptions
+  FOR SELECT USING (auth.uid() = user_id);
 
--- credit_transactions: own rows only
-CREATE POLICY "credit_transactions_own_rows" ON public.credit_transactions
-  USING (auth.uid() = user_id);
+-- credit_transactions: read-only for the owner. All inserts are server-side; a client
+-- write policy would let a user fabricate purchase/credit ledger rows.
+CREATE POLICY "credit_transactions_select_own" ON public.credit_transactions
+  FOR SELECT USING (auth.uid() = user_id);
 
 -- interview_sessions: own rows only
 CREATE POLICY "sessions_own_rows" ON public.interview_sessions
@@ -165,16 +172,17 @@ CREATE POLICY "answers_via_session" ON public.answers
     )
   );
 
--- feedback_reports: own or public share token read
+-- feedback_reports: own rows only. Public share-link reads do NOT go through RLS —
+-- the /report/[token] page uses the service-role client and filters by the exact
+-- share_token. A "share_token IS NOT NULL" policy was removed: because share_token
+-- has a NOT NULL default, that predicate was always true and let ANY authenticated
+-- anon-key request read EVERY user's report (mass data leak).
 CREATE POLICY "reports_own_rows" ON public.feedback_reports
   FOR ALL USING (
     session_id IN (
       SELECT id FROM public.interview_sessions WHERE user_id = auth.uid()
     )
   );
-
-CREATE POLICY "reports_public_share" ON public.feedback_reports
-  FOR SELECT USING (share_token IS NOT NULL);
 
 -- weak_areas: own rows
 CREATE POLICY "weak_areas_own_rows" ON public.weak_areas

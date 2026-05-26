@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { createServerSupabaseClient, createServiceClient } from '@/lib/supabase-server'
 
 export async function GET(
   request: NextRequest,
@@ -55,23 +55,37 @@ export async function GET(
         )
       }
 
-      await supabase
+      // Credit writes run on the service client (per-user RLS blocks clients from
+      // mutating their own balance). Atomically claim the session by flipping
+      // setup->in_progress only while it is still setup: of any concurrent or
+      // prefetched/retried GETs, exactly one update matches, so the credit is
+      // deducted once. Without this guard a double-fired GET burned two credits.
+      const svc = await createServiceClient()
+      const { data: claimed } = await svc
         .from('interview_sessions')
         .update({ status: 'in_progress', started_at: new Date().toISOString() })
         .eq('id', sessionId)
+        .eq('user_id', user.id)
+        .eq('status', 'setup')
+        .select('id')
+        .maybeSingle()
 
-      // Deduct credit
-      await supabase
-        .from('users')
-        .update({ credit_balance: (userData?.credit_balance ?? 1) - 1 })
-        .eq('id', user.id)
+      if (claimed) {
+        const balance = userData?.credit_balance ?? 0
+        if (balance > 0) {
+          await svc
+            .from('users')
+            .update({ credit_balance: balance - 1 })
+            .eq('id', user.id)
 
-      await supabase.from('credit_transactions').insert({
-        user_id: user.id,
-        amount: -1,
-        type: 'session_use',
-        session_id: sessionId,
-      })
+          await svc.from('credit_transactions').insert({
+            user_id: user.id,
+            amount: -1,
+            type: 'session_use',
+            session_id: sessionId,
+          })
+        }
+      }
     }
 
     const { data: questions } = await supabase

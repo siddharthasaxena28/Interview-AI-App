@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { createServerSupabaseClient, createServiceClient } from '@/lib/supabase-server'
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,15 +24,19 @@ export async function POST(request: NextRequest) {
     })
     await rzp.subscriptions.cancel(sub.razorpay_sub_id, true)
 
+    // subscriptions / users writes run on the service client — both tables are
+    // SELECT-only for clients so balances and plans can't be self-edited via the anon key.
+    const svc = await createServiceClient()
+
     // Mark as cancelled in Supabase
-    await supabase
+    await svc
       .from('subscriptions')
       .update({ status: 'cancelled' })
       .eq('user_id', user.id)
       .eq('razorpay_sub_id', sub.razorpay_sub_id)
 
     // Downgrade user plan to payg (they keep credits till cycle end)
-    await supabase
+    await svc
       .from('users')
       .update({ plan: 'payg' })
       .eq('id', user.id)

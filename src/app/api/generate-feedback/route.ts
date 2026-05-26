@@ -226,7 +226,10 @@ async function updateStreak(supabase: Awaited<ReturnType<typeof import('@/lib/su
     else if (diffDays === 1) newStreak = currentUser.current_streak + 1
   }
   const newLongest = Math.max(newStreak, currentUser?.longest_streak ?? 0)
-  await supabase
+  // users writes go through the service client (clients can't mutate their own row).
+  const { createServiceClient } = await import('@/lib/supabase-server')
+  const svc = await createServiceClient()
+  await svc
     .from('users')
     .update({ current_streak: newStreak, longest_streak: newLongest, last_session_date: today })
     .eq('id', userId)
@@ -277,7 +280,13 @@ async function completeReferral(
     .eq('status', 'completed')
   if (completedCount !== 1) return
 
-  const { data: referral } = await supabase
+  // Crediting writes the referrer's row (a different user) and credit_transactions
+  // for both parties — both require the service client, since per-user RLS correctly
+  // blocks a user from writing another user's balance.
+  const { createServiceClient } = await import('@/lib/supabase-server')
+  const svc = await createServiceClient()
+
+  const { data: referral } = await svc
     .from('referrals')
     .select('id, referrer_id')
     .eq('referee_id', userId)
@@ -285,22 +294,30 @@ async function completeReferral(
     .single()
   if (!referral) return
 
-  await supabase.from('referrals')
+  // Claim atomically: only the request that flips pending->completed credits, so
+  // concurrent/retried feedback calls can't grant the bonus twice.
+  const { data: claimed } = await svc.from('referrals')
     .update({ status: 'completed', completed_at: new Date().toISOString() })
     .eq('id', referral.id)
+    .eq('status', 'pending')
+    .select('id')
+    .maybeSingle()
+  if (!claimed) return
 
   await Promise.all([
-    (async () => {
-      const { data: referrer } = await supabase.from('users').select('credit_balance').eq('id', referral.referrer_id).single()
-      await supabase.from('users').update({ credit_balance: (referrer?.credit_balance ?? 0) + 1 }).eq('id', referral.referrer_id)
-      await supabase.from('credit_transactions').insert({ user_id: referral.referrer_id, amount: 1, type: 'referral_bonus' })
-    })(),
-    (async () => {
-      const { data: referee } = await supabase.from('users').select('credit_balance').eq('id', userId).single()
-      await supabase.from('users').update({ credit_balance: (referee?.credit_balance ?? 0) + 1 }).eq('id', userId)
-      await supabase.from('credit_transactions').insert({ user_id: userId, amount: 1, type: 'referral_bonus' })
-    })(),
+    creditReferralBonus(svc, referral.referrer_id),
+    creditReferralBonus(svc, userId),
   ])
+}
+
+async function creditReferralBonus(
+  svc: Awaited<ReturnType<typeof import('@/lib/supabase-server').createServiceClient>>,
+  id: string,
+) {
+  const { data: u } = await svc.from('users').select('credit_balance').eq('id', id).single()
+  await svc.from('users').update({ credit_balance: (u?.credit_balance ?? 0) + 1 }).eq('id', id)
+  // 'referral' is the value allowed by the credit_transactions type CHECK constraint.
+  await svc.from('credit_transactions').insert({ user_id: id, amount: 1, type: 'referral' })
 }
 
 async function sendFeedbackEmail(

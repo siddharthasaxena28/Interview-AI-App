@@ -7,7 +7,11 @@ import { createServiceClient } from '@/lib/supabase-server'
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  const next = searchParams.get('next') ?? '/dashboard'
+  // Only allow same-origin relative paths. A value like "//evil.com" or
+  // "https://evil.com" would otherwise turn the post-login redirect into an
+  // open redirect (phishing / token-leak vector).
+  const nextParam = searchParams.get('next') ?? '/dashboard'
+  const next = nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : '/dashboard'
 
   if (!code) {
     return NextResponse.redirect(`${origin}/auth/login?error=auth_failed`)

@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { createServiceClient } from '@/lib/supabase-server'
 
+function safeEqualHex(a: string, b: string): boolean {
+  const ba = Buffer.from(a, 'hex')
+  const bb = Buffer.from(b, 'hex')
+  return ba.length === bb.length && crypto.timingSafeEqual(ba, bb)
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.text()
@@ -17,7 +23,7 @@ export async function POST(request: NextRequest) {
       .update(body)
       .digest('hex')
 
-    if (expectedSig !== signature) {
+    if (!safeEqualHex(expectedSig, signature)) {
       return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
     }
 
