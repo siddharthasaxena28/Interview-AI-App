@@ -449,6 +449,11 @@ function SessionPageInner({ params }: SessionPageProps) {
           ackText = data.brief_feedback
             ? `${data.brief_feedback} ${data.next_question.text}`
             : data.next_question.text
+        } else if (data.candidate_wants_to_skip) {
+          // Candidate asked to pass — acknowledge graciously, no pressure.
+          ackText = data.brief_feedback
+            ? `${data.brief_feedback} ${data.next_question.text}`
+            : `Sure, let's move on. ${data.next_question.text}`
         } else {
           ackText = data.brief_feedback
             ? `${data.brief_feedback} Let's move on. ${data.next_question.text}`
