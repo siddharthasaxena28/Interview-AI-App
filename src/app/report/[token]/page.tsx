@@ -3,6 +3,51 @@ import { createServiceClient } from '@/lib/supabase-server'
 import { getScoreColor, getProbabilityLabel } from '@/lib/utils'
 import { CheckCircle, AlertCircle, Mic } from 'lucide-react'
 import type { FeedbackReport, StrengthItem, GapItem } from '@/types'
+import type { Metadata } from 'next'
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ token: string }>
+}): Promise<Metadata> {
+  const { token } = await params
+  const supabase = await createServiceClient()
+  const { data } = await supabase
+    .from('feedback_reports')
+    .select('overall_score, selection_probability, interview_sessions(company, role)')
+    .eq('share_token', token)
+    .single()
+
+  if (!data) return { title: 'Interview Report — InterviewAI' }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const session = data.interview_sessions as unknown as { company: string; role: string } | null
+  const company = session?.company ?? 'Company'
+  const role = session?.role ?? 'Role'
+  const score = data.overall_score as number
+  const prob = data.selection_probability as number
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+
+  const title = `${company} ${role} Interview — ${score}/100 on InterviewAI`
+  const description = `Scored ${score}/100 with a ${prob}% chance of selection for the ${role} role at ${company}. Powered by InterviewAI — practise like it's real.`
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      url: `${appUrl}/report/${token}`,
+      siteName: 'InterviewAI',
+      type: 'article',
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+    },
+  }
+}
 
 export default async function PublicReportPage({
   params,
