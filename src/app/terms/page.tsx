@@ -79,6 +79,7 @@ const SECTIONS = [
         <li><strong>Credits are non-transferable and non-refundable</strong> once an interview session has been started and questions have been generated.</li>
         <li><strong>Refund policy:</strong> If a session fails due to a technical error on our end before any questions are asked, we will restore your credit. Contact <a href="mailto:support@interviewai.in" className="text-blue-600 hover:underline">support@interviewai.in</a> within 7 days.</li>
         <li><strong>Subscriptions</strong> renew automatically each billing cycle. You may cancel at any time from your Account page; access continues until the end of the paid period.</li>
+        <li><strong>Credits and subscriptions survive account data deletion.</strong> If you request deletion of your personal data, your remaining credit balance, active subscription, and payment records are retained. Credits you have purchased are not forfeited by a deletion request. Should you return to the Platform, your credits and plan will be intact.</li>
         <li>We reserve the right to change pricing with 30 days&apos; advance notice to existing subscribers.</li>
       </ul>
     ),
@@ -194,14 +195,21 @@ const SECTIONS = [
   {
     title: '13. Termination',
     content: (
-      <p>
-        You may delete your account at any time from your{' '}
-        <Link href="/account" className="text-blue-600 hover:underline">Account Settings</Link>{' '}
-        page. We may suspend or terminate your account immediately if you breach these Terms,
-        engage in fraudulent activity, or for any other reason at our discretion with
-        reasonable notice. Upon termination, your right to use the Platform ceases immediately
-        and unused credits are forfeited.
-      </p>
+      <>
+        <p>
+          You may delete your personal data at any time from your{' '}
+          <Link href="/account" className="text-blue-600 hover:underline">Account Settings</Link>{' '}
+          page. Deletion removes your name, email, interview history, transcripts, and feedback
+          reports. Your credit balance, active subscription, and payment records are{' '}
+          <strong>not</strong> deleted — they are retained so you do not lose what you paid for
+          and can return to the Platform at any time with your credits intact.
+        </p>
+        <p className="mt-2">
+          We may suspend or terminate your access if you breach these Terms or engage in
+          fraudulent activity (including creating multiple accounts to claim free credits).
+          Upon such termination, unused credits are forfeited and no refund is issued.
+        </p>
+      </>
     ),
   },
   {

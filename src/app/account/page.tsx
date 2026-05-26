@@ -231,12 +231,17 @@ export default function AccountPage() {
           <h2 className="font-semibold text-red-700 mb-1 flex items-center gap-2">
             <Trash2 className="w-4 h-4" /> Danger Zone
           </h2>
+          <p className="text-sm text-gray-500 mb-2">
+            Deletes your personal data — interview transcripts, feedback reports, session
+            history, focus areas, and profile information (name, email, photo).
+            This action <strong>cannot be undone</strong>.
+          </p>
           <p className="text-sm text-gray-500 mb-4">
-            Permanently delete your account and all associated data — interview transcripts,
-            feedback reports, session history, weak areas, and profile information. This action
-            <strong> cannot be undone</strong>. Financial transaction records are retained for
-            legal compliance as described in our{' '}
-            <Link href="/privacy" className="text-blue-600 hover:underline">Privacy Policy</Link>.
+            <strong>What is kept:</strong> your remaining credit balance, active subscription,
+            and payment records — so if you return, your paid plan and unused credits are still
+            here waiting for you. See our{' '}
+            <Link href="/privacy" className="text-blue-600 hover:underline">Privacy Policy</Link>{' '}
+            for full details.
           </p>
 
           {!showDeleteConfirm ? (

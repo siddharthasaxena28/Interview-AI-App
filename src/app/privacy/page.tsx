@@ -150,9 +150,15 @@ export default function PrivacyPage() {
             <h2 className="text-lg font-semibold text-gray-900 mb-3">5. Data Retention</h2>
             <ul className="list-disc pl-5 space-y-2">
               <li><strong>Active accounts:</strong> All personal data is retained for the lifetime of your account.</li>
-              <li><strong>After account deletion:</strong> Your name, email, profile photo, interview transcripts, feedback reports, and session history are permanently deleted within 30 days of your request. Only anonymised authentication records and financial transaction identifiers are retained (see below).</li>
-              <li><strong>Authentication records:</strong> A minimal technical record is retained indefinitely to prevent the same identity from claiming free credits a second time. This record contains no name, email, or personal profile data.</li>
-              <li><strong>Financial records (payment IDs):</strong> Retained for 7 years as required by the Income Tax Act 1961 and Companies Act 2013 (India).</li>
+              <li><strong>After account deletion — what is deleted:</strong> Your name, email address, profile photo, interview transcripts, spoken answer recordings, feedback reports, session history, focus area analysis, referral relationships, and push notification tokens are permanently deleted within 30 days of your request.</li>
+              <li><strong>After account deletion — what is retained:</strong>
+                <ul className="list-disc pl-5 mt-1 space-y-1">
+                  <li><strong>Credit balance and plan type</strong> — retained so that if you return to the app, the credits and subscription you paid for are still available to you. Deleting your personal data does not forfeit credits you have purchased.</li>
+                  <li><strong>Subscription records</strong> — retained so that an active or paid subscription is honoured if you return. Plan details, billing status, and renewal dates are kept.</li>
+                  <li><strong>Authentication record</strong> — a minimal technical record (no name, email, or profile data) is retained indefinitely to prevent the same identity from claiming the free signup credit a second time on re-registration.</li>
+                  <li><strong>Financial transaction records (payment IDs)</strong> — retained for 7 years as required by the Income Tax Act 1961 and Companies Act 2013 (India). These records are already de-identified once your profile is scrubbed.</li>
+                </ul>
+              </li>
             </ul>
           </section>
 
@@ -226,16 +232,28 @@ export default function PrivacyPage() {
                 <div key={title} className="bg-gray-50 border border-gray-200 rounded-xl p-4">
                   <div className="font-semibold text-gray-900 text-sm mb-1">{title}</div>
                   {title === 'Right to Erasure ("Delete My Account")' ? (
-                    <p className="text-xs text-gray-600">
-                      You can delete your personal data at any time from your{' '}
-                      <Link href="/account" className="text-blue-600 hover:underline">Account Settings</Link>{' '}
-                      page. This permanently removes your name, email, interview transcripts, feedback
-                      reports, and all session history. Financial transaction identifiers are retained
-                      for legal compliance (see Section 5).
-                    </p>
-                  ) : (
+                    <div className="text-xs text-gray-600 space-y-1.5">
+                      <p>
+                        You can delete your personal data at any time from your{' '}
+                        <Link href="/account" className="text-blue-600 hover:underline">Account Settings</Link>{' '}
+                        page. The following is <strong>permanently deleted</strong>: your name, email,
+                        profile photo, interview transcripts, feedback reports, session history, focus
+                        area analysis, referral relationships, and push notification tokens.
+                      </p>
+                      <p>
+                        The following is <strong>retained</strong> even after deletion, for the reasons
+                        stated:
+                      </p>
+                      <ul className="list-disc pl-4 space-y-1">
+                        <li><strong>Credit balance and plan</strong> — so you do not lose credits you paid for. If you return, your remaining interviews are still available.</li>
+                        <li><strong>Subscription record</strong> — so a paid subscription continues to be honoured on your return.</li>
+                        <li><strong>Authentication record</strong> — to prevent re-granting of the free signup credit on re-registration (fraud prevention, legitimate interest).</li>
+                        <li><strong>Payment transaction IDs</strong> — 7-year legal obligation under Indian financial law (see Section 5).</li>
+                      </ul>
+                    </div>
+                  ) : body ? (
                     <p className="text-xs text-gray-600">{body}</p>
-                  )}
+                  ) : null}
                 </div>
               ))}
             </div>
