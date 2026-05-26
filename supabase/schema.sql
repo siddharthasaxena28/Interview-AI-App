@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   email text UNIQUE NOT NULL,
   name text NOT NULL DEFAULT '',
   avatar_url text,
-  credit_balance integer NOT NULL DEFAULT 1,
+  credit_balance integer NOT NULL DEFAULT 1 CHECK (credit_balance >= 0),
   plan text NOT NULL DEFAULT 'free' CHECK (plan IN ('free', 'payg', 'pro', 'unlimited')),
   referral_code text UNIQUE NOT NULL DEFAULT '',
   created_at timestamptz NOT NULL DEFAULT now()
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS public.subscriptions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   plan text NOT NULL CHECK (plan IN ('pro', 'unlimited')),
-  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'past_due', 'cancelled')),
+  status text NOT NULL DEFAULT 'active' CHECK (status IN ('pending', 'active', 'past_due', 'cancelled')),
   razorpay_sub_id text NOT NULL,
   current_period_end timestamptz NOT NULL,
   credits_per_cycle integer NOT NULL DEFAULT 8
@@ -133,17 +133,24 @@ ALTER TABLE public.feedback_reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.weak_areas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.referrals ENABLE ROW LEVEL SECURITY;
 
--- users: own row only
-CREATE POLICY "users_own_row" ON public.users
-  USING (auth.uid() = id);
+-- users: a user may READ only their own row. There is intentionally NO write policy:
+-- credit_balance / plan / referral_code are mutated exclusively server-side via the
+-- service-role client (verify-payment, webhook, session start, referral, deletion).
+-- A FOR ALL / write policy here would let a user self-grant credits or upgrade their
+-- plan straight from the browser with the anon key.
+CREATE POLICY "users_select_own" ON public.users
+  FOR SELECT USING (auth.uid() = id);
 
--- subscriptions: own rows only
-CREATE POLICY "subscriptions_own_rows" ON public.subscriptions
-  USING (auth.uid() = user_id);
+-- subscriptions: read-only for the owner. Writes are server-side (service role) via
+-- create-subscription / cancel-subscription / the Razorpay webhook. A write policy
+-- would let a user self-edit plan, status, or credits_per_cycle from the browser.
+CREATE POLICY "subscriptions_select_own" ON public.subscriptions
+  FOR SELECT USING (auth.uid() = user_id);
 
--- credit_transactions: own rows only
-CREATE POLICY "credit_transactions_own_rows" ON public.credit_transactions
-  USING (auth.uid() = user_id);
+-- credit_transactions: read-only for the owner. All inserts are server-side; a client
+-- write policy would let a user fabricate purchase/credit ledger rows.
+CREATE POLICY "credit_transactions_select_own" ON public.credit_transactions
+  FOR SELECT USING (auth.uid() = user_id);
 
 -- interview_sessions: own rows only
 CREATE POLICY "sessions_own_rows" ON public.interview_sessions
@@ -165,16 +172,17 @@ CREATE POLICY "answers_via_session" ON public.answers
     )
   );
 
--- feedback_reports: own or public share token read
+-- feedback_reports: own rows only. Public share-link reads do NOT go through RLS —
+-- the /report/[token] page uses the service-role client and filters by the exact
+-- share_token. A "share_token IS NOT NULL" policy was removed: because share_token
+-- has a NOT NULL default, that predicate was always true and let ANY authenticated
+-- anon-key request read EVERY user's report (mass data leak).
 CREATE POLICY "reports_own_rows" ON public.feedback_reports
   FOR ALL USING (
     session_id IN (
       SELECT id FROM public.interview_sessions WHERE user_id = auth.uid()
     )
   );
-
-CREATE POLICY "reports_public_share" ON public.feedback_reports
-  FOR SELECT USING (share_token IS NOT NULL);
 
 -- weak_areas: own rows
 CREATE POLICY "weak_areas_own_rows" ON public.weak_areas
@@ -183,6 +191,54 @@ CREATE POLICY "weak_areas_own_rows" ON public.weak_areas
 -- referrals: own rows (referrer or referee)
 CREATE POLICY "referrals_own_rows" ON public.referrals
   USING (auth.uid() = referrer_id OR auth.uid() = referee_id);
+
+-- ==========================================
+-- FUNCTION: start_interview_session
+-- Atomically claims a session (setup -> in_progress) and consumes one credit in a
+-- single transaction. Idempotent against double-fired requests; serialises concurrent
+-- starts so the balance can't go negative. Unlimited subscribers don't spend a credit.
+-- ==========================================
+
+CREATE OR REPLACE FUNCTION public.start_interview_session(p_session_id uuid, p_user_id uuid)
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_rows integer;
+  v_plan text;
+BEGIN
+  UPDATE public.interview_sessions
+    SET status = 'in_progress', started_at = now()
+    WHERE id = p_session_id AND user_id = p_user_id AND status = 'setup';
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 0 THEN
+    RETURN 'already_started';
+  END IF;
+
+  SELECT plan INTO v_plan FROM public.users WHERE id = p_user_id;
+  IF v_plan = 'unlimited' THEN
+    RETURN 'started';
+  END IF;
+
+  UPDATE public.users
+    SET credit_balance = credit_balance - 1
+    WHERE id = p_user_id AND credit_balance > 0;
+  IF NOT FOUND THEN
+    UPDATE public.interview_sessions
+      SET status = 'setup', started_at = NULL
+      WHERE id = p_session_id;
+    RETURN 'no_credits';
+  END IF;
+
+  INSERT INTO public.credit_transactions (user_id, amount, type, session_id)
+    VALUES (p_user_id, -1, 'session_use', p_session_id);
+
+  RETURN 'started';
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.start_interview_session(uuid, uuid) TO authenticated, service_role;
 
 -- ==========================================
 -- FUNCTION: handle_new_user

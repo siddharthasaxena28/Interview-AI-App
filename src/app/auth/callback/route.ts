@@ -2,11 +2,16 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { Resend } from 'resend'
+import { createServiceClient } from '@/lib/supabase-server'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  const next = searchParams.get('next') ?? '/dashboard'
+  // Only allow same-origin relative paths. A value like "//evil.com" or
+  // "https://evil.com" would otherwise turn the post-login redirect into an
+  // open redirect (phishing / token-leak vector).
+  const nextParam = searchParams.get('next') ?? '/dashboard'
+  const next = nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : '/dashboard'
 
   if (!code) {
     return NextResponse.redirect(`${origin}/auth/login?error=auth_failed`)
@@ -38,6 +43,43 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase.auth.exchangeCodeForSession(code)
   if (error) {
     return NextResponse.redirect(`${origin}/auth/login?error=auth_failed`)
+  }
+
+  // Re-hydrate profile if this user previously deleted their data.
+  // handle_new_user() only fires on auth.users INSERT (first signup ever). Returning
+  // deleted users keep their auth.users row to prevent free-credit abuse, so the
+  // trigger never re-fires — we must restore their PII from Google OAuth here.
+  if (data.user) {
+    try {
+      const svc = await createServiceClient()
+      const { data: profile } = await svc
+        .from('users')
+        .select('email')
+        .eq('id', data.user.id)
+        .single()
+
+      if (profile?.email?.endsWith('@deleted.invalid')) {
+        const googleEmail = data.user.email ?? ''
+        const googleName =
+          data.user.user_metadata?.full_name ??
+          data.user.user_metadata?.name ??
+          googleEmail.split('@')[0]
+        const googleAvatar =
+          data.user.user_metadata?.avatar_url ??
+          data.user.user_metadata?.picture ??
+          null
+        await svc.from('users').update({
+          email: googleEmail,
+          name: googleName,
+          avatar_url: googleAvatar,
+          // referral_code intentionally not touched — retained through deletion so
+          // any links the user shared before deleting their data continue to work
+        }).eq('id', data.user.id)
+      }
+    } catch (err) {
+      console.error('Profile re-hydration error:', err)
+      // non-fatal — user can still log in, profile just won't be repopulated
+    }
   }
 
   // Send welcome email once on signup. created_at is set at first OAuth login and

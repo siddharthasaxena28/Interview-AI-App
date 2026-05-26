@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+
+export const dynamic = 'force-dynamic'
 import { Mic, Plus, Clock, TrendingUp, CreditCard, Flame, Target, Gift, ArrowRight } from 'lucide-react'
 import type { User, InterviewSession, FeedbackReport } from '@/types'
 import type { RoundType } from '@/types'
@@ -216,7 +218,9 @@ export default async function DashboardPage() {
             </div>
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="text-2xl font-bold text-blue-600">{creditBalance}</div>
+            <div className="text-2xl font-bold text-blue-600">
+              {creditBalance}
+            </div>
             <div className="text-sm text-gray-500 flex items-center gap-1 mt-0.5">
               <CreditCard className="w-3.5 h-3.5" /> Credits left
             </div>

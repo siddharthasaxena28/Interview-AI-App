@@ -19,14 +19,26 @@ CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_id ON public.push_subscri
 
 ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
 
--- Users manage only their own subscriptions
-CREATE POLICY IF NOT EXISTS "push_subscriptions_select_own" ON public.push_subscriptions
-  FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY IF NOT EXISTS "push_subscriptions_insert_own" ON public.push_subscriptions
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY IF NOT EXISTS "push_subscriptions_delete_own" ON public.push_subscriptions
-  FOR DELETE USING (auth.uid() = user_id);
+-- Users manage only their own subscriptions.
+-- Postgres CREATE POLICY does not support IF NOT EXISTS, so guard with a DO block.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='push_subscriptions' AND policyname='push_subscriptions_select_own') THEN
+    CREATE POLICY "push_subscriptions_select_own" ON public.push_subscriptions
+      FOR SELECT USING (auth.uid() = user_id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='push_subscriptions' AND policyname='push_subscriptions_insert_own') THEN
+    CREATE POLICY "push_subscriptions_insert_own" ON public.push_subscriptions
+      FOR INSERT WITH CHECK (auth.uid() = user_id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='push_subscriptions' AND policyname='push_subscriptions_update_own') THEN
+    CREATE POLICY "push_subscriptions_update_own" ON public.push_subscriptions
+      FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='push_subscriptions' AND policyname='push_subscriptions_delete_own') THEN
+    CREATE POLICY "push_subscriptions_delete_own" ON public.push_subscriptions
+      FOR DELETE USING (auth.uid() = user_id);
+  END IF;
+END $$;
 
 -- The service role (cron sender) bypasses RLS automatically.

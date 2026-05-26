@@ -20,20 +20,29 @@ Return ONLY a valid JSON object with this exact structure:
   "overall_score": <0-100>,
   "selection_probability": <0-100>,
   "strengths": [
-    {"title": "strength name", "example": "quote from their answer", "advice": "how to leverage this"}
+    {"title": "strength name", "example": "quote from their answer", "advice": "how to leverage this in future interviews"}
   ],
   "gaps": [
-    {"title": "gap name", "example": "specific instance from answers", "advice": "how to improve"}
+    {"title": "gap name", "example": "specific instance from answers", "advice": "concrete 1-2 sentence improvement action"}
   ],
   "per_question": [
-    {"question_id": "uuid", "score": <1-5>, "feedback": "specific feedback on this answer"}
+    {
+      "question_id": "uuid",
+      "score": <1-5>,
+      "feedback": "specific feedback referencing what they actually said",
+      "ideal_answer_hint": "For scores 1-3 only: 2-3 bullet points (use • character) covering what a strong answer must include. Omit this field entirely for scores 4-5."
+    }
   ],
   "communication": {
-    "score": <0-100>,
-    "clarity": "assessment of clarity",
-    "pacing": "assessment of pacing",
-    "confidence": "assessment of confidence",
-    "filler_words": "assessment of filler words"
+    "score": <0-100, overall communication score>,
+    "clarity": <0-100, how clearly ideas were expressed>,
+    "clarity_note": "one concise sentence assessment",
+    "pacing": <0-100, appropriate speed and rhythm — 100=perfect pacing>,
+    "pacing_note": "one concise sentence assessment",
+    "confidence": <0-100, assertiveness and conviction in delivery>,
+    "confidence_note": "one concise sentence assessment",
+    "filler_words": <0-100, where 100=no fillers at all, lower=more filler words>,
+    "filler_note": "one concise sentence assessment"
   },
   "summary": "2-3 paragraph honest narrative assessment"
 }
@@ -45,7 +54,8 @@ Rules:
 - gaps: exactly 3, specific to what was actually said (or not said)
 - Be specific — reference actual words and phrases used
 - No generic feedback — every point must trace back to something in the transcript
-- Be honest but constructive — this helps candidates improve`
+- Be honest but constructive — this helps candidates improve
+- ideal_answer_hint: only include for per_question scores 1-3; use bullet points starting with •`
 
 export async function POST(request: NextRequest) {
   try {
@@ -103,14 +113,16 @@ export async function POST(request: NextRequest) {
           { title: 'N/A', example: '', advice: '' },
         ],
         per_question: [],
-        communication: { score: 0, clarity: 'N/A', pacing: 'N/A', confidence: 'N/A', filler_words: 'N/A' },
+        communication: { score: 0, clarity: 0, pacing: 0, confidence: 0, filler_words: 0 },
         summary: 'This interview session ended before any questions were answered. No scored feedback can be generated. Start a new session and try to answer at least a few questions to receive a detailed report.',
       }
     } else {
-      // Build transcript for Claude
+      // Build transcript for Claude — include the real question UUID on each entry
+      // so Claude can echo it back in per_question_json. Without the ID in the prompt,
+      // Claude invents UUIDs that never match the DB, breaking the per-question display.
       const transcript = (questions as Question[]).map((q, i) => {
         const answer = answerMap.get(q.id)
-        return `Q${i + 1} [${q.topic_tag}, difficulty ${q.difficulty}/5]:
+        return `Q${i + 1} [question_id:${q.id}, topic:${q.topic_tag}, difficulty:${q.difficulty}/5]:
 "${q.text}"
 
 Candidate's answer:
@@ -157,6 +169,15 @@ Generate a comprehensive feedback report for this candidate.`
       } catch {
         throw new Error('Failed to parse feedback from AI')
       }
+
+      // Re-assign question_id by position — safety net in case Claude echoed the IDs
+      // incorrectly. The transcript is ordered, Claude returns per_question in the same
+      // order, so index 0 in per_question always corresponds to questions[0].
+      const orderedQuestions = questions as Question[]
+      feedback.per_question = feedback.per_question.map((pq, i) => ({
+        ...pq,
+        question_id: orderedQuestions[i]?.id ?? pq.question_id,
+      }))
     }
 
     const shareToken = generateShareToken()
@@ -171,6 +192,7 @@ Generate a comprehensive feedback report for this candidate.`
         gaps_json: feedback.gaps,
         per_question_json: feedback.per_question,
         communication_score: feedback.communication.score,
+        communication_json: feedback.communication,
         report_text: feedback.summary,
         share_token: shareToken,
       }).select().single(),
@@ -181,16 +203,20 @@ Generate a comprehensive feedback report for this candidate.`
 
     if (reportError) console.error('Report save error:', reportError)
 
-    // Side effects: streak, weak areas, referral, email — run in parallel with a 4 s budget.
-    // If they don't finish in time that's acceptable; the report is already saved.
+    // Streak + weak areas: await directly — these power the dashboard stats and
+    // must always complete. Both are small DB writes that finish in < 2 s.
+    await Promise.allSettled([
+      updateStreak(supabase, user.id),
+      updateWeakAreas(supabase, user.id, questions as Question[] ?? [], answerMap),
+    ])
+
+    // Referral credit + email: non-critical, 3 s budget so they don't stall the response.
     await Promise.race([
       Promise.allSettled([
-        updateStreak(supabase, user.id),
-        updateWeakAreas(supabase, user.id, questions as Question[] ?? [], answerMap),
         completeReferral(supabase, user.id),
         sendFeedbackEmail(supabase, user.id, session, feedback, session_id, shareToken),
       ]),
-      new Promise((resolve) => setTimeout(resolve, 4000)),
+      new Promise((resolve) => setTimeout(resolve, 3000)),
     ])
 
     return NextResponse.json({ report, feedback })
@@ -222,7 +248,10 @@ async function updateStreak(supabase: Awaited<ReturnType<typeof import('@/lib/su
     else if (diffDays === 1) newStreak = currentUser.current_streak + 1
   }
   const newLongest = Math.max(newStreak, currentUser?.longest_streak ?? 0)
-  await supabase
+  // users writes go through the service client (clients can't mutate their own row).
+  const { createServiceClient } = await import('@/lib/supabase-server')
+  const svc = await createServiceClient()
+  await svc
     .from('users')
     .update({ current_streak: newStreak, longest_streak: newLongest, last_session_date: today })
     .eq('id', userId)
@@ -254,10 +283,11 @@ async function updateWeakAreas(
     const existingCount = existing?.session_count ?? 0
     const newCount = existingCount + 1
     const newAvg = ((existing?.avg_score ?? 0) * existingCount + sessionAvg) / newCount
-    await supabase.from('weak_areas').upsert(
+    const { error: upsertErr } = await supabase.from('weak_areas').upsert(
       { user_id: userId, topic_tag: topicTag, avg_score: Math.round(newAvg * 100) / 100, session_count: newCount, last_updated: new Date().toISOString() },
       { onConflict: 'user_id,topic_tag' }
     )
+    if (upsertErr) console.error('weak_areas upsert error:', topicTag, upsertErr)
   }))
 }
 
@@ -272,7 +302,13 @@ async function completeReferral(
     .eq('status', 'completed')
   if (completedCount !== 1) return
 
-  const { data: referral } = await supabase
+  // Crediting writes the referrer's row (a different user) and credit_transactions
+  // for both parties — both require the service client, since per-user RLS correctly
+  // blocks a user from writing another user's balance.
+  const { createServiceClient } = await import('@/lib/supabase-server')
+  const svc = await createServiceClient()
+
+  const { data: referral } = await svc
     .from('referrals')
     .select('id, referrer_id')
     .eq('referee_id', userId)
@@ -280,22 +316,30 @@ async function completeReferral(
     .single()
   if (!referral) return
 
-  await supabase.from('referrals')
+  // Claim atomically: only the request that flips pending->completed credits, so
+  // concurrent/retried feedback calls can't grant the bonus twice.
+  const { data: claimed } = await svc.from('referrals')
     .update({ status: 'completed', completed_at: new Date().toISOString() })
     .eq('id', referral.id)
+    .eq('status', 'pending')
+    .select('id')
+    .maybeSingle()
+  if (!claimed) return
 
   await Promise.all([
-    (async () => {
-      const { data: referrer } = await supabase.from('users').select('credit_balance').eq('id', referral.referrer_id).single()
-      await supabase.from('users').update({ credit_balance: (referrer?.credit_balance ?? 0) + 1 }).eq('id', referral.referrer_id)
-      await supabase.from('credit_transactions').insert({ user_id: referral.referrer_id, amount: 1, type: 'referral_bonus' })
-    })(),
-    (async () => {
-      const { data: referee } = await supabase.from('users').select('credit_balance').eq('id', userId).single()
-      await supabase.from('users').update({ credit_balance: (referee?.credit_balance ?? 0) + 1 }).eq('id', userId)
-      await supabase.from('credit_transactions').insert({ user_id: userId, amount: 1, type: 'referral_bonus' })
-    })(),
+    creditReferralBonus(svc, referral.referrer_id),
+    creditReferralBonus(svc, userId),
   ])
+}
+
+async function creditReferralBonus(
+  svc: Awaited<ReturnType<typeof import('@/lib/supabase-server').createServiceClient>>,
+  id: string,
+) {
+  const { data: u } = await svc.from('users').select('credit_balance').eq('id', id).single()
+  await svc.from('users').update({ credit_balance: (u?.credit_balance ?? 0) + 1 }).eq('id', id)
+  // 'referral' is the value allowed by the credit_transactions type CHECK constraint.
+  await svc.from('credit_transactions').insert({ user_id: id, amount: 1, type: 'referral' })
 }
 
 async function sendFeedbackEmail(

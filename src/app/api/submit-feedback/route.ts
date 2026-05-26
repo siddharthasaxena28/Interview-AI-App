@@ -22,6 +22,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid payload' }, { status: 400 })
     }
 
+    // Cap free-text fields so a client can't store multi-MB blobs (DB-bloat abuse).
+    const MAX_LEN = 2000
+    const improvement = improvement_areas?.trim().slice(0, MAX_LEN) || null
+    const suggestions = feature_suggestions?.trim().slice(0, MAX_LEN) || null
+
     // Verify the session belongs to this user
     const { data: session } = await supabase
       .from('interview_sessions')
@@ -40,8 +45,8 @@ export async function POST(request: NextRequest) {
           user_id: user.id,
           session_id,
           overall_rating,
-          improvement_areas: improvement_areas?.trim() || null,
-          feature_suggestions: feature_suggestions?.trim() || null,
+          improvement_areas: improvement,
+          feature_suggestions: suggestions,
         },
         { onConflict: 'session_id' }
       )

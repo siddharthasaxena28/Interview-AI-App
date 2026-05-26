@@ -76,10 +76,44 @@ function SessionPageInner({ params }: SessionPageProps) {
   // Holds a resolve() callback for the currently-playing speakText promise so
   // stopAllAudio() can resolve it immediately from outside the function.
   const cancelSpeakRef = useRef<(() => void) | null>(null)
+  // Mirrors `state` in a ref so timeout callbacks can read the current audio state
+  // without capturing a stale closure value.
+  const audioStateRef = useRef(state)
+  // Throttle thinking-time prompts — only one per 30 s so we don't nag the candidate.
+  const lastThinkingPromptRef = useRef(0)
 
   useEffect(() => { currentQuestionRef.current = currentQuestion }, [currentQuestion])
   useEffect(() => { phaseRef.current = phase }, [phase])
   useEffect(() => { endingRef.current = ending }, [ending])
+  useEffect(() => { audioStateRef.current = state }, [state])
+
+  // Thinking-time prompt — if the candidate is silent for 9 s after the AI asks a
+  // question, the interviewer gently acknowledges it. Mirrors what a real interviewer
+  // would do: they don't just stare in silence.
+  useEffect(() => {
+    if (state !== 'LISTENING' || phase !== 'interview' || ending) return
+    const PROMPTS = [
+      'Take your time, there\'s no rush.',
+      'No hurry at all — whenever you\'re ready.',
+      'Feel free to take a moment.',
+      'Whenever you\'re ready.',
+    ]
+    const timer = setTimeout(() => {
+      if (
+        audioStateRef.current !== 'LISTENING' ||
+        endingRef.current ||
+        phaseRef.current !== 'interview'
+      ) return
+      const now = Date.now()
+      if (now - lastThinkingPromptRef.current < 30_000) return // max once per 30 s
+      lastThinkingPromptRef.current = now
+      const prompt = PROMPTS[Math.floor(Math.random() * PROMPTS.length)]
+      speakText(prompt)
+    }, 9000)
+    return () => clearTimeout(timer)
+    // speakText is stable within a render cycle; deps cover all guards
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, phase, ending])
 
   // Load session data
   useEffect(() => {
@@ -169,7 +203,7 @@ function SessionPageInner({ params }: SessionPageProps) {
         const sampleRate = Math.round(audioContext.sampleRate)
 
         const ws = new WebSocket(
-          `wss://api.deepgram.com/v1/listen?model=nova-2-general&language=en-IN&punctuate=true&interim_results=true&vad_events=true&endpointing=1500&utterance_end_ms=1500&encoding=linear16&sample_rate=${sampleRate}&channels=1`,
+          `wss://api.deepgram.com/v1/listen?model=nova-2-general&language=en-IN&punctuate=true&interim_results=true&vad_events=true&endpointing=2000&utterance_end_ms=2000&encoding=linear16&sample_rate=${sampleRate}&channels=1`,
           ['token', key]
         )
 
@@ -239,16 +273,19 @@ function SessionPageInner({ params }: SessionPageProps) {
                 const step = introStepRef.current
                 if (step === 1) {
                   introStepRef.current = 3
+                  // Neutral bridge — doesn't claim to react to what the candidate said
+                  // (we can't know if they said "great" or "nervous").
                   speakText(
-                    `That's great to hear! Before we dive in, I'd love to know a bit more about you. Could you give me a quick introduction — your background, experience, and what drew you to apply for this ${sd.session.role} role at ${sd.session.company}?`
+                    `Good to know! Before we get started, could you give me a brief introduction — your background, your experience, and what drew you to apply for this ${sd.session.role} role at ${sd.session.company}?`
                   )
                 } else if (step === 3) {
                   phaseRef.current = 'interview'
                   setPhase('interview')
                   const q = currentQuestionRef.current
                   if (q) {
+                    // "..." creates a natural breath/pause between the bridge and the question.
                     speakText(
-                      `That's a great background — thank you for sharing! Alright, let's get into the interview. Here's the first question: ${q.text}`
+                      `Thanks for sharing that! Alright, let's get into it... ${q.text}`
                     )
                   }
                 }
@@ -467,22 +504,24 @@ function SessionPageInner({ params }: SessionPageProps) {
         setCurrentQuestion(data.next_question)
         // A probe stays on the same logical question — don't advance the counter.
         if (!data.is_probe) setQuestionIndex((i) => i + 1)
+
+        const spoken: string = data.spoken_response ?? ''
         let ackText: string
+
         if (data.is_probe) {
-          // Interviewer pushing back — flow straight into the follow-up, no "moving on".
-          ackText = data.brief_feedback
-            ? `${data.brief_feedback} ${data.next_question.text}`
+          // Interviewer pushing back — spoken_response leads directly into the probe.
+          // No "..." pause: the probe is a tight follow-up, not a new question.
+          ackText = spoken
+            ? `${spoken} ${data.next_question.text}`
             : data.next_question.text
-        } else if (data.candidate_wants_to_skip) {
-          // Candidate asked to pass — acknowledge graciously, no pressure.
-          ackText = data.brief_feedback
-            ? `${data.brief_feedback} ${data.next_question.text}`
-            : `Sure, let's move on. ${data.next_question.text}`
         } else {
-          ackText = data.brief_feedback
-            ? `${data.brief_feedback} Let's move on. ${data.next_question.text}`
+          // Normal next question or skip: spoken_response reacts to this answer,
+          // then "..." creates a natural breath before the next question begins.
+          ackText = spoken
+            ? `${spoken}... ${data.next_question.text}`
             : data.next_question.text
         }
+
         await speakText(ackText)
       } else {
         await endInterview()

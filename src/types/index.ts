@@ -1,8 +1,7 @@
-export type Plan = 'free' | 'payg' | 'pro' | 'unlimited'
+export type Plan = 'free' | 'payg'
 export type RoundType = 'tech_l1' | 'tech_l2' | 'managerial' | 'hr' | 'full_loop'
 export type SessionStatus = 'setup' | 'in_progress' | 'completed' | 'abandoned'
-export type SubscriptionStatus = 'active' | 'past_due' | 'cancelled'
-export type TransactionType = 'signup' | 'purchase' | 'subscription' | 'referral' | 'session_use'
+export type TransactionType = 'signup' | 'purchase' | 'referral' | 'session_use'
 
 export interface User {
   id: string
@@ -16,16 +15,6 @@ export interface User {
   current_streak: number
   longest_streak: number
   last_session_date: string | null
-}
-
-export interface Subscription {
-  id: string
-  user_id: string
-  plan: 'pro' | 'unlimited'
-  status: SubscriptionStatus
-  razorpay_sub_id: string
-  current_period_end: string
-  credits_per_cycle: number
 }
 
 export interface CreditTransaction {
@@ -87,14 +76,19 @@ export interface PerQuestionFeedback {
   question_id: string
   score: number
   feedback: string
+  ideal_answer_hint?: string
 }
 
 export interface CommunicationFeedback {
   score: number
-  clarity: string
-  pacing: string
-  confidence: string
-  filler_words: string
+  clarity: number
+  clarity_note?: string
+  pacing: number
+  pacing_note?: string
+  confidence: number
+  confidence_note?: string
+  filler_words: number
+  filler_note?: string
 }
 
 export interface FeedbackReport {
@@ -106,6 +100,7 @@ export interface FeedbackReport {
   gaps_json: GapItem[]
   per_question_json: PerQuestionFeedback[]
   communication_score: number
+  communication_json: CommunicationFeedback | null
   report_text: string
   share_token: string
   emailed_at: string | null

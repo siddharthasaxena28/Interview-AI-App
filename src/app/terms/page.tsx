@@ -83,12 +83,11 @@ const SECTIONS = [
     content: (
       <ul className="list-disc pl-5 space-y-2">
         <li><strong>Free credit:</strong> Each new account receives 1 free interview session credit on signup.</li>
-        <li><strong>Paid credits:</strong> Additional credits may be purchased (pay-as-you-go) or obtained through a monthly subscription via Razorpay. All prices are in Indian Rupees (INR) and inclusive of applicable taxes.</li>
-        <li><strong>Credits are non-transferable and non-refundable</strong> once an interview session has been started and questions have been generated.</li>
+        <li><strong>Paid credits:</strong> Additional credits are purchased as one-time packs via Razorpay (Single, Starter, or Serious Prep). All prices are in Indian Rupees (INR) and inclusive of applicable taxes.</li>
+        <li><strong>Credits never expire</strong> and are non-transferable. Credits are non-refundable once an interview session has been started and questions have been generated.</li>
         <li><strong>Refund policy:</strong> If a session fails due to a technical error on our end before any questions are asked, we will restore your credit. Contact <a href="mailto:support@interviewai.in" className="text-blue-600 hover:underline">support@interviewai.in</a> within 7 days.</li>
-        <li><strong>Subscriptions</strong> renew automatically each billing cycle. You may cancel at any time from your Account page; access continues until the end of the paid period.</li>
-        <li><strong>Credits and subscriptions survive account data deletion.</strong> If you request deletion of your personal data, your remaining credit balance, active subscription, and payment records are retained. Credits you have purchased are not forfeited by a deletion request. Should you return to the Platform, your credits and plan will be intact.</li>
-        <li>We reserve the right to change pricing with 30 days&apos; advance notice to existing subscribers.</li>
+        <li><strong>Credits survive account data deletion.</strong> If you request deletion of your personal data, your remaining credit balance and payment records are retained. Credits you have purchased are not forfeited by a deletion request. Should you return to the Platform, your credits will be intact.</li>
+        <li>We reserve the right to change pricing for new purchases with 30 days&apos; advance notice.</li>
       </ul>
     ),
   },

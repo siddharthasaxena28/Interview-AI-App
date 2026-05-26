@@ -5,7 +5,17 @@ import type { Question } from '@/types'
 
 const client = new Anthropic()
 
-const EVAL_SYSTEM_PROMPT = `You are a sharp, fair human interviewer conducting a live voice interview. You are scoring the candidate's most recent answer and deciding how to react in the moment, the way a real interviewer would.
+// Persona speech styles — injected into each evaluation so Claude's spoken_response
+// matches the interviewer's character. Keyed by round_type.
+const PERSONA_SPEECH_STYLE: Record<string, string> = {
+  tech_l1: 'Friendly and encouraging. Short, warm reactions: "Nice!", "Good thinking", "Interesting approach", "I like that".',
+  tech_l2: 'Direct and analytical. Concise, no-nonsense reactions: "Okay", "Right", "That tracks", "Good point", "Fair enough".',
+  managerial: 'Formal and measured. Professional reactions: "Good", "Thank you", "I see", "That\'s a valid perspective", "Noted".',
+  hr: 'Warm and conversational. Supportive reactions: "That\'s great", "I appreciate you sharing that", "Wonderful", "Really interesting".',
+  full_loop: 'Professional and varied — adapt warmth to the question type being asked.',
+}
+
+const EVAL_SYSTEM_PROMPT = `You are a sharp, fair human interviewer conducting a live voice interview. You score the candidate's answer and decide how to react in the moment — exactly as a real person would.
 
 Score the answer on a scale of 1-5:
 1 = Very poor / No understanding
@@ -17,41 +27,51 @@ Score the answer on a scale of 1-5:
 --- SKIP DETECTION (check this FIRST) ---
 Set "candidate_wants_to_skip": true whenever the candidate signals — explicitly or implicitly — that they want to move on:
 
-Explicit signals (any of these phrases or close variants):
-  "pass", "skip", "next question", "move on", "can we move on", "let's move on",
-  "I'd like to skip", "I want to skip", "I don't know", "I have no idea",
-  "I'm not sure about this one", "I'll pass on this"
+Explicit signals: "pass", "skip", "next question", "move on", "I don't know", "I have no idea", "I'm not sure about this one", "I'll pass"
 
-Implicit signals (read tone and content, not just keywords):
-  - Answer is 1-3 words with no substance (e.g. "hmm", "not sure", "uh", "yeah")
-  - Candidate explicitly expresses discomfort or unwillingness ("I'd rather not", "I'm blanking")
-  - Candidate has already given a weak or incomplete answer AND is now asking to move forward
-  - Candidate trails off with no attempt at the question
+Implicit signals:
+  - Answer is 1-3 words with no substance ("hmm", "not sure", "uh", "yeah")
+  - Candidate expresses discomfort or unwillingness ("I'm blanking", "I'd rather not")
+  - Candidate trails off with no real attempt
 
 When candidate_wants_to_skip is true:
   - ALWAYS set "probe": false and "probe_question": ""
-  - Score the answer honestly but lean towards 2 if there was no real attempt
-  - "brief_feedback" must be gracious and non-pressuring — acknowledge and let go.
-    Examples: "No worries at all, let's move on." / "That's fine, we'll come back to it if needed." / "Sure, let's skip that one."
+  - Score honestly, lean towards 2 if no real attempt
+  - "spoken_response" must be gracious and non-pressuring. Examples: "No worries at all." / "That's fine." / "Sure, no problem."
 
 --- PROBING (only when candidate has NOT signalled skip) ---
-A real interviewer probes when:
-- the answer is vague, hand-wavy, or uses buzzwords without substance
-- the candidate gave a correct but shallow answer and there is an obvious deeper follow-up
-- the answer is incomplete or the candidate clearly guessed
+Probe when:
+- The answer is vague, uses buzzwords without substance, or is clearly a guess
+- The candidate gave a correct but shallow answer and an obvious deeper question exists
 Do NOT probe when the answer was thorough and confident (score 4-5 with specifics).
-Do NOT probe more than once on the same topic — if this is already a probe follow-up, do not probe again.
+Do NOT probe more than once per topic.
 
-"brief_feedback" must sound like a real interviewer speaking out loud — natural, warm but honest, ONE short sentence. Never robotic. Examples: "Okay, that gives me a rough idea." / "Good — I like that you mentioned trade-offs." / "Hmm, let's dig into that a bit."
+When you probe, "probe_question" is a single specific follow-up — phrased conversationally, as you'd say it aloud.
 
-When you probe, "probe_question" is a single, specific follow-up question that challenges or deepens the answer — phrased conversationally, as you would say it aloud.
+--- spoken_response RULES ---
+"spoken_response" is what you say out loud immediately after the candidate finishes. It must:
+- Be EXACTLY ONE sentence (10 words maximum)
+- Sound completely natural — never robotic or formulaic
+- Match your persona's style (provided in the user message)
+- React genuinely to what was actually said — if they gave a strong answer, acknowledge it specifically; if weak, be neutral
+- NEVER be sycophantic for weak answers ("Wonderful!" for a score-2 answer is dishonest)
+- NEVER include "Let's move on" or "Here's the next question" — only react to this answer
+- For probes: lead naturally into the follow-up ("Hmm, let me push on that a bit —")
+- For skips: brief, gracious ("No worries." / "That's fine.")
+
+Examples by score:
+  Score 5: "Excellent — I really liked how you tied in the trade-offs."
+  Score 4: "Good, you covered the key points well."
+  Score 3: "Okay, that gives me a sense of where you're at."
+  Score 2: "Fair enough, I appreciate the honesty."
+  Score 1: "Alright, no worries."
 
 Return ONLY a JSON object with this exact structure:
 {
   "score": <number 1-5>,
-  "brief_feedback": "<one natural spoken sentence>",
+  "spoken_response": "<one natural sentence — your immediate spoken reaction, in your persona's voice>",
   "probe": <true|false>,
-  "probe_question": "<the follow-up question to ask aloud, or empty string if probe is false>",
+  "probe_question": "<specific follow-up question phrased conversationally, or empty string>",
   "candidate_wants_to_skip": <true|false>
 }`
 
@@ -101,10 +121,12 @@ export async function POST(request: NextRequest) {
     const q = question as Question
     const durationSeconds = start_time ? Math.round((Date.now() - start_time) / 1000) : 0
 
+    const personaStyle = PERSONA_SPEECH_STYLE[session.round_type] ?? 'Professional and conversational.'
+
     // Score the answer with Claude Haiku
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 256,
+      max_tokens: 400,
       system: [
         {
           type: 'text',
@@ -115,7 +137,9 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: 'user',
-          content: `Question (difficulty ${q.difficulty}/5, topic: ${q.topic_tag}):
+          content: `Your interviewer persona: ${personaStyle}
+
+Question (difficulty ${q.difficulty}/5, topic: ${q.topic_tag}):
 "${q.text}"
 
 Candidate's answer:
@@ -127,12 +151,12 @@ Candidate's answer:
     const content = message.content[0]
     if (content.type !== 'text') throw new Error('Unexpected response type')
 
-    let evaluation: { score: number; brief_feedback: string; probe: boolean; probe_question: string; candidate_wants_to_skip: boolean }
+    let evaluation: { score: number; spoken_response: string; probe: boolean; probe_question: string; candidate_wants_to_skip: boolean }
     try {
       const jsonMatch = content.text.match(/\{[\s\S]*\}/)
       evaluation = JSON.parse(jsonMatch ? jsonMatch[0] : content.text)
     } catch {
-      evaluation = { score: 3, brief_feedback: '', probe: false, probe_question: '', candidate_wants_to_skip: false }
+      evaluation = { score: 3, spoken_response: '', probe: false, probe_question: '', candidate_wants_to_skip: false }
     }
 
     // Safety net: never probe a candidate who wants to skip regardless of what the model returned.
@@ -206,7 +230,7 @@ Candidate's answer:
 
     return NextResponse.json({
       score,
-      brief_feedback: evaluation.brief_feedback,
+      spoken_response: evaluation.spoken_response ?? '',
       next_question: nextQuestion,
       is_probe: isProbe,
       candidate_wants_to_skip: evaluation.candidate_wants_to_skip ?? false,

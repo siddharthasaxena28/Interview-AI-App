@@ -2,6 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import Razorpay from 'razorpay'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 
+// All amounts in paise (1 INR = 100 paise). Resolved server-side — the
+// client sends only a pack key so it can never manufacture a cheaper order.
+const PACK_CONFIG = {
+  single:  { amount: 24900,  credits: 1,  label: '1 Interview Session' },
+  starter: { amount: 99900,  credits: 5,  label: '5 Interview Sessions' },
+  serious: { amount: 179900, credits: 10, label: '10 Interview Sessions' },
+} as const
+
+type PackKey = keyof typeof PACK_CONFIG
+
 export async function POST(request: NextRequest) {
   try {
     const razorpay = new Razorpay({
@@ -16,17 +26,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Price is fixed server-side. Never trust a client-supplied amount — otherwise a
-    // user could order for ₹1 and still receive a full ₹249 PAYG credit on verification.
-    const PAYG_AMOUNT_PAISE = 24900 // ₹249
+    const { pack } = await request.json() as { pack: PackKey }
+
+    if (!PACK_CONFIG[pack]) {
+      return NextResponse.json({ error: 'Invalid pack' }, { status: 400 })
+    }
+
+    const config = PACK_CONFIG[pack]
 
     const order = await razorpay.orders.create({
-      amount: PAYG_AMOUNT_PAISE,
+      amount: config.amount,
       currency: 'INR',
       receipt: `receipt_${user.id.slice(0, 8)}_${Date.now()}`,
       notes: {
         user_id: user.id,
-        type: 'payg',
+        pack,
+        // Stored as string — Razorpay notes values must be strings.
+        // verify-payment reads this back from the order to grant the right credits.
+        credits: config.credits.toString(),
       },
     })
 
@@ -34,6 +51,7 @@ export async function POST(request: NextRequest) {
       order_id: order.id,
       amount: order.amount,
       currency: order.currency,
+      label: config.label,
       key_id: process.env.RAZORPAY_KEY_ID,
     })
   } catch (error) {

@@ -26,18 +26,25 @@ CREATE INDEX IF NOT EXISTS idx_org_members_user_id ON public.organization_member
 ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.organization_members ENABLE ROW LEVEL SECURITY;
 
--- A member can see their own membership rows
-CREATE POLICY IF NOT EXISTS "org_members_select_own" ON public.organization_members
-  FOR SELECT USING (auth.uid() = user_id);
-
--- A member can see organizations they belong to
-CREATE POLICY IF NOT EXISTS "organizations_select_member" ON public.organizations
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM public.organization_members m
-      WHERE m.org_id = organizations.id AND m.user_id = auth.uid()
-    )
-  );
+-- Postgres CREATE POLICY does not support IF NOT EXISTS, so guard with a DO block.
+DO $$
+BEGIN
+  -- A member can see their own membership rows
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='organization_members' AND policyname='org_members_select_own') THEN
+    CREATE POLICY "org_members_select_own" ON public.organization_members
+      FOR SELECT USING (auth.uid() = user_id);
+  END IF;
+  -- A member can see organizations they belong to
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='organizations' AND policyname='organizations_select_member') THEN
+    CREATE POLICY "organizations_select_member" ON public.organizations
+      FOR SELECT USING (
+        EXISTS (
+          SELECT 1 FROM public.organization_members m
+          WHERE m.org_id = organizations.id AND m.user_id = auth.uid()
+        )
+      );
+  END IF;
+END $$;
 
 -- The service role bypasses RLS; the /org dashboard authorises the admin with the
 -- user-context client first, then aggregates members' data with the service client.
