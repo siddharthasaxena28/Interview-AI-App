@@ -35,7 +35,16 @@ CREATE INDEX IF NOT EXISTS idx_referrals_referee_id ON public.referrals(referee_
 ALTER TABLE public.referrals ENABLE ROW LEVEL SECURITY;
 
 -- Policy: users can only see their own referrals
-CREATE POLICY IF NOT EXISTS "referrals_select_own" ON public.referrals
-  FOR SELECT USING (auth.uid() = referrer_id OR auth.uid() = referee_id);
+-- (CREATE POLICY has no IF NOT EXISTS — guard manually)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'referrals' AND policyname = 'referrals_select_own'
+  ) THEN
+    CREATE POLICY "referrals_select_own" ON public.referrals
+      FOR SELECT USING (auth.uid() = referrer_id OR auth.uid() = referee_id);
+  END IF;
+END $$;
 
 -- Service role can do everything (for server-side operations)
