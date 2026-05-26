@@ -49,7 +49,7 @@ export default function UserMenu({ name, email, avatarUrl, creditBalance, plan }
     const { createClient } = await import('@/lib/supabase')
     const supabase = createClient()
     await supabase.auth.signOut()
-    router.push('/auth/login')
+    router.push('/')
   }
 
   const initials = name
