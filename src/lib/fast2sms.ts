@@ -62,17 +62,19 @@ export function verifyOtpToken(
 
 type F2SResponse = { return?: boolean; request_id?: string; message?: string | string[] }
 
-// Sends the OTP SMS via Fast2SMS Quick Transactional route.
+// Sends the OTP SMS via Fast2SMS dedicated OTP route.
+// This route uses Fast2SMS's pre-registered DLT template so delivery works
+// without any DLT registration on your end. The message sent is:
+// "Your OTP is {otp}. Please do not share this OTP with anyone. - FSTSMS"
 // numbers: 10-digit Indian mobile (no country code).
 export async function sendOtp(
   tenDigitNumber: string,
   otp: string
 ): Promise<{ ok: boolean; error?: string }> {
-  const message = `${otp} is your InterviewAI verification code. Valid for 5 minutes. Do not share.`
   const params = new URLSearchParams({
     authorization: process.env.FAST2SMS_API_KEY!,
-    route: 'q',          // Quick Transactional route
-    message,
+    route: 'otp',
+    variables_values: otp,
     flash: '0',
     numbers: tenDigitNumber,
   })
