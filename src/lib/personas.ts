@@ -76,3 +76,14 @@ export function getRoundDuration(roundType: RoundType): number {
   if (roundType === 'full_loop') return 60
   return 30
 }
+
+// How each interviewer reacts out loud — injected into live AI calls (answer
+// evaluation + the intro conversation) so spoken responses match the persona's
+// character. Keyed by round_type.
+export const PERSONA_SPEECH_STYLE: Record<RoundType, string> = {
+  tech_l1: 'Friendly and encouraging. Short, warm reactions: "Nice!", "Good thinking", "Interesting approach", "I like that".',
+  tech_l2: 'Direct and analytical. Concise, no-nonsense reactions: "Okay", "Right", "That tracks", "Good point", "Fair enough".',
+  managerial: 'Formal and measured. Professional reactions: "Good", "Thank you", "I see", "That\'s a valid perspective", "Noted".',
+  hr: 'Warm and conversational. Supportive reactions: "That\'s great", "I appreciate you sharing that", "Wonderful", "Really interesting".',
+  full_loop: 'Professional and varied — adapt warmth to the question type being asked.',
+}

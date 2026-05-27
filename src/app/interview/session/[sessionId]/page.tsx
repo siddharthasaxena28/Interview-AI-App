@@ -309,21 +309,25 @@ function SessionPageInner({ params }: SessionPageProps) {
                 const step = introStepRef.current
                 if (step === 1) {
                   introStepRef.current = 3
-                  // Neutral bridge — doesn't claim to react to what the candidate said
-                  // (we can't know if they said "great" or "nervous").
-                  speakText(
-                    `Good to know! Before we get started, could you give me a brief introduction — your background, your experience, and what drew you to apply for this ${sd.session.role} role at ${sd.session.company}?`
-                  )
+                  setProcessing()
+                  // Genuine in-persona reaction to how the candidate is feeling,
+                  // then the ask for a brief introduction.
+                  const fallback = `Good to know! Before we get started, could you give me a brief introduction — your background, your experience, and what drew you to apply for this ${sd.session.role} role at ${sd.session.company}?`
+                  ;(async () => {
+                    const spoken = await fetchIntroSpoken(1, full, fallback)
+                    await speakText(spoken)
+                  })()
                 } else if (step === 3) {
                   phaseRef.current = 'interview'
                   setPhase('interview')
+                  setProcessing()
                   const q = currentQuestionRef.current
-                  if (q) {
-                    // "..." creates a natural breath/pause between the bridge and the question.
-                    speakText(
-                      `Thanks for sharing that! Alright, let's get into it... ${q.text}`
-                    )
-                  }
+                  // Genuine reaction to their self-intro, then "..." pause into Q1.
+                  const fallback = `Thanks for sharing that! Alright, let's get into it`
+                  ;(async () => {
+                    const spoken = await fetchIntroSpoken(3, full, fallback)
+                    await speakText(q ? `${spoken}... ${q.text}` : spoken)
+                  })()
                 }
               } else {
                 handleAnswerCompleteRef.current(full)
@@ -468,6 +472,24 @@ function SessionPageInner({ params }: SessionPageProps) {
     }
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel()
+    }
+  }
+
+  // Generates the interviewer's spoken intro reaction (in persona, reacting to
+  // what the candidate actually said). Falls back to a scripted line if the
+  // call fails, so the conversation never stalls.
+  async function fetchIntroSpoken(step: 1 | 3, transcript: string, fallback: string): Promise<string> {
+    try {
+      const res = await fetch('/api/interview-intro', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId, step, transcript }),
+      })
+      if (!res.ok) return fallback
+      const data = await res.json()
+      return data.spoken && data.spoken.trim() ? data.spoken.trim() : fallback
+    } catch {
+      return fallback
     }
   }
 

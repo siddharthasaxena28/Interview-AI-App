@@ -1,19 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
-import type { Question } from '@/types'
+import { PERSONA_SPEECH_STYLE } from '@/lib/personas'
+import type { Question, RoundType } from '@/types'
 
 const client = new Anthropic()
-
-// Persona speech styles — injected into each evaluation so Claude's spoken_response
-// matches the interviewer's character. Keyed by round_type.
-const PERSONA_SPEECH_STYLE: Record<string, string> = {
-  tech_l1: 'Friendly and encouraging. Short, warm reactions: "Nice!", "Good thinking", "Interesting approach", "I like that".',
-  tech_l2: 'Direct and analytical. Concise, no-nonsense reactions: "Okay", "Right", "That tracks", "Good point", "Fair enough".',
-  managerial: 'Formal and measured. Professional reactions: "Good", "Thank you", "I see", "That\'s a valid perspective", "Noted".',
-  hr: 'Warm and conversational. Supportive reactions: "That\'s great", "I appreciate you sharing that", "Wonderful", "Really interesting".',
-  full_loop: 'Professional and varied — adapt warmth to the question type being asked.',
-}
 
 const EVAL_SYSTEM_PROMPT = `You are a sharp, fair human interviewer conducting a live voice interview. You score the candidate's answer and decide how to react in the moment — exactly as a real person would.
 
@@ -121,7 +112,7 @@ export async function POST(request: NextRequest) {
     const q = question as Question
     const durationSeconds = start_time ? Math.round((Date.now() - start_time) / 1000) : 0
 
-    const personaStyle = PERSONA_SPEECH_STYLE[session.round_type] ?? 'Professional and conversational.'
+    const personaStyle = PERSONA_SPEECH_STYLE[session.round_type as RoundType] ?? 'Professional and conversational.'
 
     // Score the answer with Claude Haiku
     const message = await client.messages.create({
