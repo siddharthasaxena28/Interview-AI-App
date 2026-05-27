@@ -2,6 +2,10 @@ import Link from 'next/link'
 import { Mic, Brain, BarChart3, CheckCircle, Star, ArrowRight, Zap, Users, Award, Clock } from 'lucide-react'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 
+// Session count is read live from the DB on every request, so the page must
+// not be statically cached at build time.
+export const dynamic = 'force-dynamic'
+
 export default async function LandingPage() {
   const supabase = await createServerSupabaseClient()
   const { data: { user } } = await supabase.auth.getUser()
