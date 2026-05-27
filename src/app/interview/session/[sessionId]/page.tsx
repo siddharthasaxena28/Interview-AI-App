@@ -171,6 +171,9 @@ function SessionPageInner({ params }: SessionPageProps) {
 
     return () => {
       isMountedRef.current = false
+      // Stop the mic if the user navigates away without ending the interview —
+      // otherwise the captured stream stays live until garbage collection.
+      mediaStreamRef.current?.getTracks().forEach((t) => t.stop())
     }
   }, [sessionId])
 
@@ -368,6 +371,9 @@ function SessionPageInner({ params }: SessionPageProps) {
       }
       sourceNodeRef.current?.disconnect()
       audioContextRef.current?.close().catch(() => {})
+      // Null the ref so a later setup doesn't reuse a closed context (which would
+      // throw on createMediaStreamSource and silently kill transcription).
+      audioContextRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started, micPermission, sessionData])
