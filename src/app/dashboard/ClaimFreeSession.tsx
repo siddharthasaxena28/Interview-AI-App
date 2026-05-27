@@ -12,6 +12,7 @@ export default function ClaimFreeSession() {
   const [step, setStep] = useState<Step>('intro')
   const [phone, setPhone] = useState('')
   const [otp, setOtp] = useState('')
+  const [otpToken, setOtpToken] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [deniedMsg, setDeniedMsg] = useState('')
@@ -44,6 +45,7 @@ export default function ClaimFreeSession() {
         setError(data.error ?? 'Could not send the code. Try again.')
         return
       }
+      setOtpToken(data.token ?? '')
       setStep('otp')
     } catch {
       setError('Network error. Please try again.')
@@ -59,7 +61,7 @@ export default function ClaimFreeSession() {
       const res = await fetch('/api/phone/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, otp, fingerprint: fingerprintRef.current }),
+        body: JSON.stringify({ phone, otp, token: otpToken, fingerprint: fingerprintRef.current }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -194,7 +196,7 @@ export default function ClaimFreeSession() {
                 </button>
               </div>
               <button
-                onClick={() => { setOtp(''); setError(null); setStep('phone') }}
+                onClick={() => { setOtp(''); setOtpToken(''); setError(null); setStep('phone') }}
                 className="text-xs text-gray-400 hover:text-gray-600"
               >
                 Change number

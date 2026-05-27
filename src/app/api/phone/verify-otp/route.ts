@@ -1,23 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient, createServiceClient } from '@/lib/supabase-server'
 import { normalizeIndianPhone, hashPhone } from '@/lib/phone'
-import { msg91Configured, verifyOtp } from '@/lib/msg91'
+import { fast2smsConfigured, verifyOtpToken } from '@/lib/fast2sms'
 
 export async function POST(request: NextRequest) {
   try {
-    if (!msg91Configured()) {
+    if (!fast2smsConfigured()) {
       return NextResponse.json({ error: 'Phone verification is not configured' }, { status: 503 })
     }
 
     const supabase = await createServerSupabaseClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { phone, otp, fingerprint } = await request.json() as {
+    const { phone, otp, token, fingerprint } = await request.json() as {
       phone: string
       otp: string
+      token: string
       fingerprint?: string
     }
 
@@ -28,15 +27,18 @@ export async function POST(request: NextRequest) {
     if (!otp || !/^\d{4,8}$/.test(otp)) {
       return NextResponse.json({ error: 'Enter the code from the SMS' }, { status: 400 })
     }
-
-    // MSG91 ties the OTP to this mobile, so a pass here proves the caller owns it.
-    const verification = await verifyOtp(normalized.msg91, otp)
-    if (!verification.ok) {
-      return NextResponse.json({ error: verification.error ?? 'Incorrect or expired code' }, { status: 400 })
+    if (!token) {
+      return NextResponse.json({ error: 'Verification session missing. Request a new code.' }, { status: 400 })
     }
 
-    // Grant runs on the service client: per-user RLS blocks clients from writing
-    // their own credit_balance, so all balance mutations are server-only.
+    // Verify the signed token — proves the OTP was server-generated for this phone,
+    // hasn't been tampered with, and hasn't expired.
+    const result = verifyOtpToken(token, normalized.e164, otp)
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: 400 })
+    }
+
+    // Grant runs on the service client (RLS blocks per-user credit writes from browser).
     const svc = await createServiceClient()
     const { data: outcome, error: rpcError } = await svc.rpc('claim_free_credit', {
       p_user_id: user.id,
@@ -50,7 +52,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Verification succeeded but crediting failed' }, { status: 500 })
     }
 
-    // Phone is verified regardless of whether a credit was granted.
     const granted = outcome === 'granted'
     return NextResponse.json({ verified: true, granted, reason: outcome })
   } catch (error) {
