@@ -310,11 +310,9 @@ function SessionPageInner({ params }: SessionPageProps) {
                 if (step === 1) {
                   introStepRef.current = 3
                   setProcessing()
-                  // Genuine in-persona reaction to how the candidate is feeling,
-                  // then the ask for a brief introduction.
                   const fallback = `Good to know! Before we get started, could you give me a brief introduction — your background, your experience, and what drew you to apply for this ${sd.session.role} role at ${sd.session.company}?`
                   ;(async () => {
-                    const spoken = await fetchIntroSpoken(1, full, fallback)
+                    const spoken = await fetchIntroSpoken(1, full, fallback, sd)
                     await speakText(spoken)
                   })()
                 } else if (step === 3) {
@@ -322,10 +320,9 @@ function SessionPageInner({ params }: SessionPageProps) {
                   setPhase('interview')
                   setProcessing()
                   const q = currentQuestionRef.current
-                  // Genuine reaction to their self-intro, then "..." pause into Q1.
                   const fallback = `Thanks for sharing that! Alright, let's get into it`
                   ;(async () => {
-                    const spoken = await fetchIntroSpoken(3, full, fallback)
+                    const spoken = await fetchIntroSpoken(3, full, fallback, sd)
                     await speakText(q ? `${spoken}... ${q.text}` : spoken)
                   })()
                 }
@@ -478,12 +475,18 @@ function SessionPageInner({ params }: SessionPageProps) {
   // Generates the interviewer's spoken intro reaction (in persona, reacting to
   // what the candidate actually said). Falls back to a scripted line if the
   // call fails, so the conversation never stalls.
-  async function fetchIntroSpoken(step: 1 | 3, transcript: string, fallback: string): Promise<string> {
+  async function fetchIntroSpoken(step: 1 | 3, transcript: string, fallback: string, sd: SessionData): Promise<string> {
     try {
       const res = await fetch('/api/interview-intro', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId, step, transcript }),
+        body: JSON.stringify({
+          step,
+          transcript,
+          round_type: sd.session.round_type,
+          role: sd.session.role,
+          company: sd.session.company,
+        }),
       })
       if (!res.ok) return fallback
       const data = await res.json()

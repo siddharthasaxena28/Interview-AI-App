@@ -23,26 +23,19 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { session_id, step, transcript } = await request.json() as {
-      session_id: string
+    const { step, transcript, round_type, role, company } = await request.json() as {
       step: 1 | 3
       transcript: string
+      round_type: RoundType
+      role: string
+      company: string
     }
 
-    if (!session_id || (step !== 1 && step !== 3)) {
+    if (step !== 1 && step !== 3) {
       return NextResponse.json({ error: 'Missing or invalid fields' }, { status: 400 })
     }
 
-    const { data: session } = await supabase
-      .from('interview_sessions')
-      .select('id, round_type, company, role')
-      .eq('id', session_id)
-      .eq('user_id', user.id)
-      .single()
-
-    if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 })
-
-    const personaStyle = PERSONA_SPEECH_STYLE[session.round_type as RoundType] ?? 'Professional and conversational.'
+    const personaStyle = PERSONA_SPEECH_STYLE[round_type] ?? 'Professional and conversational.'
 
     const userPrompt = step === 1
       ? `Your speaking style: ${personaStyle}
@@ -52,7 +45,7 @@ You just asked the candidate "How are you feeling today?" and they replied:
 
 Reply out loud:
 1. React genuinely to how they're feeling — reassure them if they sound nervous, share their energy if they're excited, acknowledge warmly otherwise. Respond to what they ACTUALLY said.
-2. Then, in the same breath, ask them for a brief introduction: their background, experience, and what drew them to apply for the ${session.role} role at ${session.company}.`
+2. Then, in the same breath, ask them for a brief introduction: their background, experience, and what drew them to apply for the ${role} role at ${company}.`
       : `Your speaking style: ${personaStyle}
 
 The candidate just gave their self-introduction:
