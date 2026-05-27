@@ -12,7 +12,7 @@ import EnableReminders from './EnableReminders'
 import OnboardingModal from './OnboardingModal'
 import UserMenu from './UserMenu'
 import StudyPlanWidget from './StudyPlanWidget'
-import ClaimFreeSession from './ClaimFreeSession'
+import FingerprintCapture from './FingerprintCapture'
 
 // Exact lookup — mirrors the controlled vocabulary enforced in generate-questions.
 const TOPIC_ROUND_MAP: Record<string, RoundType> = {
@@ -82,8 +82,6 @@ export default async function DashboardPage() {
 
   const user = userData as User | null
   const creditBalance = user?.credit_balance ?? 0
-  // New free-plan users must verify their phone to unlock the one free session.
-  const showClaimFreeSession = user?.plan === 'free' && !user?.free_credit_claimed
   const currentStreak = user?.current_streak ?? 0
   const longestStreak = user?.longest_streak ?? 0
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://interviewai.in'
@@ -125,11 +123,11 @@ export default async function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <FingerprintCapture />
       <OnboardingModal
         show={!sessions?.length}
         userName={authUser.user_metadata?.full_name?.split(' ')[0] ?? 'there'}
         creditBalance={creditBalance}
-        needsClaim={showClaimFreeSession}
       />
 
       {/* Top nav */}
@@ -184,9 +182,6 @@ export default async function DashboardPage() {
 
         {/* Interview countdown (client — reads localStorage) */}
         <InterviewCountdown />
-
-        {/* Phone verification gate — unlocks the one free session for new users */}
-        {showClaimFreeSession && <ClaimFreeSession />}
 
         {/* Daily Drill CTA */}
         <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4 mb-8 flex items-center justify-between gap-4">
