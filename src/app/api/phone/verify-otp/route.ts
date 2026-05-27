@@ -1,49 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient, createServiceClient } from '@/lib/supabase-server'
-import { normalizeIndianPhone, hashPhone } from '@/lib/phone'
-import { fast2smsConfigured, verifyOtpToken } from '@/lib/fast2sms'
+import { hashPhone } from '@/lib/phone'
+import { otpConfigured, verifyOtpToken } from '@/lib/otp'
+import crypto from 'crypto'
 
 export async function POST(request: NextRequest) {
   try {
-    if (!fast2smsConfigured()) {
-      return NextResponse.json({ error: 'Phone verification is not configured' }, { status: 503 })
+    if (!otpConfigured()) {
+      return NextResponse.json({ error: 'Verification is not configured' }, { status: 503 })
     }
 
     const supabase = await createServerSupabaseClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { phone, otp, token, fingerprint } = await request.json() as {
-      phone: string
+    const { otp, token, fingerprint } = await request.json() as {
       otp: string
       token: string
       fingerprint?: string
     }
 
-    const normalized = normalizeIndianPhone(phone)
-    if (!normalized) {
-      return NextResponse.json({ error: 'Enter a valid 10-digit Indian mobile number' }, { status: 400 })
-    }
     if (!otp || !/^\d{4,8}$/.test(otp)) {
-      return NextResponse.json({ error: 'Enter the code from the SMS' }, { status: 400 })
+      return NextResponse.json({ error: 'Enter the code from your email' }, { status: 400 })
     }
     if (!token) {
       return NextResponse.json({ error: 'Verification session missing. Request a new code.' }, { status: 400 })
     }
 
-    // Verify the signed token — proves the OTP was server-generated for this phone,
-    // hasn't been tampered with, and hasn't expired.
-    const result = verifyOtpToken(token, normalized.e164, otp)
+    const email = user.email ?? ''
+    if (!email) return NextResponse.json({ error: 'No email on account' }, { status: 400 })
+
+    const result = verifyOtpToken(token, email, otp)
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 400 })
     }
 
-    // Grant runs on the service client (RLS blocks per-user credit writes from browser).
+    // Use a hash of the email as the unique identifier (same role phone hash played before).
     const svc = await createServiceClient()
+    const emailHash = crypto
+      .createHmac('sha256', process.env.PHONE_HASH_SECRET!)
+      .update(email.toLowerCase())
+      .digest('hex')
+
     const { data: outcome, error: rpcError } = await svc.rpc('claim_free_credit', {
       p_user_id: user.id,
-      p_phone: normalized.e164,
-      p_phone_hash: hashPhone(normalized.e164),
+      p_phone: email,           // store the email in the phone_number column for reference
+      p_phone_hash: emailHash,  // unique-per-email hash — same DB lock as before
       p_fingerprint: fingerprint ?? '',
     })
 
