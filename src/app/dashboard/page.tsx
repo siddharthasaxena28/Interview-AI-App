@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 
 export const dynamic = 'force-dynamic'
-import { Mic, Plus, Clock, TrendingUp, CreditCard, Flame, Target, Gift, ArrowRight } from 'lucide-react'
+import { Mic, Plus, Clock, TrendingUp, CreditCard, Flame, Target, Gift, ArrowRight, Zap } from 'lucide-react'
 import type { User, InterviewSession, FeedbackReport } from '@/types'
 import type { RoundType } from '@/types'
 import { CopyReferral } from './CopyReferral'
@@ -11,6 +11,7 @@ import InterviewCountdown from './InterviewCountdown'
 import EnableReminders from './EnableReminders'
 import OnboardingModal from './OnboardingModal'
 import UserMenu from './UserMenu'
+import StudyPlanWidget from './StudyPlanWidget'
 
 // Exact lookup — mirrors the controlled vocabulary enforced in generate-questions.
 const TOPIC_ROUND_MAP: Record<string, RoundType> = {
@@ -180,6 +181,25 @@ export default async function DashboardPage() {
         {/* Interview countdown (client — reads localStorage) */}
         <InterviewCountdown />
 
+        {/* Daily Drill CTA */}
+        <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4 mb-8 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-green-500 rounded-lg flex items-center justify-center flex-shrink-0">
+              <Zap className="w-4.5 h-4.5 text-white" />
+            </div>
+            <div>
+              <div className="font-semibold text-green-900 text-sm">Daily Drill</div>
+              <div className="text-xs text-green-600">3 questions · 5 min · completely free · no credits needed</div>
+            </div>
+          </div>
+          <Link
+            href="/drill"
+            className="flex-shrink-0 flex items-center gap-1.5 bg-green-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-green-700 transition-colors whitespace-nowrap"
+          >
+            Start <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+
         {/* Stats row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -255,7 +275,12 @@ export default async function DashboardPage() {
             >
               {[25, 50, 75].map((score) => {
                 const y = ((100 - score) / 100) * 52 + 4
-                return <line key={score} x1="0" y1={y} x2="300" y2={y} stroke="#f3f4f6" strokeWidth="1" />
+                return (
+                  <g key={score}>
+                    <line x1="0" y1={y} x2="290" y2={y} stroke="#f3f4f6" strokeWidth="1" />
+                    <text x="295" y={y + 3} fontSize="7" fill="#d1d5db" textAnchor="start">{score}</text>
+                  </g>
+                )
               })}
               <polyline
                 fill="none"
@@ -283,6 +308,8 @@ export default async function DashboardPage() {
             </div>
           </div>
         )}
+
+        <StudyPlanWidget />
 
         {/* Weak areas / focus topics — with "Practice This" links */}
         {weakAreas && weakAreas.length > 0 && (
@@ -335,18 +362,38 @@ export default async function DashboardPage() {
             <h2 className="font-semibold text-gray-900">Interview History</h2>
           </div>
           {!sessions || sessions.length === 0 ? (
-            <div className="px-6 py-16 text-center">
-              <Mic className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500 font-medium">No interviews yet</p>
-              <p className="text-sm text-gray-400 mt-1">Your completed sessions will appear here.</p>
-              {creditBalance > 0 && (
+            <div className="px-6 py-12 text-center">
+              <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <Mic className="w-8 h-8 text-blue-500" />
+              </div>
+              <p className="text-gray-800 font-semibold text-lg">Start your first mock interview</p>
+              <p className="text-sm text-gray-500 mt-1 mb-6 max-w-sm mx-auto">
+                Paste a job description, pick a round type, and get a realistic 30-minute voice interview
+                with instant AI feedback.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                {creditBalance > 0 ? (
+                  <Link
+                    href="/interview/setup"
+                    className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" /> Start First Interview
+                  </Link>
+                ) : (
+                  <Link
+                    href="/pricing"
+                    className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors"
+                  >
+                    Get started for free →
+                  </Link>
+                )}
                 <Link
-                  href="/interview/setup"
-                  className="inline-flex items-center gap-2 mt-4 text-sm text-blue-600 font-medium hover:underline"
+                  href="/drill"
+                  className="inline-flex items-center justify-center gap-2 border border-gray-200 text-gray-700 px-6 py-3 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
                 >
-                  Start your first interview →
+                  Try free daily drill first
                 </Link>
-              )}
+              </div>
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
@@ -378,7 +425,12 @@ export default async function DashboardPage() {
                     <div className="flex items-center gap-4">
                       {report && (
                         <div className="text-right">
-                          <div className="text-lg font-bold text-gray-900">{(report as {overall_score: number}).overall_score}</div>
+                          <div className={`text-lg font-bold ${
+                            (report as {overall_score: number}).overall_score >= 75 ? 'text-green-600' :
+                            (report as {overall_score: number}).overall_score >= 55 ? 'text-amber-600' : 'text-red-600'
+                          }`}>
+                            {(report as {overall_score: number}).overall_score}
+                          </div>
                           <div className="text-xs text-gray-400">score</div>
                         </div>
                       )}

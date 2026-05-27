@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, Suspense, useRef } from 'react'
+import { useState, useEffect, Suspense, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Mic, ArrowRight, ArrowLeft, Loader2, Upload, Link, FileText, X } from 'lucide-react'
 import { useAnalytics } from '@/hooks/useAnalytics'
@@ -30,18 +30,32 @@ const ROUND_OPTIONS: { value: RoundType; label: string; desc: string }[] = [
   { value: 'hr', label: 'HR Round', desc: 'Culture fit, CTC, notice period, motivation' },
 ]
 
+const LOADING_MSGS = [
+  'Reading your job description…',
+  'Researching what this company looks for…',
+  'Tailoring questions to your experience…',
+  'Finalising your interview set…',
+]
+
 function SetupPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const analytics = useAnalytics()
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
+  const [loadingMsg, setLoadingMsg] = useState(0)
   const [error, setError] = useState('')
   const [resumeTab, setResumeTab] = useState<ResumeTab>('text')
   const [resumeParsing, setResumeParsing] = useState(false)
   const [resumeFileName, setResumeFileName] = useState('')
   const [driveUrl, setDriveUrl] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!loading) { setLoadingMsg(0); return }
+    const t = setInterval(() => setLoadingMsg(m => (m + 1) % LOADING_MSGS.length), 2500)
+    return () => clearInterval(t)
+  }, [loading])
 
   // Pre-fill round_type from query param (e.g. from "Practice This" on dashboard).
   // Default to full_loop so first-time users get comprehensive coverage for their 1 credit.
@@ -498,44 +512,50 @@ function SetupPageInner() {
           )}
 
           {/* Navigation */}
-          <div className="flex justify-between mt-8">
-            {step > 1 ? (
-              <button
-                onClick={() => { setStep(step - 1); setError('') }}
-                className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 font-medium"
-              >
-                <ArrowLeft className="w-4 h-4" /> Back
-              </button>
-            ) : (
-              <div />
-            )}
+          {loading ? (
+            <div className="mt-8 bg-blue-50 border border-blue-200 rounded-xl p-5 text-center">
+              <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-sm font-semibold text-blue-700">{LOADING_MSGS[loadingMsg]}</p>
+              <div className="flex gap-1 justify-center mt-3">
+                {LOADING_MSGS.map((_, i) => (
+                  <div key={i} className={`w-1.5 h-1.5 rounded-full transition-all ${i === loadingMsg ? 'bg-blue-600 w-4' : 'bg-blue-200'}`} />
+                ))}
+              </div>
+              <p className="text-xs text-blue-400 mt-2">This usually takes 10–15 seconds</p>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-4 mt-8">
+              {step > 1 ? (
+                <button
+                  onClick={() => { setStep(step - 1); setError('') }}
+                  className="flex items-center gap-2 px-4 py-3 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-xl font-medium transition-colors shrink-0"
+                >
+                  <ArrowLeft className="w-4 h-4" /> Back
+                </button>
+              ) : (
+                <div />
+              )}
 
-            {step < 3 ? (
-              <button
-                onClick={() => {
-                  const valid = step === 1 ? validateStep1() : validateStep2()
-                  if (valid) setStep(step + 1)
-                }}
-                className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors"
-              >
-                Continue <ArrowRight className="w-4 h-4" />
-              </button>
-            ) : (
-              <button
-                onClick={handleSubmit}
-                disabled={loading}
-                className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" /> Generating questions…
-                  </>
-                ) : (
-                  <>Generate Interview Questions <ArrowRight className="w-4 h-4" /></>
-                )}
-              </button>
-            )}
-          </div>
+              {step < 3 ? (
+                <button
+                  onClick={() => {
+                    const valid = step === 1 ? validateStep1() : validateStep2()
+                    if (valid) setStep(step + 1)
+                  }}
+                  className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors shrink-0"
+                >
+                  Continue <ArrowRight className="w-4 h-4" />
+                </button>
+              ) : (
+                <button
+                  onClick={handleSubmit}
+                  className="flex items-center justify-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-xl font-semibold text-sm hover:bg-blue-700 transition-colors shrink-0"
+                >
+                  Generate Interview <ArrowRight className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <p className="text-center text-xs text-gray-400 mt-6">

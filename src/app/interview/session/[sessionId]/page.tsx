@@ -8,6 +8,7 @@ import { useAnalytics } from '@/hooks/useAnalytics'
 import { formatDuration } from '@/lib/utils'
 import type { Question, RoundType } from '@/types'
 import { PERSONAS } from '@/lib/personas'
+import { saveAnswerAudio, clearOldAudio } from '@/lib/audio-storage'
 
 interface SessionPageProps {
   params: { sessionId: string }
@@ -48,6 +49,8 @@ function SessionPageInner({ params }: SessionPageProps) {
   const [phase, setPhase] = useState<'intro' | 'interview'>('intro')
   const [started, setStarted] = useState(false)
   const [reconnecting, setReconnecting] = useState(false)
+  const [resumeInfo, setResumeInfo] = useState<{ questionIndex: number; currentQuestionId: string } | null>(null)
+  const [resumeDismissed, setResumeDismissed] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -81,11 +84,27 @@ function SessionPageInner({ params }: SessionPageProps) {
   const audioStateRef = useRef(state)
   // Throttle thinking-time prompts — only one per 30 s so we don't nag the candidate.
   const lastThinkingPromptRef = useRef(0)
+  // Answer audio recording (stored locally in IndexedDB, never uploaded)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const recordedChunksRef = useRef<Blob[]>([])
+  const recordingQuestionIdRef = useRef<string | null>(null)
 
   useEffect(() => { currentQuestionRef.current = currentQuestion }, [currentQuestion])
   useEffect(() => { phaseRef.current = phase }, [phase])
   useEffect(() => { endingRef.current = ending }, [ending])
   useEffect(() => { audioStateRef.current = state }, [state])
+
+  // Persist progress so the user can resume if they accidentally navigate away
+  useEffect(() => {
+    if (phase !== 'interview' || !currentQuestion || ending) return
+    try {
+      localStorage.setItem(`iai_progress_${sessionId}`, JSON.stringify({
+        questionIndex,
+        currentQuestionId: currentQuestion.id,
+        savedAt: Date.now(),
+      }))
+    } catch { /* storage full — silently skip */ }
+  }, [currentQuestion, questionIndex, phase, ending, sessionId])
 
   // Thinking-time prompt — if the candidate is silent for 9 s after the AI asks a
   // question, the interviewer gently acknowledges it. Mirrors what a real interviewer
@@ -128,6 +147,20 @@ function SessionPageInner({ params }: SessionPageProps) {
         setSessionData(data)
         setCurrentQuestion(data.questions[0] ?? null)
         setTotalQuestions(data.questions.length)
+        // Evict audio from previous sessions so IndexedDB doesn't grow unboundedly
+        clearOldAudio(sessionId).catch(() => {})
+        // Check for saved progress from a previous incomplete attempt
+        try {
+          const saved = localStorage.getItem(`iai_progress_${sessionId}`)
+          if (saved) {
+            const p = JSON.parse(saved) as { questionIndex: number; currentQuestionId: string; savedAt: number }
+            const age = Date.now() - p.savedAt
+            // Only offer to resume if less than 2 hours old and they made it past Q1
+            if (age < 7200000 && p.questionIndex > 0) {
+              setResumeInfo({ questionIndex: p.questionIndex, currentQuestionId: p.currentQuestionId })
+            }
+          }
+        } catch { /* ignore */ }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load session')
       } finally {
@@ -138,6 +171,9 @@ function SessionPageInner({ params }: SessionPageProps) {
 
     return () => {
       isMountedRef.current = false
+      // Stop the mic if the user navigates away without ending the interview —
+      // otherwise the captured stream stays live until garbage collection.
+      mediaStreamRef.current?.getTracks().forEach((t) => t.stop())
     }
   }, [sessionId])
 
@@ -335,6 +371,9 @@ function SessionPageInner({ params }: SessionPageProps) {
       }
       sourceNodeRef.current?.disconnect()
       audioContextRef.current?.close().catch(() => {})
+      // Null the ref so a later setup doesn't reuse a closed context (which would
+      // throw on createMediaStreamSource and silently kill transcription).
+      audioContextRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started, micPermission, sessionData])
@@ -382,6 +421,39 @@ function SessionPageInner({ params }: SessionPageProps) {
       out[i] = s < 0 ? s * 0x8000 : s * 0x7fff
     }
     return out
+  }
+
+  function startAnswerRecording() {
+    const stream = mediaStreamRef.current
+    const qId = currentQuestionRef.current?.id
+    if (!stream || !qId || phaseRef.current !== 'interview') return
+    // Stop any previous recording cleanly
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop()
+    }
+    recordingQuestionIdRef.current = qId
+    recordedChunksRef.current = []
+    try {
+      const mr = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' })
+      mr.ondataavailable = e => { if (e.data.size > 0) recordedChunksRef.current.push(e.data) }
+      mr.start(500)
+      mediaRecorderRef.current = mr
+    } catch {
+      // MediaRecorder or codec not supported — silently skip recording
+    }
+  }
+
+  function stopAnswerRecording(questionId: string) {
+    const mr = mediaRecorderRef.current
+    if (!mr || mr.state === 'inactive') return
+    mr.onstop = () => {
+      if (recordedChunksRef.current.length === 0) return
+      const blob = new Blob(recordedChunksRef.current, { type: 'audio/webm' })
+      recordedChunksRef.current = []
+      mediaRecorderRef.current = null
+      saveAnswerAudio(sessionId, questionId, blob).catch(() => {})
+    }
+    mr.stop()
   }
 
   // Immediately silences the AI: stops the <audio> element, cancels browser
@@ -478,6 +550,7 @@ function SessionPageInner({ params }: SessionPageProps) {
     if (startListening) {
       setListening()
       answerStartRef.current = Date.now()
+      startAnswerRecording()
     }
   }
 
@@ -485,6 +558,7 @@ function SessionPageInner({ params }: SessionPageProps) {
     if (!currentQuestion || !sessionData) return
     setProcessing()
     setFinalTranscript('')
+    stopAnswerRecording(currentQuestion.id)
 
     try {
       const res = await fetch('/api/evaluate-answer', {
@@ -534,6 +608,22 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   useEffect(() => { handleAnswerCompleteRef.current = handleAnswerComplete }, [handleAnswerComplete])
 
+  function handleResume() {
+    if (!resumeInfo || !sessionData) return
+    // Find the saved question in the loaded question list
+    const savedQ = sessionData.questions.find(q => q.id === resumeInfo.currentQuestionId)
+    if (savedQ) {
+      setCurrentQuestion(savedQ)
+      setQuestionIndex(resumeInfo.questionIndex)
+      // Mark that we've already greeted so the intro is skipped
+      hasGreetedRef.current = true
+      phaseRef.current = 'interview'
+      setPhase('interview')
+    }
+    setResumeInfo(null)
+    localStorage.removeItem(`iai_progress_${sessionId}`)
+  }
+
   async function handleBegin() {
     try {
       const ctx = new AudioContext({ sampleRate: 16000 })
@@ -549,6 +639,8 @@ function SessionPageInner({ params }: SessionPageProps) {
     // Guard against double-calls (e.g. auto-end races with manual click).
     if (endingRef.current) return
     endingRef.current = true
+    // Clear saved progress — the interview is over
+    try { localStorage.removeItem(`iai_progress_${sessionId}`) } catch { /* ignore */ }
 
     // Step 1 — silence the AI immediately, regardless of what it's saying.
     stopAllAudio()
@@ -689,6 +781,29 @@ function SessionPageInner({ params }: SessionPageProps) {
             Pop on your headphones and find a quiet spot. When you click below, {personaName} will
             greet you and the conversation will begin.
           </p>
+          {/* Resume from previous session */}
+          {resumeInfo && !resumeDismissed && (
+            <div className="bg-amber-900/30 border border-amber-500 rounded-xl p-4 mb-4 text-left max-w-md w-full">
+              <p className="text-amber-200 text-sm font-medium mb-2">
+                You were on Question {resumeInfo.questionIndex + 1} when you left.
+              </p>
+              <p className="text-amber-400 text-xs mb-3">Resume from where you left off, or start fresh from Q1.</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { handleResume(); handleBegin() }}
+                  className="flex-1 bg-amber-500 text-white py-2 rounded-lg text-sm font-semibold hover:bg-amber-600 transition-colors"
+                >
+                  Resume from Q{resumeInfo.questionIndex + 1}
+                </button>
+                <button
+                  onClick={() => { setResumeDismissed(true); localStorage.removeItem(`iai_progress_${sessionId}`) }}
+                  className="flex-1 bg-white/10 text-white py-2 rounded-lg text-sm hover:bg-white/20 transition-colors"
+                >
+                  Start from Q1
+                </button>
+              </div>
+            </div>
+          )}
           <button
             onClick={handleBegin}
             disabled={micPermission !== 'granted'}

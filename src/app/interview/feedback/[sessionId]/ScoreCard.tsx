@@ -1,6 +1,6 @@
 'use client'
 
-import { Download, Linkedin } from 'lucide-react'
+import { Download, Linkedin, MessageCircle } from 'lucide-react'
 
 interface ScoreCardProps {
   company: string
@@ -196,8 +196,24 @@ export default function ScoreCard({
     )
   }
 
+  function shareOnWhatsApp() {
+    const emoji = selectionProbability >= 75 ? '🔥' : selectionProbability >= 55 ? '💪' : '📈'
+    const text = [
+      `${emoji} Mock interview result — InterviewAI`,
+      '',
+      `🏢 ${company} — ${role}`,
+      `📊 ${roundLabel}`,
+      '',
+      `Overall Score: ${overallScore}/100`,
+      `Selection probability: ${selectionProbability}%`,
+      '',
+      `Full report: ${shareUrl}`,
+    ].join('\n')
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer')
+  }
+
   return (
-    <div className="flex flex-col sm:flex-row gap-3">
+    <div className="flex flex-wrap gap-3">
       <button
         onClick={downloadCard}
         className="flex items-center justify-center gap-2 border border-gray-200 text-gray-700 px-5 py-2.5 rounded-xl font-semibold text-sm hover:bg-gray-50 transition-colors"
@@ -209,6 +225,12 @@ export default function ScoreCard({
         className="flex items-center justify-center gap-2 bg-[#0077b5] text-white px-5 py-2.5 rounded-xl font-semibold text-sm hover:bg-[#006097] transition-colors"
       >
         <Linkedin className="w-4 h-4" /> Share on LinkedIn
+      </button>
+      <button
+        onClick={shareOnWhatsApp}
+        className="flex items-center justify-center gap-2 bg-[#25d366] text-white px-5 py-2.5 rounded-xl font-semibold text-sm hover:bg-[#1fbb58] transition-colors"
+      >
+        <MessageCircle className="w-4 h-4" /> Share on WhatsApp
       </button>
     </div>
   )
