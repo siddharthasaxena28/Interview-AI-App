@@ -15,9 +15,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   email text UNIQUE NOT NULL,
   name text NOT NULL DEFAULT '',
   avatar_url text,
-  -- 0 at signup: the free session is unlocked by phone verification (see
-  -- claim_free_credit), not handed out automatically, to curb multi-account abuse.
-  credit_balance integer NOT NULL DEFAULT 0 CHECK (credit_balance >= 0),
+  credit_balance integer NOT NULL DEFAULT 1 CHECK (credit_balance >= 0),
   plan text NOT NULL DEFAULT 'free' CHECK (plan IN ('free', 'payg', 'pro', 'unlimited')),
   referral_code text UNIQUE NOT NULL DEFAULT '',
   -- Anti-abuse: phone verification gates the one free credit.
@@ -280,86 +278,24 @@ BEGIN
     EXIT WHEN NOT EXISTS (SELECT 1 FROM public.users WHERE referral_code = ref_code);
   END LOOP;
 
-  -- credit_balance 0: the free session is unlocked by phone verification
-  -- (claim_free_credit), not handed out at signup.
   INSERT INTO public.users (id, email, name, avatar_url, credit_balance, plan, referral_code)
   VALUES (
     NEW.id,
     NEW.email,
     COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
     NEW.raw_user_meta_data->>'avatar_url',
-    0,
+    1,
     'free',
     ref_code
   )
   ON CONFLICT (id) DO NOTHING;
 
+  INSERT INTO public.credit_transactions (user_id, amount, type)
+  VALUES (NEW.id, 1, 'signup');
+
   RETURN NEW;
 END;
 $$;
-
--- ==========================================
--- FUNCTION: claim_free_credit
--- Grants the one free credit, gated on phone uniqueness. Called server-side
--- (service role) only AFTER MSG91 confirms the OTP, so reaching this function
--- already proves phone ownership. Atomic + idempotent.
--- Returns: granted | phone_already_used | device_limit | already_claimed_by_user
--- ==========================================
-
-CREATE OR REPLACE FUNCTION public.claim_free_credit(
-  p_user_id     uuid,
-  p_phone       text,
-  p_phone_hash  text,
-  p_fingerprint text
-) RETURNS text
-LANGUAGE plpgsql
-SECURITY DEFINER SET search_path = public
-AS $$
-DECLARE
-  v_already   boolean;
-  v_fp_count  integer;
-  v_fp        text := NULLIF(p_fingerprint, '');
-BEGIN
-  SELECT free_credit_claimed INTO v_already FROM public.users WHERE id = p_user_id;
-  IF v_already THEN
-    RETURN 'already_claimed_by_user';
-  END IF;
-
-  -- Record the verified phone + device, and close the claim window: one
-  -- verification per account, whatever the outcome (stops phone-hopping).
-  UPDATE public.users
-    SET phone_number        = p_phone,
-        phone_number_hash   = p_phone_hash,
-        phone_verified      = true,
-        device_fingerprint  = COALESCE(v_fp, device_fingerprint),
-        free_credit_claimed = true
-    WHERE id = p_user_id;
-
-  -- Secondary soft cap: too many free claims already tied to this device.
-  IF v_fp IS NOT NULL THEN
-    SELECT count(*) INTO v_fp_count FROM public.phone_claims WHERE device_fingerprint = v_fp;
-    IF v_fp_count >= 3 THEN
-      RETURN 'device_limit';
-    END IF;
-  END IF;
-
-  -- Hard gate: one free credit per phone hash, ever. The PK insert is the lock.
-  BEGIN
-    INSERT INTO public.phone_claims (phone_number_hash, first_claimed_by, device_fingerprint)
-      VALUES (p_phone_hash, p_user_id, v_fp);
-  EXCEPTION WHEN unique_violation THEN
-    RETURN 'phone_already_used';
-  END;
-
-  UPDATE public.users SET credit_balance = credit_balance + 1 WHERE id = p_user_id;
-  INSERT INTO public.credit_transactions (user_id, amount, type)
-    VALUES (p_user_id, 1, 'signup');
-
-  RETURN 'granted';
-END;
-$$;
-
-GRANT EXECUTE ON FUNCTION public.claim_free_credit(uuid, text, text, text) TO service_role;
 
 -- Trigger: fires after every new auth.users insert
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;

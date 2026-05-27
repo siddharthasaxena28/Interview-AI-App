@@ -15,9 +15,6 @@ export interface User {
   current_streak: number
   longest_streak: number
   last_session_date: string | null
-  phone_number: string | null
-  phone_verified: boolean
-  free_credit_claimed: boolean
 }
 
 export interface CreditTransaction {

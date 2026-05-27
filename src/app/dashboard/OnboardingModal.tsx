@@ -28,10 +28,9 @@ interface Props {
   show: boolean
   userName: string
   creditBalance: number
-  needsClaim: boolean
 }
 
-export default function OnboardingModal({ show, userName, creditBalance, needsClaim }: Props) {
+export default function OnboardingModal({ show, userName, creditBalance }: Props) {
   const [visible, setVisible] = useState(false)
   const router = useRouter()
 
@@ -71,20 +70,11 @@ export default function OnboardingModal({ show, userName, creditBalance, needsCl
             Welcome, {userName}!
           </h2>
           <p className="text-gray-500 mt-2 text-sm">
-            {needsClaim ? (
-              <>
-                Verify your mobile number to unlock your{' '}
-                <span className="font-semibold text-blue-600">free session</span>.
-              </>
-            ) : (
-              <>
-                You have{' '}
-                <span className="font-semibold text-blue-600">
-                  {creditBalance} free {creditBalance === 1 ? 'session' : 'sessions'}
-                </span>{' '}
-                ready to use.
-              </>
-            )}
+            You have{' '}
+            <span className="font-semibold text-blue-600">
+              {creditBalance} free {creditBalance === 1 ? 'session' : 'sessions'}
+            </span>{' '}
+            ready to use.
           </p>
         </div>
 
@@ -103,15 +93,7 @@ export default function OnboardingModal({ show, userName, creditBalance, needsCl
         </div>
 
         <div className="flex flex-col gap-3">
-          {needsClaim ? (
-            // Dismiss to reveal the phone-verification card on the dashboard.
-            <button
-              onClick={dismiss}
-              className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
-            >
-              Claim my free session <ArrowRight className="w-4 h-4" />
-            </button>
-          ) : creditBalance > 0 ? (
+          {creditBalance > 0 ? (
             <button
               onClick={startInterview}
               className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
