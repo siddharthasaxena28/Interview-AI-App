@@ -141,6 +141,9 @@ export default function StudyPlanWidget() {
                   ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating plan…</>
                   : <><Calendar className="w-4 h-4" /> Generate My Study Plan</>}
               </button>
+              <p className="text-xs text-gray-400 mt-3">
+                Complete your first mock interview to get a plan personalised to your role and weak areas.
+              </p>
             </div>
           ) : (
             <div>
@@ -188,6 +191,11 @@ export default function StudyPlanWidget() {
                   )
                 })}
               </div>
+              {!plan.context && (
+                <p className="text-xs text-gray-400 mb-2">
+                  Complete your first mock interview to get a plan personalised to your role and weak areas.
+                </p>
+              )}
               <button
                 onClick={refresh}
                 className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors"

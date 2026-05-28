@@ -234,12 +234,16 @@ export default function DrillPage() {
               3 questions · ~5 minutes · completely free · no credits needed
             </p>
 
-            {questionContext && (
+            {!loadingQuestions && (questionContext ? (
               <div className="inline-flex items-center gap-1.5 text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-full px-3 py-1 mb-4">
                 <Sparkles className="w-3 h-3" />
                 Personalised for {questionContext.role} at {questionContext.company}
               </div>
-            )}
+            ) : (
+              <p className="text-xs text-gray-400 mb-4">
+                Complete your first mock interview to get questions personalised to your role and weak areas.
+              </p>
+            ))}
 
             <div className="flex flex-wrap justify-center gap-2 mb-6">
               {FILTER_OPTIONS.map(f => (
