@@ -219,7 +219,7 @@ function SetupPageInner() {
           </span>
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-200 p-8">
+        <div className="bg-white rounded-2xl border border-gray-200 p-8 shadow-sm">
           {/* Step 1: JD */}
           {step === 1 && (
             <div>

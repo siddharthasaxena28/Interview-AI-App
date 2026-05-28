@@ -167,10 +167,10 @@ export default function PricingPage() {
           {PACKS.map((pack) => (
             <div
               key={pack.key}
-              className={`rounded-2xl p-6 border transition-shadow hover:shadow-md relative ${
+              className={`rounded-2xl p-6 border relative transition-shadow ${
                 pack.highlighted
-                  ? 'border-blue-500 bg-blue-600 text-white shadow-lg'
-                  : 'border-gray-200 bg-white'
+                  ? 'border-blue-500 bg-blue-600 text-white shadow-2xl shadow-blue-500/25 scale-[1.02]'
+                  : 'border-gray-200 bg-white shadow-sm hover:shadow-md'
               }`}
             >
               {pack.badge && (

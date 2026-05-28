@@ -204,47 +204,57 @@ export default async function DashboardPage() {
 
         {/* Stats row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-            <div className="text-2xl font-bold text-gray-900">{sessions?.length ?? 0}</div>
-            <div className="text-sm text-gray-500 flex items-center gap-1 mt-0.5">
-              <Mic className="w-3.5 h-3.5" /> Sessions
+          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex items-center gap-3">
+            <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0">
+              <Mic className="w-5 h-5 text-blue-500" />
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-gray-900">{sessions?.length ?? 0}</div>
+              <div className="text-xs text-gray-500">Sessions</div>
             </div>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-            <div className="flex items-end gap-1">
-              <div className="text-2xl font-bold text-gray-900">
-                {reports && reports.length > 0
-                  ? Math.round((reports as Array<{overall_score: number}>).reduce((a, r) => a + r.overall_score, 0) / reports.length)
-                  : '—'}
-              </div>
-              {progressDelta !== null && progressDelta !== 0 && (
-                <div className={`text-sm font-semibold mb-0.5 ${progressDelta > 0 ? 'text-green-600' : 'text-red-500'}`}>
-                  {progressDelta > 0 ? `+${progressDelta}` : progressDelta}
+          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex items-center gap-3">
+            <div className="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center flex-shrink-0">
+              <TrendingUp className="w-5 h-5 text-purple-500" />
+            </div>
+            <div>
+              <div className="flex items-end gap-1">
+                <div className="text-2xl font-bold text-gray-900">
+                  {reports && reports.length > 0
+                    ? Math.round((reports as Array<{overall_score: number}>).reduce((a, r) => a + r.overall_score, 0) / reports.length)
+                    : '—'}
                 </div>
-              )}
-            </div>
-            <div className="text-sm text-gray-500 flex items-center gap-1 mt-0.5">
-              <TrendingUp className="w-3.5 h-3.5" /> Avg score
-              {progressDelta !== null && (
-                <span className="text-xs text-gray-400">(trend)</span>
-              )}
-            </div>
-          </div>
-          <div className={`rounded-xl border p-4 shadow-sm ${currentStreak >= 3 ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-200'}`}>
-            <div className={`text-2xl font-bold flex items-center gap-1 ${currentStreak >= 3 ? 'text-orange-600' : 'text-gray-900'}`}>
-              {currentStreak >= 1 && <Flame className="w-5 h-5" />}
-              {currentStreak}
-            </div>
-            <div className="text-sm text-gray-500 mt-0.5">
-              Day streak{longestStreak > currentStreak ? ` · best ${longestStreak}` : ''}
+                {progressDelta !== null && progressDelta !== 0 && (
+                  <div className={`text-sm font-semibold mb-0.5 ${progressDelta > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                    {progressDelta > 0 ? `+${progressDelta}` : progressDelta}
+                  </div>
+                )}
+              </div>
+              <div className="text-xs text-gray-500">
+                Avg score{progressDelta !== null ? ' · trend' : ''}
+              </div>
             </div>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-            <div className="text-2xl font-bold text-blue-600">
-              {creditBalance}
+          <div className={`rounded-xl border p-4 shadow-sm flex items-center gap-3 ${currentStreak >= 3 ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-200'}`}>
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${currentStreak >= 3 ? 'bg-orange-100' : 'bg-gray-100'}`}>
+              <Flame className={`w-5 h-5 ${currentStreak >= 3 ? 'text-orange-500' : 'text-gray-400'}`} />
             </div>
-            <div className="text-sm text-gray-500 flex items-center gap-1 mt-0.5">
-              <CreditCard className="w-3.5 h-3.5" /> Credits left
+            <div>
+              <div className={`text-2xl font-bold ${currentStreak >= 3 ? 'text-orange-600' : 'text-gray-900'}`}>
+                {currentStreak}
+              </div>
+              <div className="text-xs text-gray-500">
+                Streak{longestStreak > currentStreak ? ` · best ${longestStreak}` : ''}
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex items-center gap-3">
+            <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center flex-shrink-0">
+              <CreditCard className="w-5 h-5 text-green-500" />
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-blue-600">{creditBalance}</div>
+              <div className="text-xs text-gray-500">Credits left</div>
             </div>
           </div>
         </div>

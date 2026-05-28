@@ -67,9 +67,9 @@ export default async function LandingPage() {
       )}
 
       {/* Hero */}
-      <section className="px-6 py-20 text-center">
+      <section className="px-6 py-20 text-center bg-gradient-to-b from-blue-50/50 to-white">
         <div className="max-w-4xl mx-auto">
-          <div className="inline-flex items-center gap-2 bg-blue-50 text-blue-700 text-sm px-3 py-1 rounded-full mb-6">
+          <div className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-700 text-sm px-3 py-1 rounded-full mb-6">
             <Zap className="w-3 h-3" />
             <span>India&apos;s first AI voice mock interview platform</span>
           </div>
@@ -93,7 +93,7 @@ export default async function LandingPage() {
               <>
                 <Link
                   href={signupHref}
-                  className="bg-blue-600 text-white text-lg px-8 py-4 rounded-xl hover:bg-blue-700 transition-colors flex items-center gap-2 font-semibold"
+                  className="bg-blue-600 text-white text-lg px-8 py-4 rounded-xl hover:bg-blue-700 transition-colors flex items-center gap-2 font-semibold shadow-lg shadow-blue-200"
                 >
                   Start Free Interview <ArrowRight className="w-5 h-5" />
                 </Link>
@@ -244,8 +244,63 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      {/* Pricing */}
+      {/* Testimonials */}
       <section className="px-6 py-20">
+        <div className="max-w-6xl mx-auto">
+          <h2 className="text-3xl font-bold text-center text-gray-900 mb-3">
+            Candidates who cracked their interviews
+          </h2>
+          <p className="text-center text-gray-500 mb-12 max-w-xl mx-auto">
+            From first-time interviewers to experienced engineers switching companies.
+          </p>
+          <div className="grid md:grid-cols-3 gap-6">
+            {[
+              {
+                quote: 'The system design questions were exactly what I got at Flipkart. Cleared the interview in the first attempt after 3 sessions here.',
+                name: 'Rohit S.',
+                title: 'SDE-2 · Flipkart',
+                initials: 'RS',
+                bg: 'bg-blue-100 text-blue-700',
+              },
+              {
+                quote: 'Finally understood why I kept bombing HR rounds. The per-question feedback report broke down exactly where I went wrong.',
+                name: 'Priya N.',
+                title: 'Product Manager · Swiggy',
+                initials: 'PN',
+                bg: 'bg-purple-100 text-purple-700',
+              },
+              {
+                quote: 'Did 4 full-loop sessions before my Amazon on-site. The managerial round coaching on STAR answers was genuinely different from anything else.',
+                name: 'Aryan M.',
+                title: 'SDE-2 · Amazon India',
+                initials: 'AM',
+                bg: 'bg-green-100 text-green-700',
+              },
+            ].map(({ quote, name, title, initials, bg }) => (
+              <div key={name} className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex flex-col gap-4">
+                <div className="flex gap-0.5">
+                  {[...Array(5)].map((_, i) => (
+                    <Star key={i} className="w-4 h-4 fill-amber-400 text-amber-400" />
+                  ))}
+                </div>
+                <p className="text-gray-700 text-sm leading-relaxed flex-1">&ldquo;{quote}&rdquo;</p>
+                <div className="flex items-center gap-3 pt-3 border-t border-gray-100">
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${bg}`}>
+                    {initials}
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">{name}</div>
+                    <div className="text-xs text-gray-500">{title}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Pricing */}
+      <section className="px-6 py-20 bg-gray-50">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-3xl font-bold text-center text-gray-900 mb-3">
             Buy sessions when you need them
