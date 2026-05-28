@@ -15,11 +15,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { text, voice_id } = await request.json() as { text: string; voice_id: string }
+    const { text: rawText, voice_id } = await request.json() as { text: string; voice_id: string }
 
-    if (!text) {
+    if (!rawText) {
       return NextResponse.json({ error: 'Missing text' }, { status: 400 })
     }
+
+    // Cap text length to limit per-call ElevenLabs cost and prevent abuse
+    const text = rawText.slice(0, 500)
 
     const apiKey = process.env.ELEVENLABS_API_KEY
     if (!apiKey) {
@@ -54,12 +57,7 @@ export async function POST(request: NextRequest) {
     if (!response.ok) {
       const detail = await response.text()
       console.error('ElevenLabs error:', response.status, detail)
-      // Surface the upstream status/detail so the client can decide to fall back
-      // and so failures are diagnosable from the browser network tab.
-      return NextResponse.json(
-        { error: 'TTS generation failed', upstreamStatus: response.status, detail },
-        { status: 502 }
-      )
+      return NextResponse.json({ error: 'TTS generation failed' }, { status: 502 })
     }
 
     const audioBuffer = await response.arrayBuffer()

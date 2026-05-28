@@ -113,7 +113,13 @@ export async function POST(request: NextRequest) {
           { title: 'N/A', example: '', advice: '' },
         ],
         per_question: [],
-        communication: { score: 0, clarity: 0, pacing: 0, confidence: 0, filler_words: 0 },
+        communication: {
+          score: 0, clarity: 0, pacing: 0, confidence: 0, filler_words: 0,
+          clarity_note: 'Interview not completed.',
+          pacing_note: 'Interview not completed.',
+          confidence_note: 'Interview not completed.',
+          filler_note: 'Interview not completed.',
+        },
         summary: 'This interview session ended before any questions were answered. No scored feedback can be generated. Start a new session and try to answer at least a few questions to receive a detailed report.',
       }
     } else {
@@ -295,13 +301,6 @@ async function completeReferral(
   supabase: Awaited<ReturnType<typeof import('@/lib/supabase-server').createServerSupabaseClient>>,
   userId: string,
 ) {
-  const { count: completedCount } = await supabase
-    .from('interview_sessions')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .eq('status', 'completed')
-  if (completedCount !== 1) return
-
   // Crediting writes the referrer's row (a different user) and credit_transactions
   // for both parties — both require the service client, since per-user RLS correctly
   // blocks a user from writing another user's balance.
@@ -336,8 +335,9 @@ async function creditReferralBonus(
   svc: Awaited<ReturnType<typeof import('@/lib/supabase-server').createServiceClient>>,
   id: string,
 ) {
-  const { data: u } = await svc.from('users').select('credit_balance').eq('id', id).single()
-  await svc.from('users').update({ credit_balance: (u?.credit_balance ?? 0) + 1 }).eq('id', id)
+  // Atomic increment via SQL — avoids the read-modify-write race condition that
+  // could grant zero or double credits under concurrent requests.
+  await svc.rpc('increment_user_credits', { p_user_id: id, p_amount: 1 })
   // 'referral' is the value allowed by the credit_transactions type CHECK constraint.
   await svc.from('credit_transactions').insert({ user_id: id, amount: 1, type: 'referral' })
 }

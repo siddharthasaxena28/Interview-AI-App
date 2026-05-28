@@ -89,6 +89,14 @@ function SessionPageInner({ params }: SessionPageProps) {
   const recordedChunksRef = useRef<Blob[]>([])
   const recordingQuestionIdRef = useRef<string | null>(null)
 
+  // Keep isMountedRef true for the lifetime of this mount. Without this dedicated
+  // effect the ref stays false after any remount (StrictMode or client-side
+  // re-navigation), silently killing all ws.onmessage / reconnect processing.
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => { isMountedRef.current = false }
+  }, [])
+
   useEffect(() => { currentQuestionRef.current = currentQuestion }, [currentQuestion])
   useEffect(() => { phaseRef.current = phase }, [phase])
   useEffect(() => { endingRef.current = ending }, [ending])

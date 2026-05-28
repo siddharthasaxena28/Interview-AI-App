@@ -127,25 +127,8 @@ export async function POST(request: NextRequest) {
     // Résumé is optional and used only to personalise question generation (not stored).
     const resume = (resume_text ?? '').trim().slice(0, 6000)
 
-    // Create interview session first
-    const { data: session, error: sessionError } = await supabase
-      .from('interview_sessions')
-      .insert({
-        user_id: user.id,
-        company,
-        role,
-        jd_text,
-        experience_years,
-        round_type,
-        status: 'setup',
-      })
-      .select()
-      .single()
-
-    if (sessionError || !session) {
-      return NextResponse.json({ error: 'Failed to create session' }, { status: 500 })
-    }
-
+    // Generate questions BEFORE inserting the session row — this prevents orphaned
+    // `setup` rows (and wasted rate-limit budget) when the LLM call fails.
     const userMessage = `Company: ${company}
 Role: ${role}
 Experience: ${experience_years} years
@@ -193,6 +176,25 @@ Generate 15 interview questions for this ${round_type} round at ${company}.${res
       throw new Error('AI returned no questions')
     }
 
+    // Questions parsed — now safe to create the session row
+    const { data: session, error: sessionError } = await supabase
+      .from('interview_sessions')
+      .insert({
+        user_id: user.id,
+        company,
+        role,
+        jd_text,
+        experience_years,
+        round_type,
+        status: 'setup',
+      })
+      .select()
+      .single()
+
+    if (sessionError || !session) {
+      return NextResponse.json({ error: 'Failed to create session' }, { status: 500 })
+    }
+
     // Save questions to Supabase
     const questionsToInsert = questions.slice(0, 15).map((q, index) => ({
       session_id: session.id,
@@ -209,6 +211,8 @@ Generate 15 interview questions for this ${round_type} round at ${company}.${res
       .insert(questionsToInsert)
 
     if (questionsError) {
+      // Roll back the session row so we don't leave an orphan
+      await supabase.from('interview_sessions').delete().eq('id', session.id)
       throw new Error('Failed to save questions')
     }
 

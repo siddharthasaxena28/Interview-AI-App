@@ -53,14 +53,20 @@ export default function FeedbackClient({
     // call but the await above errored (e.g. transient network).
     const pollInterval = setInterval(() => router.refresh(), 3000)
 
-    // Give up showing "loading" after 60 s with a helpful message
-    const giveUpTimer = setTimeout(() => setTimedOut(true), 60000)
+    // Give up showing "loading" after 60 s — clear the poll at that point so it
+    // doesn't keep hammering the server indefinitely.
+    const giveUpTimer = setTimeout(() => {
+      clearInterval(pollInterval)
+      setTimedOut(true)
+    }, 60000)
 
     return () => {
       cancelled = true
       clearInterval(pollInterval)
       clearTimeout(giveUpTimer)
     }
+  // analytics is a stable ref (same object identity across renders) so it is
+  // safe in deps and won't cause the effect to re-run on every render.
   }, [hasReport, sessionId, overallScore, selectionProbability, analytics, router])
 
   if (!hasReport && timedOut) {

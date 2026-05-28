@@ -64,15 +64,18 @@ export async function GET() {
         return NextResponse.json({ key })
       }
 
-      console.warn('Deepgram temp key creation failed (%s), falling back to master key', res.status)
+      console.warn('Deepgram temp key creation failed (%s) — returning 503', res.status)
     } catch (err) {
-      console.warn('Deepgram temp key error, falling back to master key:', err)
+      console.warn('Deepgram temp key error:', err)
     }
 
-    // Fallback: return master key so the interview still works if Deepgram's
-    // key-management API is unavailable. Log a warning so it gets noticed.
-    console.warn('[security] Returning Deepgram master key — temp key creation failed')
-    return NextResponse.json({ key: apiKey })
+    // Fail closed: never return the master key to the browser.
+    // The client should retry; a brief STT outage is preferable to exposing
+    // a full-account-scope credential.
+    return NextResponse.json(
+      { error: 'Speech recognition temporarily unavailable. Please retry.' },
+      { status: 503 },
+    )
   } catch {
     return NextResponse.json({ error: 'Failed to get token' }, { status: 500 })
   }

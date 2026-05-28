@@ -98,11 +98,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 })
     }
 
-    // Get the current question
+    // Scope question fetch to this session — prevents cross-session score tampering
     const { data: question } = await supabase
       .from('questions')
       .select('*')
       .eq('id', question_id)
+      .eq('session_id', session_id)
       .single()
 
     if (!question) {
@@ -158,19 +159,23 @@ Candidate's answer:
 
     const score = Math.min(5, Math.max(1, evaluation.score ?? 3))
 
-    // Save answer to Supabase
-    await supabase.from('answers').insert({
-      session_id,
-      question_id,
-      transcript_text: transcript,
-      duration_seconds: durationSeconds,
-      score,
-    })
+    // Persist answer and mark question asked in parallel — both are independent writes
+    const [{ error: answerError }, { error: askedError }] = await Promise.all([
+      supabase.from('answers').insert({
+        session_id,
+        question_id,
+        transcript_text: transcript,
+        duration_seconds: durationSeconds,
+        score,
+      }),
+      supabase.from('questions').update({ asked: true }).eq('id', question_id),
+    ])
 
-    // Mark question as asked
-    await supabase.from('questions').update({ asked: true }).eq('id', question_id)
+    if (answerError) console.error('Failed to save answer:', answerError)
+    if (askedError) console.error('Failed to mark question asked:', askedError)
 
-    // Select next question using adaptive difficulty
+    // Select next question using adaptive difficulty — sort buckets so we step
+    // through difficulties incrementally rather than jumping based on insert order
     const { data: remainingQuestions } = await supabase
       .from('questions')
       .select('*')
@@ -184,15 +189,16 @@ Candidate's answer:
       const remaining = remainingQuestions as Question[]
 
       if (score >= 4) {
-        // Good answer — pick harder question
-        const harder = remaining.filter((q) => q.difficulty > question.difficulty)
+        const harder = remaining
+          .filter((q) => q.difficulty > question.difficulty)
+          .sort((a, b) => a.difficulty - b.difficulty) // nearest harder first
         nextQuestion = harder.length > 0 ? harder[0] : remaining[0]
       } else if (score <= 2) {
-        // Poor answer — pick easier or same difficulty
-        const easier = remaining.filter((q) => q.difficulty <= question.difficulty)
+        const easier = remaining
+          .filter((q) => q.difficulty <= question.difficulty)
+          .sort((a, b) => b.difficulty - a.difficulty) // nearest easier first
         nextQuestion = easier.length > 0 ? easier[0] : remaining[0]
       } else {
-        // Average — pick in sequence
         nextQuestion = remaining[0]
       }
     }

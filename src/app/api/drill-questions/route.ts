@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { getDailyDrillQuestions, type DrillRoundFilter } from '@/lib/drill-questions'
+import { checkRateLimit } from '@/lib/rate-limit'
 import type { RoundType } from '@/types'
 
 const client = new Anthropic()
@@ -31,6 +32,13 @@ export async function POST(request: NextRequest) {
     const supabase = await createServerSupabaseClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    if (!checkRateLimit(`drill-questions:${user.id}`, 10, 3_600_000)) {
+      return NextResponse.json({
+        questions: getDailyDrillQuestions(today, filter),
+        personalized: false,
+      })
+    }
 
     const [{ data: latestSession }, { data: weakAreas }] = await Promise.all([
       supabase

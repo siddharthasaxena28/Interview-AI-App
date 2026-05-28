@@ -45,36 +45,36 @@ export default async function DashboardPage() {
   const { data: { user: authUser } } = await supabase.auth.getUser()
   if (!authUser) redirect('/auth/login')
 
-  const { data: userData } = await supabase
-    .from('users')
-    .select('*')
-    .eq('id', authUser.id)
-    .single()
+  // userData, sessions, and weakAreas are independent — run them in parallel.
+  const [
+    { data: userData },
+    { data: sessions },
+    { data: weakAreas },
+  ] = await Promise.all([
+    supabase.from('users').select('*').eq('id', authUser.id).single(),
+    supabase
+      .from('interview_sessions')
+      .select('*')
+      .eq('user_id', authUser.id)
+      .eq('status', 'completed')
+      .order('ended_at', { ascending: false })
+      .limit(20),
+    supabase
+      .from('weak_areas')
+      .select('topic_tag, avg_score, session_count')
+      .eq('user_id', authUser.id)
+      .order('avg_score', { ascending: true })
+      .limit(3),
+  ])
 
-  // Fetch more sessions so we can compute progress comparison
-  const { data: sessions } = await supabase
-    .from('interview_sessions')
-    .select('*')
-    .eq('user_id', authUser.id)
-    .eq('status', 'completed')
-    .order('ended_at', { ascending: false })
-    .limit(20)
-
+  // Reports depend on sessionIds from the sessions query above.
   const sessionIds = (sessions ?? []).map((s: InterviewSession) => s.id)
-
   const { data: reports } = sessionIds.length > 0
     ? await supabase
         .from('feedback_reports')
         .select('session_id, overall_score, selection_probability')
         .in('session_id', sessionIds)
     : { data: [] }
-
-  const { data: weakAreas } = await supabase
-    .from('weak_areas')
-    .select('topic_tag, avg_score, session_count')
-    .eq('user_id', authUser.id)
-    .order('avg_score', { ascending: true })
-    .limit(3)
 
   const reportMap = new Map(
     (reports ?? []).map((r: Pick<FeedbackReport, 'session_id' | 'overall_score' | 'selection_probability'>) => [r.session_id, r])
