@@ -1,5 +1,7 @@
 'use client'
 
+'use client'
+
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Calendar, Loader2, ChevronRight, RefreshCw, Target, Sparkles } from 'lucide-react'
@@ -30,29 +32,35 @@ const ROUND_COLORS: Record<string, string> = {
 }
 
 export default function StudyPlanWidget() {
+  const [userId, setUserId] = useState<string | null>(null)
   const [plan, setPlan] = useState<StoredPlan | null>(null)
   const [loading, setLoading] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [interviewDate, setInterviewDate] = useState('')
 
-  // Load cached plan from localStorage on mount
   useEffect(() => {
+    import('@/lib/supabase').then(({ createClient }) => {
+      createClient().auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null))
+    })
+  }, [])
+
+  // Load cached plan from localStorage once userId is known
+  useEffect(() => {
+    if (userId === null) return
     try {
-      const stored = localStorage.getItem('iai_study_plan')
+      const stored = localStorage.getItem(`iai_study_plan_${userId}`)
       if (stored) {
         const parsed: StoredPlan = JSON.parse(stored)
-        // Only use cached plan if less than 48 hours old
         const age = Date.now() - new Date(parsed.generated_at).getTime()
         if (age < 48 * 3600 * 1000) setPlan(parsed)
       }
-      // Try to read interview date from InterviewCountdown's localStorage key
       const countdown = localStorage.getItem('interview-countdown')
       if (countdown) {
         const { date } = JSON.parse(countdown) as { date?: string }
         if (date) setInterviewDate(date)
       }
     } catch { /* ignore */ }
-  }, [])
+  }, [userId])
 
   async function generate() {
     setLoading(true)
@@ -65,9 +73,8 @@ export default function StudyPlanWidget() {
       if (!res.ok) throw new Error('Failed')
       const data: StoredPlan = await res.json()
       data.interview_date = interviewDate || undefined
-      // preserve context from API response
       setPlan(data)
-      localStorage.setItem('iai_study_plan', JSON.stringify(data))
+      if (userId) localStorage.setItem(`iai_study_plan_${userId}`, JSON.stringify(data))
       setExpanded(true)
     } catch {
       alert('Could not generate study plan. Please try again.')
@@ -78,7 +85,7 @@ export default function StudyPlanWidget() {
 
   function refresh() {
     setPlan(null)
-    localStorage.removeItem('iai_study_plan')
+    if (userId) localStorage.removeItem(`iai_study_plan_${userId}`)
   }
 
   // Today's day index (which day of the plan are we on)

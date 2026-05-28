@@ -46,6 +46,7 @@ interface QuestionContext { role: string; company: string }
 
 export default function DrillPage() {
   const today = new Date().toISOString().split('T')[0]
+  const [userId, setUserId] = useState<string | null>(null)
   const [filter, setFilter] = useState<DrillRoundFilter>('mixed')
   const [questions, setQuestions] = useState<DrillQuestion[]>([])
   const [loadingQuestions, setLoadingQuestions] = useState(true)
@@ -62,7 +63,14 @@ export default function DrillPage() {
   const interimRef = useRef('')
 
   useEffect(() => {
-    const cacheKey = `drill-${today}-${filter}`
+    import('@/lib/supabase').then(({ createClient }) => {
+      createClient().auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null))
+    })
+  }, [])
+
+  useEffect(() => {
+    if (userId === null) return
+    const cacheKey = `drill-${userId}-${today}-${filter}`
     const cached = localStorage.getItem(cacheKey)
     if (cached) {
       try {
@@ -92,7 +100,7 @@ export default function DrillPage() {
         setQuestionContext(null)
       })
       .finally(() => setLoadingQuestions(false))
-  }, [filter, today])
+  }, [userId, filter, today])
 
   useEffect(() => {
     if (phase === 'answering') {
@@ -191,7 +199,7 @@ export default function DrillPage() {
   }
 
   function restart() {
-    localStorage.removeItem(`drill-${today}-${filter}`)
+    if (userId) localStorage.removeItem(`drill-${userId}-${today}-${filter}`)
     setQIndex(0)
     setTranscript('')
     setElapsed(0)
