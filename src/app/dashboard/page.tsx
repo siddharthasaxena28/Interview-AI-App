@@ -151,7 +151,7 @@ export default async function DashboardPage() {
 
       <main className="max-w-5xl mx-auto px-6 py-10">
         {/* Welcome + CTA */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 bg-gradient-to-r from-blue-50/70 to-white border border-blue-100 rounded-2xl p-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
               Welcome back, {authUser.user_metadata?.full_name?.split(' ')[0] ?? 'there'}
@@ -204,13 +204,13 @@ export default async function DashboardPage() {
 
         {/* Stats row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
             <div className="text-2xl font-bold text-gray-900">{sessions?.length ?? 0}</div>
             <div className="text-sm text-gray-500 flex items-center gap-1 mt-0.5">
               <Mic className="w-3.5 h-3.5" /> Sessions
             </div>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
             <div className="flex items-end gap-1">
               <div className="text-2xl font-bold text-gray-900">
                 {reports && reports.length > 0
@@ -230,7 +230,7 @@ export default async function DashboardPage() {
               )}
             </div>
           </div>
-          <div className={`rounded-xl border p-4 ${currentStreak >= 3 ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-200'}`}>
+          <div className={`rounded-xl border p-4 shadow-sm ${currentStreak >= 3 ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-200'}`}>
             <div className={`text-2xl font-bold flex items-center gap-1 ${currentStreak >= 3 ? 'text-orange-600' : 'text-gray-900'}`}>
               {currentStreak >= 1 && <Flame className="w-5 h-5" />}
               {currentStreak}
@@ -239,7 +239,7 @@ export default async function DashboardPage() {
               Day streak{longestStreak > currentStreak ? ` · best ${longestStreak}` : ''}
             </div>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
             <div className="text-2xl font-bold text-blue-600">
               {creditBalance}
             </div>
@@ -251,7 +251,7 @@ export default async function DashboardPage() {
 
         {/* Score trend chart */}
         {chartData.length >= 2 && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
+          <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8 shadow-sm">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold text-gray-900 flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-blue-600" /> Score Trend
@@ -275,6 +275,12 @@ export default async function DashboardPage() {
               preserveAspectRatio="none"
               className="overflow-visible"
             >
+              <defs>
+                <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#2563eb" stopOpacity="0.18" />
+                  <stop offset="100%" stopColor="#2563eb" stopOpacity="0" />
+                </linearGradient>
+              </defs>
               {[25, 50, 75].map((score) => {
                 const y = ((100 - score) / 100) * 52 + 4
                 return (
@@ -284,6 +290,14 @@ export default async function DashboardPage() {
                   </g>
                 )
               })}
+              <polygon
+                fill="url(#chartFill)"
+                points={`0,60 ${chartData.map((d, i) => {
+                  const x = (i / (chartData.length - 1)) * 300
+                  const y = ((100 - d.score) / 100) * 52 + 4
+                  return `${x},${y}`
+                }).join(' ')} 300,60`}
+              />
               <polyline
                 fill="none"
                 stroke="#2563eb"
@@ -315,7 +329,7 @@ export default async function DashboardPage() {
 
         {/* Weak areas / focus topics — with "Practice This" links */}
         {weakAreas && weakAreas.length > 0 && (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-8">
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-8 shadow-sm">
             <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
               <Target className="w-4 h-4 text-amber-500" />
               <h2 className="font-semibold text-gray-900">Focus Areas</h2>
@@ -347,7 +361,7 @@ export default async function DashboardPage() {
 
         {/* Referral programme */}
         {referralLink && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
+          <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8 shadow-sm">
             <h2 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
               <Gift className="w-4 h-4 text-green-500" /> Refer a Friend
             </h2>
@@ -359,7 +373,7 @@ export default async function DashboardPage() {
         )}
 
         {/* Interview history */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
           <div className="px-6 py-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900">Interview History</h2>
           </div>
