@@ -129,9 +129,9 @@ export default function PricingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-white">
       {/* Nav */}
-      <nav className="bg-white border-b border-gray-200 px-6 py-4">
+      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200 px-6 py-4">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
             <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center">
@@ -149,6 +149,9 @@ export default function PricingPage() {
 
         {/* Header */}
         <div className="text-center mb-4">
+          <div className="inline-flex items-center gap-2 bg-blue-50 border border-blue-100 text-blue-600 text-xs font-semibold px-3 py-1 rounded-full mb-4">
+            <Zap className="w-3 h-3" /> Simple, honest pricing
+          </div>
           <h1 className="text-4xl font-bold text-gray-900 mb-3">Buy sessions when you need them</h1>
           <p className="text-gray-500 max-w-lg mx-auto">
             No subscription. No monthly bills. Credits never expire — use them at your own pace.
@@ -167,10 +170,10 @@ export default function PricingPage() {
           {PACKS.map((pack) => (
             <div
               key={pack.key}
-              className={`rounded-2xl p-6 border relative transition-shadow ${
+              className={`rounded-2xl p-6 border transition-shadow hover:shadow-md relative ${
                 pack.highlighted
-                  ? 'border-blue-500 bg-blue-600 text-white shadow-2xl shadow-blue-500/25 scale-[1.02]'
-                  : 'border-gray-200 bg-white shadow-sm hover:shadow-md'
+                  ? 'border-blue-500 bg-blue-600 text-white shadow-lg'
+                  : 'border-gray-200 bg-white'
               }`}
             >
               {pack.badge && (
@@ -234,7 +237,7 @@ export default function PricingPage() {
         </div>
 
         {/* Free tier callout */}
-        <div className="bg-white border border-gray-200 rounded-2xl p-6 mb-12 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="bg-gradient-to-r from-blue-50/50 to-white border border-blue-100 rounded-2xl p-6 mb-12 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
           <div>
             <div className="font-semibold text-gray-900 mb-0.5">New here? Start for free</div>
             <div className="text-sm text-gray-500">
@@ -244,14 +247,14 @@ export default function PricingPage() {
           </div>
           <Link
             href="/auth/login"
-            className="flex-shrink-0 bg-gray-100 text-gray-800 text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-gray-200 transition-colors whitespace-nowrap"
+            className="flex-shrink-0 bg-blue-600 text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-blue-700 transition-colors whitespace-nowrap shadow-sm"
           >
             Try free →
           </Link>
         </div>
 
         {/* Per-session comparison table */}
-        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
           <div className="px-6 py-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900">Cost per session breakdown</h2>
           </div>

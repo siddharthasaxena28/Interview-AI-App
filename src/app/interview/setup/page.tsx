@@ -188,7 +188,7 @@ function SetupPageInner() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-12">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-2xl">
         {/* Header */}
         <div className="flex items-center gap-2 mb-8">
@@ -199,27 +199,31 @@ function SetupPageInner() {
         </div>
 
         {/* Progress */}
-        <div className="flex items-center gap-2 mb-8">
-          {[1, 2, 3].map((s) => (
-            <div key={s} className="flex items-center gap-2">
-              <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors ${
-                  step >= s ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-500'
-                }`}
-              >
-                {s}
+        <div className="flex items-center gap-1 mb-8">
+          {[
+            { n: 1, label: 'Job Description' },
+            { n: 2, label: 'Company & Role' },
+            { n: 3, label: 'Round Type' },
+          ].map(({ n, label }, idx) => (
+            <div key={n} className="flex items-center gap-1 flex-1 last:flex-none">
+              <div className="flex flex-col items-center gap-1.5">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-all ${
+                  step > n ? 'bg-blue-600 text-white' : step === n ? 'bg-blue-600 text-white ring-4 ring-blue-100' : 'bg-gray-100 text-gray-400'
+                }`}>
+                  {step > n ? '✓' : n}
+                </div>
+                <span className={`text-xs whitespace-nowrap hidden sm:block ${step === n ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>
+                  {label}
+                </span>
               </div>
-              {s < 3 && <div className={`h-0.5 w-12 ${step > s ? 'bg-blue-600' : 'bg-gray-200'}`} />}
+              {idx < 2 && (
+                <div className={`h-0.5 flex-1 mx-1 mb-4 transition-colors ${step > n ? 'bg-blue-600' : 'bg-gray-200'}`} />
+              )}
             </div>
           ))}
-          <span className="ml-2 text-sm text-gray-500">
-            {step === 1 && 'Job Description'}
-            {step === 2 && 'Company & Role'}
-            {step === 3 && 'Round Type'}
-          </span>
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-200 p-8 shadow-sm">
+        <div className="bg-white rounded-2xl border border-gray-100 p-8 shadow-sm">
           {/* Step 1: JD */}
           {step === 1 && (
             <div>
@@ -569,7 +573,7 @@ function SetupPageInner() {
 export default function SetupPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin" />
       </div>
     }>
