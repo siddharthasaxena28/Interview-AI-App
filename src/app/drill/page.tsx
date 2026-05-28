@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
-import { Mic, MicOff, ChevronRight, CheckCircle, RotateCcw, Zap, Clock, ArrowRight } from 'lucide-react'
+import { Mic, MicOff, ChevronRight, CheckCircle, RotateCcw, Zap, Clock, ArrowRight, Sparkles } from 'lucide-react'
 import { getDailyDrillQuestions, type DrillQuestion, type DrillRoundFilter } from '@/lib/drill-questions'
 import type { RoundType } from '@/types'
 
@@ -42,10 +42,14 @@ const FILTER_OPTIONS: { value: DrillRoundFilter; label: string }[] = [
   { value: 'hr', label: 'HR' },
 ]
 
+interface QuestionContext { role: string; company: string }
+
 export default function DrillPage() {
   const today = new Date().toISOString().split('T')[0]
   const [filter, setFilter] = useState<DrillRoundFilter>('mixed')
   const [questions, setQuestions] = useState<DrillQuestion[]>([])
+  const [loadingQuestions, setLoadingQuestions] = useState(true)
+  const [questionContext, setQuestionContext] = useState<QuestionContext | null>(null)
   const [qIndex, setQIndex] = useState(0)
   const [phase, setPhase] = useState<'intro' | 'answering' | 'scored' | 'done'>('intro')
   const [transcript, setTranscript] = useState('')
@@ -58,7 +62,36 @@ export default function DrillPage() {
   const interimRef = useRef('')
 
   useEffect(() => {
-    setQuestions(getDailyDrillQuestions(today, filter))
+    const cacheKey = `drill-${today}-${filter}`
+    const cached = localStorage.getItem(cacheKey)
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached) as { questions: DrillQuestion[]; context?: QuestionContext }
+        setQuestions(parsed.questions)
+        setQuestionContext(parsed.context ?? null)
+        setLoadingQuestions(false)
+        return
+      } catch { /* fall through to fetch */ }
+    }
+
+    setLoadingQuestions(true)
+    fetch('/api/drill-questions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filter }),
+    })
+      .then(r => r.json())
+      .then((data: { questions: DrillQuestion[]; context?: QuestionContext }) => {
+        const qs = data.questions?.length ? data.questions : getDailyDrillQuestions(today, filter)
+        setQuestions(qs)
+        setQuestionContext(data.context ?? null)
+        localStorage.setItem(cacheKey, JSON.stringify({ questions: qs, context: data.context }))
+      })
+      .catch(() => {
+        setQuestions(getDailyDrillQuestions(today, filter))
+        setQuestionContext(null)
+      })
+      .finally(() => setLoadingQuestions(false))
   }, [filter, today])
 
   useEffect(() => {
@@ -158,6 +191,7 @@ export default function DrillPage() {
   }
 
   function restart() {
+    localStorage.removeItem(`drill-${today}-${filter}`)
     setQIndex(0)
     setTranscript('')
     setElapsed(0)
@@ -196,9 +230,16 @@ export default function DrillPage() {
               <Zap className="w-7 h-7 text-green-600" />
             </div>
             <h1 className="text-2xl font-bold text-gray-900 mb-2">Daily Drill</h1>
-            <p className="text-gray-500 text-sm mb-6">
+            <p className="text-gray-500 text-sm mb-4">
               3 questions · ~5 minutes · completely free · no credits needed
             </p>
+
+            {questionContext && (
+              <div className="inline-flex items-center gap-1.5 text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-full px-3 py-1 mb-4">
+                <Sparkles className="w-3 h-3" />
+                Personalised for {questionContext.role} at {questionContext.company}
+              </div>
+            )}
 
             <div className="flex flex-wrap justify-center gap-2 mb-6">
               {FILTER_OPTIONS.map(f => (
@@ -222,12 +263,19 @@ export default function DrillPage() {
               <div className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" /> No interview credit needed — unlimited daily practice</div>
             </div>
 
-            <button
-              onClick={() => setPhase('answering')}
-              className="flex items-center justify-center gap-2 w-full bg-blue-600 text-white py-4 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
-            >
-              Start Drill <ChevronRight className="w-4 h-4" />
-            </button>
+            {loadingQuestions ? (
+              <div className="flex items-center justify-center gap-2 w-full bg-blue-100 text-blue-400 py-4 rounded-xl font-semibold cursor-not-allowed">
+                <div className="w-4 h-4 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin" />
+                Generating your questions…
+              </div>
+            ) : (
+              <button
+                onClick={() => setPhase('answering')}
+                className="flex items-center justify-center gap-2 w-full bg-blue-600 text-white py-4 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
+              >
+                Start Drill <ChevronRight className="w-4 h-4" />
+              </button>
+            )}
           </div>
         )}
 
