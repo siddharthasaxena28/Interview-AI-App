@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Calendar, Loader2, ChevronRight, RefreshCw, Target } from 'lucide-react'
+import { Calendar, Loader2, ChevronRight, RefreshCw, Target, Sparkles } from 'lucide-react'
 
 interface StudyDay {
   day: number
@@ -17,6 +17,7 @@ interface StoredPlan {
   days: StudyDay[]
   generated_at: string
   interview_date?: string
+  context?: { role: string; company: string }
 }
 
 const ROUND_COLORS: Record<string, string> = {
@@ -64,6 +65,7 @@ export default function StudyPlanWidget() {
       if (!res.ok) throw new Error('Failed')
       const data: StoredPlan = await res.json()
       data.interview_date = interviewDate || undefined
+      // preserve context from API response
       setPlan(data)
       localStorage.setItem('iai_study_plan', JSON.stringify(data))
       setExpanded(true)
@@ -93,12 +95,18 @@ export default function StudyPlanWidget() {
         onClick={() => setExpanded(e => !e)}
         className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Target className="w-4 h-4 text-blue-500" />
           <h2 className="font-semibold text-gray-900">Your Study Plan</h2>
           {plan && (
             <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">
               {plan.days.length} days
+            </span>
+          )}
+          {plan?.context && (
+            <span className="text-xs bg-purple-50 text-purple-600 border border-purple-100 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+              <Sparkles className="w-3 h-3" />
+              {plan.context.role} · {plan.context.company}
             </span>
           )}
         </div>

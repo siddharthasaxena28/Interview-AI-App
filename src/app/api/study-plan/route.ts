@@ -26,10 +26,12 @@ export async function POST(request: NextRequest) {
       { data: weakAreas },
       { data: recentSessions },
       { data: userData },
+      { data: latestSession },
     ] = await Promise.all([
       supabase.from('weak_areas').select('topic_tag, avg_score').eq('user_id', user.id).order('avg_score', { ascending: true }).limit(5),
       supabase.from('interview_sessions').select('round_type, ended_at').eq('user_id', user.id).eq('status', 'completed').order('ended_at', { ascending: false }).limit(5),
       supabase.from('users').select('name, current_streak').eq('id', user.id).single(),
+      supabase.from('interview_sessions').select('role, company, experience_years, round_type').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
     ])
 
     const daysUntil = interview_date
@@ -43,9 +45,15 @@ export async function POST(request: NextRequest) {
 
     const recentContext = Array.from(new Set((recentSessions ?? []).map(s => s.round_type))).join(', ') || 'none yet'
 
+    const roleContext = latestSession?.role && latestSession?.company
+      ? `- Target role: ${latestSession.role} at ${latestSession.company}${latestSession.experience_years ? ` (${latestSession.experience_years} years experience)` : ''}
+- Primary round to prepare for: ${latestSession.round_type}`
+      : '- Target role: Not specified (general software engineering prep)'
+
     const prompt = `You are an interview preparation coach creating a ${planDays}-day study plan.
 
 Candidate context:
+${roleContext}
 - Weak areas: \n${weakContext}
 - Recent practice rounds: ${recentContext}
 - Current streak: ${userData?.current_streak ?? 0} days
@@ -71,6 +79,7 @@ Rules:
 - At most 2 mock interviews per ${planDays} days (they cost credits)
 - Other days: "Review X concept", "Practice explaining Y aloud", "Do today's free drill" — link to /drill for drill days
 - Last day before interview (if known): "Light warm-up — 3-question drill only", link to /drill
+- If target role and company are known, reference them specifically in "action" and "why" (e.g. "critical for Staff Engineer at Razorpay", "Flipkart interviews heavily on system design")
 - Keep "why" to 1 sentence, "action" to 1 sentence`
 
     const message = await client.messages.create({
@@ -90,7 +99,13 @@ Rules:
       return NextResponse.json({ error: 'Failed to parse plan' }, { status: 500 })
     }
 
-    return NextResponse.json({ days, generated_at: new Date().toISOString() })
+    return NextResponse.json({
+      days,
+      generated_at: new Date().toISOString(),
+      context: latestSession?.role && latestSession?.company
+        ? { role: latestSession.role, company: latestSession.company }
+        : undefined,
+    })
   } catch (error) {
     console.error('study-plan error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
