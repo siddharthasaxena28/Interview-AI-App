@@ -44,6 +44,7 @@ function SessionPageInner({ params }: SessionPageProps) {
   const [muted, setMuted] = useState(false)
   const [ending, setEnding] = useState(false)
   const [error, setError] = useState('')
+  const [deepgramRetry, setDeepgramRetry] = useState(0)
   const [micPermission, setMicPermission] = useState<'pending' | 'granted' | 'denied'>('pending')
   const [loadingSession, setLoadingSession] = useState(true)
   const [phase, setPhase] = useState<'intro' | 'interview'>('intro')
@@ -223,6 +224,8 @@ function SessionPageInner({ params }: SessionPageProps) {
   }, [])
 
   // Connect Deepgram WebSocket after the user clicks "Begin"
+  // deepgramRetry is incremented to re-trigger this effect after a failed token fetch
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!started || micPermission !== 'granted' || !sessionData) return
 
@@ -233,7 +236,7 @@ function SessionPageInner({ params }: SessionPageProps) {
         const res = await fetch('/api/deepgram-token')
         const tokenData = await res.json()
         if (!res.ok || !tokenData.key) {
-          setError('Speech recognition is not configured. Please contact support.')
+          setError(tokenData.error ?? 'Speech recognition unavailable. Please try again.')
           return
         }
         const { key } = tokenData
@@ -385,7 +388,7 @@ function SessionPageInner({ params }: SessionPageProps) {
       audioContextRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [started, micPermission, sessionData])
+  }, [started, micPermission, sessionData, deepgramRetry])
 
   function setupAudioStreaming(ws: WebSocket) {
     const stream = mediaStreamRef.current
@@ -732,6 +735,7 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   if (error) {
     const noCredits = error.toLowerCase().includes('credit')
+    const isSpeechError = error.toLowerCase().includes('speech') || error.toLowerCase().includes('recognition')
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
         <div className="bg-red-900/30 border border-red-500 rounded-2xl p-8 max-w-md text-center">
@@ -748,6 +752,14 @@ function SessionPageInner({ params }: SessionPageProps) {
                 className="bg-blue-600 text-white px-6 py-2 rounded-xl font-medium text-sm hover:bg-blue-700 transition-colors"
               >
                 View Pricing
+              </button>
+            )}
+            {isSpeechError && (
+              <button
+                onClick={() => { setError(''); setDeepgramRetry(n => n + 1) }}
+                className="bg-blue-600 text-white px-6 py-2 rounded-xl font-medium text-sm hover:bg-blue-700 transition-colors"
+              >
+                Try Again
               </button>
             )}
             <button
