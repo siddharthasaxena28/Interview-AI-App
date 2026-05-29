@@ -11,9 +11,11 @@ export const maxDuration = 60
 
 const client = new Anthropic()
 
-// Max chars per answer in the LLM prompt. Caps input tokens for long interviews —
-// 800 chars ≈ 150 words, more than enough to assess any single answer accurately.
-const MAX_ANSWER_CHARS = 800
+// Max chars per answer in the LLM prompt. 1500 chars ≈ 250 spoken words — generous
+// enough to capture any complete answer, while preventing a single rambling response
+// from bloating the prompt. The score itself is never affected (it was set by
+// evaluate-answer which saw the full transcript in real time).
+const MAX_ANSWER_CHARS = 1500
 
 const FEEDBACK_SYSTEM_PROMPT = `You are an expert interview coach who provides detailed, specific feedback.
 Analyse the complete interview transcript and generate a structured feedback report.
