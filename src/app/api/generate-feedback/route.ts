@@ -163,7 +163,11 @@ Generate a comprehensive feedback report for this candidate.`
 
       const message = await client.messages.create({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 4096,
+        // 8192 is Haiku's ceiling. A 15-question full_loop with ideal_answer_hints on
+        // every low-scoring answer easily exceeds 4096 output tokens — the old limit
+        // silently truncated the JSON mid-string, causing JSON.parse to throw and the
+        // report to never save, leaving the feedback page polling forever.
+        max_tokens: 8192,
         system: [
           {
             type: 'text',
@@ -181,7 +185,15 @@ Generate a comprehensive feedback report for this candidate.`
         const jsonMatch = content.text.match(/\{[\s\S]*\}/)
         feedback = JSON.parse(jsonMatch ? jsonMatch[0] : content.text)
       } catch {
+        // Log the raw output so truncation is visible in Vercel logs
+        console.error('Feedback parse failed. stop_reason:', message.stop_reason, '— output length:', content.text.length)
         throw new Error('Failed to parse feedback from AI')
+      }
+
+      // Haiku hit its token limit before closing the JSON — treat as a parse failure.
+      // This is logged above; increasing max_tokens is the fix.
+      if (message.stop_reason === 'max_tokens') {
+        console.error('Haiku hit max_tokens limit during feedback generation — output truncated')
       }
 
       // Re-assign question_id by position — safety net in case Claude echoed the IDs
