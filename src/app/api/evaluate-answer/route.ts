@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { waitUntil } from '@vercel/functions'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { PERSONA_SPEECH_STYLE } from '@/lib/personas'
 import type { Question, RoundType } from '@/types'
@@ -246,6 +247,25 @@ Candidate's answer:
       }
     }
 
+    const questionsRemaining = (remainingQuestions?.length ?? 0) + (isProbe ? 1 : 0)
+
+    // When the last question has been answered, kick off feedback generation in the
+    // background immediately. The LLM call runs while the AI speaks its closing words
+    // and the user navigates — so the report is ready (or nearly ready) by the time
+    // the feedback page loads, instead of making the user stare at a spinner.
+    // No charge here — credit deduction happens only via endInterview() on the client.
+    if (questionsRemaining === 0) {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+      const cookieHeader = request.headers.get('cookie') ?? ''
+      waitUntil(
+        fetch(`${appUrl}/api/generate-feedback`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Cookie': cookieHeader },
+          body: JSON.stringify({ session_id }),
+        }).catch(() => {}) // silent — the feedback page retries if this fails
+      )
+    }
+
     return NextResponse.json({
       score,
       spoken_response: evaluation.spoken_response ?? '',
@@ -254,7 +274,7 @@ Candidate's answer:
       candidate_wants_to_skip: evaluation.candidate_wants_to_skip ?? false,
       // Count the freshly-inserted probe so the client doesn't end the interview
       // prematurely when the candidate is probed on the last scripted question.
-      questions_remaining: (remainingQuestions?.length ?? 0) + (isProbe ? 1 : 0),
+      questions_remaining: questionsRemaining,
     })
   } catch (error) {
     console.error('evaluate-answer error:', error)
