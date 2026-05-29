@@ -4,7 +4,8 @@
 -- 3. RLS WITH CHECK clauses to block row-creation bypasses
 
 -- ============================================================
--- 1. Atomic credit increment
+-- 1. Atomic credit increment / decrement
+--    GREATEST(0, ...) ensures balance never goes negative on a debit.
 -- ============================================================
 CREATE OR REPLACE FUNCTION increment_user_credits(p_user_id UUID, p_amount INT)
 RETURNS void
@@ -14,7 +15,7 @@ SET search_path = public
 AS $$
 BEGIN
   UPDATE users
-  SET credit_balance = credit_balance + p_amount
+  SET credit_balance = GREATEST(0, credit_balance + p_amount)
   WHERE id = p_user_id;
 END;
 $$;
@@ -23,6 +24,16 @@ $$;
 REVOKE EXECUTE ON FUNCTION increment_user_credits(UUID, INT) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION increment_user_credits(UUID, INT) FROM authenticated;
 REVOKE EXECUTE ON FUNCTION increment_user_credits(UUID, INT) FROM anon;
+
+-- ============================================================
+-- 1b. Unique partial index on credit_transactions so that each
+--     completed session can only be charged once. A duplicate INSERT
+--     returns a 23505 unique_violation, which chargeSessionCredit()
+--     catches and silently ignores — making billing idempotent.
+-- ============================================================
+CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_tx_session_use
+  ON credit_transactions (session_id)
+  WHERE type = 'session_use';
 
 -- ============================================================
 -- 2. Composite index — used by the dashboard, feedback generation,

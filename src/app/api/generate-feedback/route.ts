@@ -68,17 +68,19 @@ export async function POST(request: NextRequest) {
 
     const { session_id } = await request.json() as { session_id: string }
 
-    // Fetch session, questions, answers, and any existing report in parallel.
+    // Fetch session, questions, answers, existing report, and user plan in parallel.
     const [
       { data: session },
       { data: questions },
       { data: answers },
       { data: existingReport },
+      { data: userData },
     ] = await Promise.all([
       supabase.from('interview_sessions').select('*').eq('id', session_id).eq('user_id', user.id).single(),
       supabase.from('questions').select('*').eq('session_id', session_id).eq('asked', true).order('order_index'),
       supabase.from('answers').select('*').eq('session_id', session_id).order('recorded_at'),
       supabase.from('feedback_reports').select('*').eq('session_id', session_id).maybeSingle(),
+      supabase.from('users').select('plan, credit_balance').eq('id', user.id).single(),
     ])
 
     if (!session) {
@@ -209,6 +211,12 @@ Generate a comprehensive feedback report for this candidate.`
 
     if (reportError) console.error('Report save error:', reportError)
 
+    // Deduct 1 credit now that the interview is successfully completed.
+    // Doing it here (not at session start) means interruptions never cost a credit.
+    // The unique partial index on credit_transactions(session_id) WHERE type='session_use'
+    // makes this idempotent — retried feedback calls can't double-charge.
+    await chargeSessionCredit(supabase, user.id, session_id, userData?.plan)
+
     // Streak + weak areas: await directly — these power the dashboard stats and
     // must always complete. Both are small DB writes that finish in < 2 s.
     await Promise.allSettled([
@@ -236,6 +244,40 @@ Generate a comprehensive feedback report for this candidate.`
 }
 
 // ── Side-effect helpers ────────────────────────────────────────────────────
+
+async function chargeSessionCredit(
+  supabase: Awaited<ReturnType<typeof import('@/lib/supabase-server').createServerSupabaseClient>>,
+  userId: string,
+  sessionId: string,
+  plan?: string | null,
+) {
+  if (plan === 'unlimited') return
+
+  const { createServiceClient } = await import('@/lib/supabase-server')
+  const svc = await createServiceClient()
+
+  // Insert the debit transaction first. The unique partial index on
+  // credit_transactions(session_id) WHERE type='session_use' causes this INSERT
+  // to fail with a unique violation if the session was already charged (e.g. on a
+  // retry). We catch that and skip the balance update — idempotent by design.
+  const { error: txError } = await svc.from('credit_transactions').insert({
+    user_id: userId,
+    amount: -1,
+    type: 'session_use',
+    session_id: sessionId,
+  })
+
+  if (txError) {
+    // 23505 = unique_violation (already charged). Any other error: log and continue
+    // so a DB hiccup doesn't block the user from seeing their report.
+    if (txError.code !== '23505') console.error('chargeSessionCredit tx error:', txError)
+    return
+  }
+
+  // Decrement balance. The GREATEST guard in the RPC prevents going negative.
+  const { error: balErr } = await svc.rpc('increment_user_credits', { p_user_id: userId, p_amount: -1 })
+  if (balErr) console.error('chargeSessionCredit balance update error:', balErr)
+}
 
 async function updateStreak(supabase: Awaited<ReturnType<typeof import('@/lib/supabase-server').createServerSupabaseClient>>, userId: string) {
   const today = new Date().toISOString().slice(0, 10)
