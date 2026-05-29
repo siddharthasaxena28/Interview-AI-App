@@ -52,6 +52,15 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        // Design-system surface colours
+        surface: "#111118",
+        "surface-2": "#13131f",
+        "surface-3": "#1a1a2e",
+        // Accent palette
+        "indigo-accent": "#6366f1",
+        "violet-accent": "#8b5cf6",
+        // Subtle border
+        "border-subtle": "rgba(255,255,255,0.06)",
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -71,11 +80,42 @@ const config: Config = {
           "0%": { transform: "scale(0.8)", opacity: "1" },
           "100%": { transform: "scale(2)", opacity: "0" },
         },
+        shimmer: {
+          "0%":   { backgroundPosition: "-200% 0" },
+          "100%": { backgroundPosition:  "200% 0" },
+        },
+        fadeIn: {
+          from: { opacity: "0", transform: "translateY(8px)" },
+          to:   { opacity: "1", transform: "translateY(0)" },
+        },
+        slideUp: {
+          from: { opacity: "0", transform: "translateY(20px)" },
+          to:   { opacity: "1", transform: "translateY(0)" },
+        },
+        float: {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%":      { transform: "translateY(-6px)" },
+        },
+        glow: {
+          "0%, 100%": { boxShadow: "0 0 20px rgba(99,102,241,0.3)" },
+          "50%":      { boxShadow: "0 0 40px rgba(99,102,241,0.6)" },
+        },
+        "gradient-shift": {
+          "0%":   { backgroundPosition: "0% 50%" },
+          "50%":  { backgroundPosition: "100% 50%" },
+          "100%": { backgroundPosition: "0% 50%" },
+        },
       },
       animation: {
-        "accordion-down": "accordion-down 0.2s ease-out",
-        "accordion-up": "accordion-up 0.2s ease-out",
-        "pulse-ring": "pulse-ring 1.5s ease-out infinite",
+        "accordion-down":   "accordion-down 0.2s ease-out",
+        "accordion-up":     "accordion-up 0.2s ease-out",
+        "pulse-ring":       "pulse-ring 1.5s ease-out infinite",
+        shimmer:            "shimmer 2s linear infinite",
+        fadeIn:             "fadeIn 0.4s ease-out both",
+        slideUp:            "slideUp 0.5s ease-out both",
+        float:              "float 3s ease-in-out infinite",
+        glow:               "glow 2s ease-in-out infinite",
+        "gradient-shift":   "gradient-shift 6s ease infinite",
       },
     },
   },

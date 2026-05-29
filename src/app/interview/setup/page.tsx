@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Mic, ArrowRight, ArrowLeft, Loader2, Upload, Link, FileText, X } from 'lucide-react'
+import { Mic, ArrowRight, ArrowLeft, Loader2, Upload, Link, FileText, X, Check } from 'lucide-react'
 import { useAnalytics } from '@/hooks/useAnalytics'
 import type { RoundType } from '@/types'
 
@@ -187,54 +187,64 @@ function SetupPageInner() {
     }
   }
 
+  const steps = [
+    { n: 1, label: 'Job Description' },
+    { n: 2, label: 'Company & Role' },
+    { n: 3, label: 'Round Type' },
+  ]
+
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4 py-12">
+    <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-2xl">
         {/* Header */}
         <div className="flex items-center gap-2 mb-8">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
             <Mic className="w-4 h-4 text-white" />
           </div>
-          <span className="font-bold text-gray-900">InterviewAI</span>
+          <span className="font-bold text-white">InterviewAI</span>
         </div>
 
-        {/* Progress */}
+        {/* Progress stepper */}
         <div className="flex items-center gap-1 mb-8">
-          {[
-            { n: 1, label: 'Job Description' },
-            { n: 2, label: 'Company & Role' },
-            { n: 3, label: 'Round Type' },
-          ].map(({ n, label }, idx) => (
+          {steps.map(({ n, label }, idx) => (
             <div key={n} className="flex items-center gap-1 flex-1 last:flex-none">
               <div className="flex flex-col items-center gap-1.5">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-all ${
-                  step > n ? 'bg-blue-600 text-white' : step === n ? 'bg-blue-600 text-white ring-4 ring-blue-100' : 'bg-gray-100 text-gray-400'
+                  step > n
+                    ? 'bg-indigo-500/20 text-indigo-400'
+                    : step === n
+                    ? 'bg-indigo-600 text-white ring-2 ring-indigo-500/30'
+                    : 'bg-white/[0.05] text-gray-600'
                 }`}>
-                  {step > n ? '✓' : n}
+                  {step > n ? <Check className="w-3.5 h-3.5" /> : n}
                 </div>
-                <span className={`text-xs whitespace-nowrap hidden sm:block ${step === n ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>
+                <span className={`text-xs whitespace-nowrap hidden sm:block ${
+                  step === n ? 'text-indigo-400 font-medium' : step > n ? 'text-indigo-400/60' : 'text-gray-600'
+                }`}>
                   {label}
                 </span>
               </div>
               {idx < 2 && (
-                <div className={`h-0.5 flex-1 mx-1 mb-4 transition-colors ${step > n ? 'bg-blue-600' : 'bg-gray-200'}`} />
+                <div className={`h-0.5 flex-1 mx-1 mb-4 transition-colors rounded-full ${
+                  step > n ? 'bg-indigo-500' : 'bg-white/[0.06]'
+                }`} />
               )}
             </div>
           ))}
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-100 p-8 shadow-sm">
+        <div className="bg-[#111118] border border-white/[0.06] rounded-2xl p-8">
           {/* Step 1: JD */}
           {step === 1 && (
             <div>
-              <h2 className="text-xl font-bold text-gray-900 mb-1">Paste the Job Description</h2>
-              <p className="text-sm text-gray-500 mb-6">
+              <h2 className="text-xl font-bold text-white mb-1">Paste the Job Description</h2>
+              <p className="text-sm text-gray-400 mb-6">
                 Our AI will analyse it to generate targeted, company-specific questions.
               </p>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-400 mb-2">
                 Job Description
-                <span className="text-gray-400 font-normal ml-1">
-                  ({form.jd_text.length}/5000 characters)
+                <span className={`font-normal ml-1 ${form.jd_text.length > 4500 ? 'text-amber-400' : 'text-gray-600'}`}>
+                  ({form.jd_text.length}/5000)
                 </span>
               </label>
               <textarea
@@ -243,45 +253,49 @@ function SetupPageInner() {
                 placeholder="Paste the full job description here. Include required skills, responsibilities, and company information for best results..."
                 maxLength={5000}
                 rows={12}
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                className="w-full bg-[#0a0a0f] border border-white/[0.10] rounded-xl px-4 py-3 text-sm text-white placeholder:text-gray-600 focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none resize-none transition-all"
               />
+              <div className="mt-3 inline-flex items-center gap-1.5 bg-indigo-400/10 text-indigo-400 text-xs px-3 py-1.5 rounded-full">
+                <span className="w-1 h-1 rounded-full bg-indigo-400 inline-block" />
+                Tip: More detail = more targeted questions
+              </div>
             </div>
           )}
 
           {/* Step 2: Company & Role */}
           {step === 2 && (
             <div>
-              <h2 className="text-xl font-bold text-gray-900 mb-1">Company & Role Details</h2>
-              <p className="text-sm text-gray-500 mb-6">
+              <h2 className="text-xl font-bold text-white mb-1">Company & Role Details</h2>
+              <p className="text-sm text-gray-400 mb-6">
                 Help our AI research what this company specifically looks for.
               </p>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Company Name</label>
+                  <label className="block text-sm font-medium text-gray-400 mb-2">Company Name</label>
                   <input
                     type="text"
                     value={form.company}
                     onChange={(e) => updateForm('company', e.target.value)}
                     placeholder="e.g. Google, Flipkart, Tata Consultancy Services"
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full bg-[#0a0a0f] border border-white/[0.10] rounded-xl px-4 py-3 text-sm text-white placeholder:text-gray-600 focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-all"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Job Role / Position</label>
+                  <label className="block text-sm font-medium text-gray-400 mb-2">Job Role / Position</label>
                   <input
                     type="text"
                     value={form.role}
                     onChange={(e) => updateForm('role', e.target.value)}
                     placeholder="e.g. Senior Software Engineer, Product Manager, Data Analyst"
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full bg-[#0a0a0f] border border-white/[0.10] rounded-xl px-4 py-3 text-sm text-white placeholder:text-gray-600 focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-all"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Years of Experience</label>
+                  <label className="block text-sm font-medium text-gray-400 mb-2">Years of Experience</label>
                   <select
                     value={form.experience_years}
                     onChange={(e) => updateForm('experience_years', parseInt(e.target.value))}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    className="w-full bg-[#0a0a0f] border border-white/[0.10] rounded-xl px-4 py-3 text-sm text-white focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-all"
                   >
                     <option value={0}>Fresher / 0 years</option>
                     <option value={1}>1 year</option>
@@ -295,22 +309,22 @@ function SetupPageInner() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-400 mb-2">
                     Your résumé
-                    <span className="text-gray-400 font-normal ml-1">(optional — makes questions personal)</span>
+                    <span className="text-gray-600 font-normal ml-1">(optional — makes questions personal)</span>
                   </label>
 
                   {/* Tab selector */}
-                  <div className="flex gap-1 mb-3 bg-gray-100 rounded-lg p-1">
+                  <div className="flex gap-0 mb-3 border-b border-white/[0.06]">
                     {RESUME_TABS.map(({ key, label }) => (
                       <button
                         key={key}
                         type="button"
                         onClick={() => setResumeTab(key)}
-                        className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                        className={`px-4 py-2 text-xs font-medium transition-all border-b-2 -mb-px ${
                           resumeTab === key
-                            ? 'bg-white text-gray-900 shadow-sm'
-                            : 'text-gray-500 hover:text-gray-700'
+                            ? 'border-indigo-500 text-white'
+                            : 'border-transparent text-gray-500 hover:text-gray-300'
                         }`}
                       >
                         {label}
@@ -326,7 +340,7 @@ function SetupPageInner() {
                       placeholder="Paste your résumé text here. The AI will ask about your actual projects, skills, and experience — just like a real interviewer who has read your CV."
                       maxLength={8000}
                       rows={5}
-                      className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                      className="w-full bg-[#0a0a0f] border border-white/[0.10] rounded-xl px-4 py-3 text-sm text-white placeholder:text-gray-600 focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none resize-none transition-all"
                     />
                   )}
 
@@ -341,10 +355,10 @@ function SetupPageInner() {
                         onChange={handleFileUpload}
                       />
                       {resumeFileName && resumeTab === 'file' ? (
-                        <div className="flex items-center gap-2 border border-green-200 bg-green-50 rounded-xl px-4 py-3">
-                          <FileText className="w-4 h-4 text-green-600 shrink-0" />
-                          <span className="text-sm text-green-800 truncate flex-1">{resumeFileName}</span>
-                          <button type="button" onClick={clearResume} className="text-green-600 hover:text-green-800">
+                        <div className="flex items-center gap-2 border border-indigo-500/30 bg-indigo-500/5 rounded-xl px-4 py-3">
+                          <FileText className="w-4 h-4 text-indigo-400 shrink-0" />
+                          <span className="text-sm text-indigo-300 truncate flex-1">{resumeFileName}</span>
+                          <button type="button" onClick={clearResume} className="text-indigo-400 hover:text-indigo-200 transition-colors">
                             <X className="w-4 h-4" />
                           </button>
                         </div>
@@ -353,18 +367,18 @@ function SetupPageInner() {
                           type="button"
                           onClick={() => fileInputRef.current?.click()}
                           disabled={resumeParsing}
-                          className="w-full border-2 border-dashed border-gray-200 rounded-xl px-4 py-8 text-center hover:border-blue-400 hover:bg-blue-50 transition-colors disabled:opacity-50"
+                          className="w-full border-2 border-dashed border-white/[0.10] hover:border-indigo-500/40 rounded-xl px-4 py-8 text-center bg-white/[0.02] transition-all disabled:opacity-50"
                         >
                           {resumeParsing ? (
-                            <div className="flex flex-col items-center gap-2 text-blue-600">
+                            <div className="flex flex-col items-center gap-2 text-indigo-400">
                               <Loader2 className="w-6 h-6 animate-spin" />
                               <span className="text-sm font-medium">Parsing résumé…</span>
                             </div>
                           ) : (
-                            <div className="flex flex-col items-center gap-2 text-gray-400">
-                              <Upload className="w-6 h-6" />
-                              <span className="text-sm font-medium text-gray-600">Click to upload PDF or Word file</span>
-                              <span className="text-xs">.pdf, .doc, .docx — max 5 MB</span>
+                            <div className="flex flex-col items-center gap-2">
+                              <Upload className="w-6 h-6 text-gray-600" />
+                              <span className="text-sm font-medium text-gray-400">Click to upload PDF or Word file</span>
+                              <span className="text-xs text-gray-600">.pdf, .doc, .docx — max 5 MB</span>
                             </div>
                           )}
                         </button>
@@ -376,7 +390,7 @@ function SetupPageInner() {
                   {resumeTab === 'drive' && (
                     <div className="space-y-2">
                       <p className="text-xs text-gray-500">
-                        Share your résumé in Google Drive or Google Docs as <strong>&quot;Anyone with the link&quot;</strong>, then paste the share URL below.
+                        Share your résumé in Google Drive or Google Docs as <strong className="text-gray-400">&quot;Anyone with the link&quot;</strong>, then paste the share URL below.
                       </p>
                       <div className="flex gap-2">
                         <input
@@ -384,23 +398,23 @@ function SetupPageInner() {
                           value={driveUrl}
                           onChange={(e) => setDriveUrl(e.target.value)}
                           placeholder="https://drive.google.com/file/d/… or docs.google.com/document/d/…"
-                          className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="flex-1 bg-[#0a0a0f] border border-white/[0.10] rounded-xl px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-all"
                         />
                         <button
                           type="button"
                           onClick={handleDriveImport}
                           disabled={resumeParsing || !driveUrl.trim()}
-                          className="flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           {resumeParsing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link className="w-4 h-4" />}
                           Import
                         </button>
                       </div>
                       {resumeFileName === 'Imported from Google Drive' && (
-                        <div className="flex items-center gap-2 border border-green-200 bg-green-50 rounded-xl px-4 py-2.5">
-                          <FileText className="w-4 h-4 text-green-600" />
-                          <span className="text-sm text-green-800 flex-1">Imported from Google Drive</span>
-                          <button type="button" onClick={clearResume} className="text-green-600 hover:text-green-800">
+                        <div className="flex items-center gap-2 border border-indigo-500/30 bg-indigo-500/5 rounded-xl px-4 py-2.5">
+                          <FileText className="w-4 h-4 text-indigo-400" />
+                          <span className="text-sm text-indigo-300 flex-1">Imported from Google Drive</span>
+                          <button type="button" onClick={clearResume} className="text-indigo-400 hover:text-indigo-200 transition-colors">
                             <X className="w-4 h-4" />
                           </button>
                         </div>
@@ -408,7 +422,7 @@ function SetupPageInner() {
                     </div>
                   )}
 
-                  <p className="text-xs text-gray-400 mt-1.5">
+                  <p className="text-xs text-gray-600 mt-1.5">
                     {form.resume_text.length > 0
                       ? `${form.resume_text.length} characters extracted — questions will reference your background`
                       : 'Skip this and questions are generated from the job description alone.'}
@@ -421,54 +435,54 @@ function SetupPageInner() {
           {/* Step 3: Round Type */}
           {step === 3 && (
             <div>
-              <h2 className="text-xl font-bold text-gray-900 mb-1">Choose Your Interview Round</h2>
-              <p className="text-sm text-gray-500 mb-5">
-                All options cost <strong>1 credit</strong>. Pick based on what you need today.
+              <h2 className="text-xl font-bold text-white mb-1">Choose Your Interview Round</h2>
+              <p className="text-sm text-gray-400 mb-5">
+                All options cost <strong className="text-gray-300">1 credit</strong>. Pick based on what you need today.
               </p>
 
-              {/* ── Full Interview Loop (primary, recommended) ─────────── */}
+              {/* Full Interview Loop (primary, recommended) */}
               <button
                 onClick={() => updateForm('round_type', 'full_loop')}
-                className={`w-full text-left rounded-xl px-5 py-4 mb-5 transition-colors border-2 ${
+                className={`w-full text-left rounded-2xl px-5 py-4 mb-5 transition-all border ${
                   form.round_type === 'full_loop'
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/40'
+                    ? 'bg-gradient-to-br from-indigo-600/20 to-violet-600/10 border-indigo-500/40 ring-1 ring-indigo-500/30'
+                    : 'border-white/[0.06] bg-white/[0.02] hover:border-indigo-500/20 hover:bg-indigo-500/5'
                 }`}
               >
                 <div className="flex items-start gap-3">
                   <div
-                    className={`mt-0.5 w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${
-                      form.round_type === 'full_loop' ? 'border-blue-600' : 'border-gray-300'
+                    className={`mt-0.5 w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
+                      form.round_type === 'full_loop' ? 'border-indigo-500' : 'border-white/20'
                     }`}
                   >
                     {form.round_type === 'full_loop' && (
-                      <div className="w-2 h-2 bg-blue-600 rounded-full" />
+                      <div className="w-2 h-2 bg-indigo-500 rounded-full" />
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-gray-900">Full Interview</span>
-                      <span className="text-xs font-semibold bg-blue-600 text-white px-2 py-0.5 rounded-full">
+                      <span className="font-semibold text-white">Full Interview</span>
+                      <span className="text-xs font-semibold bg-indigo-600 text-white px-2 py-0.5 rounded-full">
                         Recommended
                       </span>
-                      <span className="text-xs text-gray-400 ml-auto">~60 min · 1 credit</span>
+                      <span className="text-xs text-gray-500 ml-auto">~60 min · 1 credit</span>
                     </div>
-                    <p className="text-sm text-gray-600 mt-1 leading-relaxed">
+                    <p className="text-sm text-gray-400 mt-1 leading-relaxed">
                       Covers all 4 round types in one session — Technical L1, Technical L2, Managerial &amp; HR.
                       Best value if you&rsquo;re unsure which rounds are coming or want comprehensive prep.
                     </p>
                     <div className="flex flex-wrap gap-1.5 mt-2.5">
                       {['Tech L1', 'Tech L2', 'Managerial', 'HR'].map(tag => (
-                        <span key={tag} className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{tag}</span>
+                        <span key={tag} className="text-xs bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded-full">{tag}</span>
                       ))}
                     </div>
                   </div>
                 </div>
               </button>
 
-              {/* ── Individual rounds (targeted practice) ────────────── */}
+              {/* Individual rounds */}
               <div className="mb-1">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2.5">
+                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2.5">
                   Targeted round practice &mdash; use when you know your weak area
                 </p>
                 <div className="grid grid-cols-2 gap-2.5">
@@ -476,24 +490,24 @@ function SetupPageInner() {
                     <button
                       key={option.value}
                       onClick={() => updateForm('round_type', option.value)}
-                      className={`text-left rounded-xl px-4 py-3.5 transition-colors border ${
+                      className={`text-left rounded-xl px-4 py-3.5 transition-all border ${
                         form.round_type === option.value
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                          ? 'border-indigo-500 bg-indigo-500/5 ring-1 ring-indigo-500/30'
+                          : 'border-white/[0.06] bg-white/[0.02] hover:border-white/[0.12] hover:bg-white/[0.04]'
                       }`}
                     >
                       <div className="flex items-start gap-2.5">
                         <div
-                          className={`mt-0.5 w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${
-                            form.round_type === option.value ? 'border-blue-600' : 'border-gray-300'
+                          className={`mt-0.5 w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
+                            form.round_type === option.value ? 'border-indigo-500' : 'border-white/20'
                           }`}
                         >
                           {form.round_type === option.value && (
-                            <div className="w-2 h-2 bg-blue-600 rounded-full" />
+                            <div className="w-2 h-2 bg-indigo-500 rounded-full" />
                           )}
                         </div>
                         <div>
-                          <div className="font-medium text-gray-900 text-sm leading-snug">{option.label}</div>
+                          <div className="font-medium text-white text-sm leading-snug">{option.label}</div>
                           <div className="text-xs text-gray-500 mt-0.5 leading-snug">{option.desc}</div>
                         </div>
                       </div>
@@ -502,7 +516,7 @@ function SetupPageInner() {
                 </div>
               </div>
 
-              <p className="text-xs text-gray-400 mt-3 text-center">
+              <p className="text-xs text-gray-600 mt-3 text-center">
                 ~30 min for individual rounds &nbsp;·&nbsp; Each option costs 1 credit
               </p>
             </div>
@@ -510,29 +524,29 @@ function SetupPageInner() {
 
           {/* Error */}
           {error && (
-            <div className="mt-4 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl">
+            <div className="mt-4 bg-red-500/10 border border-red-500/20 text-red-400 text-sm px-4 py-3 rounded-xl">
               {error}
             </div>
           )}
 
           {/* Navigation */}
           {loading ? (
-            <div className="mt-8 bg-blue-50 border border-blue-200 rounded-xl p-5 text-center">
-              <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-              <p className="text-sm font-semibold text-blue-700">{LOADING_MSGS[loadingMsg]}</p>
+            <div className="mt-8 bg-indigo-500/5 border border-indigo-500/20 rounded-xl p-5 text-center">
+              <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-sm font-semibold text-indigo-300">{LOADING_MSGS[loadingMsg]}</p>
               <div className="flex gap-1 justify-center mt-3">
                 {LOADING_MSGS.map((_, i) => (
-                  <div key={i} className={`w-1.5 h-1.5 rounded-full transition-all ${i === loadingMsg ? 'bg-blue-600 w-4' : 'bg-blue-200'}`} />
+                  <div key={i} className={`h-1 rounded-full transition-all ${i === loadingMsg ? 'bg-indigo-500 w-4' : 'bg-white/10 w-1.5'}`} />
                 ))}
               </div>
-              <p className="text-xs text-blue-400 mt-2">This usually takes 10–15 seconds</p>
+              <p className="text-xs text-gray-600 mt-2">This usually takes 10–15 seconds</p>
             </div>
           ) : (
             <div className="flex items-center justify-between gap-4 mt-8">
               {step > 1 ? (
                 <button
                   onClick={() => { setStep(step - 1); setError('') }}
-                  className="flex items-center gap-2 px-4 py-3 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-xl font-medium transition-colors shrink-0"
+                  className="flex items-center gap-2 px-4 py-3 text-sm text-gray-500 hover:text-gray-300 hover:bg-white/[0.04] rounded-xl font-medium transition-colors shrink-0"
                 >
                   <ArrowLeft className="w-4 h-4" /> Back
                 </button>
@@ -546,14 +560,14 @@ function SetupPageInner() {
                     const valid = step === 1 ? validateStep1() : validateStep2()
                     if (valid) setStep(step + 1)
                   }}
-                  className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors shrink-0"
+                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-xl text-sm font-semibold transition-colors shrink-0"
                 >
                   Continue <ArrowRight className="w-4 h-4" />
                 </button>
               ) : (
                 <button
                   onClick={handleSubmit}
-                  className="flex items-center justify-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-xl font-semibold text-sm hover:bg-blue-700 transition-colors shrink-0"
+                  className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-3 rounded-xl font-semibold text-sm transition-colors shrink-0"
                 >
                   Generate Interview <ArrowRight className="w-4 h-4" />
                 </button>
@@ -562,7 +576,7 @@ function SetupPageInner() {
           )}
         </div>
 
-        <p className="text-center text-xs text-gray-400 mt-6">
+        <p className="text-center text-xs text-gray-600 mt-6">
           Question generation usually takes 10–15 seconds
         </p>
       </div>
@@ -573,8 +587,8 @@ function SetupPageInner() {
 export default function SetupPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin" />
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-white/10 border-t-indigo-500 rounded-full animate-spin" />
       </div>
     }>
       <SetupPageInner />

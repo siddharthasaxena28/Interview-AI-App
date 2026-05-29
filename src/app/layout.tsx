@@ -4,7 +4,10 @@ import './globals.css'
 import { PostHogProvider } from './providers'
 import PWARegister from './PWARegister'
 
-const inter = Inter({ subsets: ['latin'] })
+const inter = Inter({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700'],
+})
 
 export const metadata: Metadata = {
   title: 'InterviewAI — Practice like it\'s real. Perform when it matters.',
@@ -24,7 +27,7 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: '#2563eb',
+  themeColor: '#6366f1',
 }
 
 export default function RootLayout({

@@ -1,10 +1,8 @@
 'use client'
 
-'use client'
-
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Calendar, Loader2, ChevronRight, RefreshCw, Target, Sparkles } from 'lucide-react'
+import { Calendar, Loader2, ChevronRight, RefreshCw, Target } from 'lucide-react'
 
 interface StudyDay {
   day: number
@@ -19,48 +17,41 @@ interface StoredPlan {
   days: StudyDay[]
   generated_at: string
   interview_date?: string
-  context?: { role: string; company: string }
 }
 
 const ROUND_COLORS: Record<string, string> = {
-  tech_l1: 'bg-blue-100 text-blue-700',
-  tech_l2: 'bg-purple-100 text-purple-700',
-  managerial: 'bg-indigo-100 text-indigo-700',
-  hr: 'bg-green-100 text-green-700',
-  full_loop: 'bg-orange-100 text-orange-700',
-  drill: 'bg-gray-100 text-gray-600',
+  tech_l1: 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20',
+  tech_l2: 'bg-violet-500/10 text-violet-400 border border-violet-500/20',
+  managerial: 'bg-blue-500/10 text-blue-400 border border-blue-500/20',
+  hr: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20',
+  full_loop: 'bg-orange-500/10 text-orange-400 border border-orange-500/20',
+  drill: 'bg-white/[0.04] text-gray-400 border border-white/[0.08]',
 }
 
 export default function StudyPlanWidget() {
-  const [userId, setUserId] = useState<string | null>(null)
   const [plan, setPlan] = useState<StoredPlan | null>(null)
   const [loading, setLoading] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [interviewDate, setInterviewDate] = useState('')
 
+  // Load cached plan from localStorage on mount
   useEffect(() => {
-    import('@/lib/supabase').then(({ createClient }) => {
-      createClient().auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null))
-    })
-  }, [])
-
-  // Load cached plan from localStorage once userId is known
-  useEffect(() => {
-    if (userId === null) return
     try {
-      const stored = localStorage.getItem(`iai_study_plan_${userId}`)
+      const stored = localStorage.getItem('iai_study_plan')
       if (stored) {
         const parsed: StoredPlan = JSON.parse(stored)
+        // Only use cached plan if less than 48 hours old
         const age = Date.now() - new Date(parsed.generated_at).getTime()
         if (age < 48 * 3600 * 1000) setPlan(parsed)
       }
+      // Try to read interview date from InterviewCountdown's localStorage key
       const countdown = localStorage.getItem('interview-countdown')
       if (countdown) {
         const { date } = JSON.parse(countdown) as { date?: string }
         if (date) setInterviewDate(date)
       }
     } catch { /* ignore */ }
-  }, [userId])
+  }, [])
 
   async function generate() {
     setLoading(true)
@@ -74,7 +65,7 @@ export default function StudyPlanWidget() {
       const data: StoredPlan = await res.json()
       data.interview_date = interviewDate || undefined
       setPlan(data)
-      if (userId) localStorage.setItem(`iai_study_plan_${userId}`, JSON.stringify(data))
+      localStorage.setItem('iai_study_plan', JSON.stringify(data))
       setExpanded(true)
     } catch {
       alert('Could not generate study plan. Please try again.')
@@ -85,7 +76,7 @@ export default function StudyPlanWidget() {
 
   function refresh() {
     setPlan(null)
-    if (userId) localStorage.removeItem(`iai_study_plan_${userId}`)
+    localStorage.removeItem('iai_study_plan')
   }
 
   // Today's day index (which day of the plan are we on)
@@ -97,35 +88,29 @@ export default function StudyPlanWidget() {
     : 0
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-8">
+    <div className="bg-[#111118] border border-white/[0.06] hover:border-white/[0.12] rounded-2xl overflow-hidden mb-8 transition-all duration-200">
       <button
         onClick={() => setExpanded(e => !e)}
-        className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+        className="w-full px-6 py-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors"
       >
-        <div className="flex items-center gap-2 flex-wrap">
-          <Target className="w-4 h-4 text-blue-500" />
-          <h2 className="font-semibold text-gray-900">Your Study Plan</h2>
+        <div className="flex items-center gap-2">
+          <Target className="w-4 h-4 text-indigo-400" />
+          <h2 className="font-semibold text-white">Your Study Plan</h2>
           {plan && (
-            <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">
+            <span className="text-xs bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded-full font-medium">
               {plan.days.length} days
             </span>
           )}
-          {plan?.context && (
-            <span className="text-xs bg-purple-50 text-purple-600 border border-purple-100 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
-              <Sparkles className="w-3 h-3" />
-              {plan.context.role} · {plan.context.company}
-            </span>
-          )}
         </div>
-        <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+        <ChevronRight className={`w-4 h-4 text-gray-600 transition-transform ${expanded ? 'rotate-90' : ''}`} />
       </button>
 
       {expanded && (
-        <div className="border-t border-gray-100 px-6 py-4">
+        <div className="border-t border-white/[0.06] px-6 py-4">
           {!plan ? (
             <div className="text-center py-4">
-              <Calendar className="w-10 h-10 text-blue-200 mx-auto mb-3" />
-              <p className="text-sm text-gray-600 mb-4">
+              <Calendar className="w-10 h-10 text-indigo-500/30 mx-auto mb-3" />
+              <p className="text-sm text-gray-400 mb-4">
                 Get a personalised day-by-day prep plan based on your weak areas and interview date.
               </p>
               {/* Optional interview date */}
@@ -134,7 +119,7 @@ export default function StudyPlanWidget() {
                   type="date"
                   value={interviewDate}
                   onChange={e => setInterviewDate(e.target.value)}
-                  className="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  className="text-sm bg-[#0a0a0f] border border-white/[0.08] text-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 focus:border-indigo-500/50"
                   placeholder="Interview date (optional)"
                   min={new Date().toISOString().split('T')[0]}
                 />
@@ -142,15 +127,12 @@ export default function StudyPlanWidget() {
               <button
                 onClick={generate}
                 disabled={loading}
-                className="flex items-center justify-center gap-2 bg-blue-600 text-white px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-700 disabled:opacity-60 transition-colors mx-auto"
+                className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 transition-all duration-200 mx-auto"
               >
                 {loading
                   ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating plan…</>
                   : <><Calendar className="w-4 h-4" /> Generate My Study Plan</>}
               </button>
-              <p className="text-xs text-gray-400 mt-3">
-                Complete your first mock interview to get a plan personalised to your role and weak areas.
-              </p>
             </div>
           ) : (
             <div>
@@ -164,31 +146,31 @@ export default function StudyPlanWidget() {
                       key={d.day}
                       className={`rounded-xl border p-3 transition-all ${
                         isToday
-                          ? 'border-blue-300 bg-blue-50'
+                          ? 'ring-1 ring-indigo-500/40 bg-indigo-500/5 border-indigo-500/30'
                           : isPast
-                            ? 'border-gray-100 bg-gray-50 opacity-60'
-                            : 'border-gray-200 bg-white'
+                            ? 'border-white/[0.04] bg-white/[0.02] opacity-40'
+                            : 'border-white/[0.06] bg-white/[0.01]'
                       }`}
                     >
                       <div className="flex items-start gap-3">
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 ${
-                          isToday ? 'bg-blue-600 text-white' : isPast ? 'bg-gray-200 text-gray-400' : 'bg-gray-100 text-gray-600'
+                          isToday ? 'bg-indigo-600 text-white' : isPast ? 'bg-white/[0.06] text-gray-600' : 'bg-white/[0.04] text-gray-500'
                         }`}>
                           {isToday ? 'Today' : `D${d.day}`}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-0.5">
-                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${ROUND_COLORS[roundKey] ?? 'bg-gray-100 text-gray-600'}`}>
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${ROUND_COLORS[roundKey] ?? 'bg-white/[0.04] text-gray-400 border border-white/[0.08]'}`}>
                               {d.focus}
                             </span>
                           </div>
-                          <p className="text-sm text-gray-700">{d.action}</p>
-                          <p className="text-xs text-gray-400 mt-0.5">{d.why}</p>
+                          <p className="text-sm text-gray-300">{d.action}</p>
+                          <p className="text-xs text-gray-600 mt-0.5">{d.why}</p>
                         </div>
                         {isToday && (
                           <Link
                             href={d.link}
-                            className="flex-shrink-0 text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors whitespace-nowrap"
+                            className="flex-shrink-0 text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg transition-all duration-200 whitespace-nowrap"
                           >
                             Start →
                           </Link>
@@ -198,14 +180,9 @@ export default function StudyPlanWidget() {
                   )
                 })}
               </div>
-              {!plan.context && (
-                <p className="text-xs text-gray-400 mb-2">
-                  Complete your first mock interview to get a plan personalised to your role and weak areas.
-                </p>
-              )}
               <button
                 onClick={refresh}
-                className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-400 transition-colors"
               >
                 <RefreshCw className="w-3 h-3" /> Regenerate plan
               </button>

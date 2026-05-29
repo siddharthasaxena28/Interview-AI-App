@@ -51,10 +51,10 @@ export default function InterviewCountdown() {
 
   if (!interviewDate || editing) {
     return (
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-8">
+      <div className="bg-[#111118] border border-white/[0.06] rounded-2xl p-4 mb-8">
         <div className="flex items-center gap-2 mb-3">
-          <Calendar className="w-4 h-4 text-blue-600" />
-          <span className="text-sm font-medium text-blue-900">When is your real interview?</span>
+          <Calendar className="w-4 h-4 text-indigo-400" />
+          <span className="text-sm font-medium text-white">When is your real interview?</span>
         </div>
         <div className="flex gap-2">
           <input
@@ -62,22 +62,22 @@ export default function InterviewCountdown() {
             value={inputDate}
             min={todayStr}
             onChange={(e) => setInputDate(e.target.value)}
-            className="flex-1 border border-blue-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            className="flex-1 bg-[#0a0a0f] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 focus:border-indigo-500/50"
           />
           <button
             onClick={save}
             disabled={!inputDate}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
+            className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 disabled:opacity-50"
           >
             Set date
           </button>
           {editing && (
-            <button onClick={() => setEditing(false)} className="text-gray-400 hover:text-gray-600 px-2">
+            <button onClick={() => setEditing(false)} className="text-gray-600 hover:text-gray-400 px-2 transition-colors">
               Cancel
             </button>
           )}
         </div>
-        <p className="text-xs text-blue-600 mt-2">
+        <p className="text-xs text-gray-600 mt-2">
           We&apos;ll show a countdown so you can track how many days you have left to practise.
         </p>
       </div>
@@ -91,33 +91,34 @@ export default function InterviewCountdown() {
 
   if (daysLeft < 0) {
     return (
-      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-8 flex items-center justify-between">
+      <div className="bg-[#111118] border border-white/[0.06] rounded-2xl p-4 mb-8 flex items-center justify-between">
         <div className="flex items-center gap-2 text-gray-500 text-sm">
           <Calendar className="w-4 h-4" />
           <span>Your interview on {formattedDate} has passed. Did it go well?</span>
         </div>
-        <button onClick={clear} className="text-gray-400 hover:text-gray-600">
+        <button onClick={clear} className="text-gray-600 hover:text-gray-400 transition-colors">
           <X className="w-4 h-4" />
         </button>
       </div>
     )
   }
 
-  const urgencyColor = daysLeft <= 3
-    ? 'bg-red-50 border-red-200'
+  const urgencyBg = daysLeft <= 3
+    ? 'bg-red-500/5 border-red-500/20'
     : daysLeft <= 7
-      ? 'bg-amber-50 border-amber-200'
-      : 'bg-blue-50 border-blue-200'
+      ? 'bg-amber-500/5 border-amber-500/20'
+      : 'bg-indigo-500/5 border-indigo-500/20'
 
-  const textColor = daysLeft <= 3 ? 'text-red-700' : daysLeft <= 7 ? 'text-amber-700' : 'text-blue-700'
-  const subTextColor = daysLeft <= 3 ? 'text-red-500' : daysLeft <= 7 ? 'text-amber-500' : 'text-blue-500'
+  const textColor = daysLeft <= 3 ? 'text-red-400' : daysLeft <= 7 ? 'text-amber-400' : 'text-indigo-400'
+  const subTextColor = daysLeft <= 3 ? 'text-red-500/70' : daysLeft <= 7 ? 'text-amber-500/70' : 'text-indigo-500/70'
+  const digitColor = daysLeft <= 3 ? 'text-red-400' : daysLeft <= 7 ? 'text-amber-400' : 'text-white'
 
   return (
-    <div className={`border rounded-xl p-4 mb-8 flex items-center justify-between ${urgencyColor}`}>
+    <div className={`border rounded-2xl p-4 mb-8 flex items-center justify-between ${urgencyBg}`}>
       <div className="flex items-center gap-3">
         <Calendar className={`w-5 h-5 ${textColor}`} />
         <div>
-          <div className={`font-semibold text-sm ${textColor}`}>
+          <div className={`font-semibold text-sm ${digitColor}`}>
             {daysLeft === 0
               ? 'Your interview is TODAY!'
               : daysLeft === 1
@@ -130,11 +131,11 @@ export default function InterviewCountdown() {
       <div className="flex items-center gap-2">
         <button
           onClick={() => setEditing(true)}
-          className={`text-xs underline ${subTextColor} hover:opacity-80`}
+          className={`text-xs underline ${subTextColor} hover:opacity-80 transition-opacity`}
         >
           Change
         </button>
-        <button onClick={clear} className="text-gray-400 hover:text-gray-600">
+        <button onClick={clear} className="text-gray-600 hover:text-gray-400 transition-colors">
           <X className="w-4 h-4" />
         </button>
       </div>

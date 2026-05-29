@@ -726,10 +726,10 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   if (loadingSession) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
         <div className="text-center text-white">
-          <div className="w-8 h-8 border-2 border-white border-t-blue-500 rounded-full animate-spin mx-auto mb-4" />
-          <p>Loading your interview...</p>
+          <div className="w-8 h-8 border-2 border-white/10 border-t-indigo-500 rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-500 text-sm">Loading your interview...</p>
         </div>
       </div>
     )
@@ -739,11 +739,11 @@ function SessionPageInner({ params }: SessionPageProps) {
     const noCredits = error.toLowerCase().includes('credit')
     const isSpeechError = error.toLowerCase().includes('speech') || error.toLowerCase().includes('recognition')
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
-        <div className="bg-red-900/30 border border-red-500 rounded-2xl p-8 max-w-md text-center">
-          <p className="text-red-400 mb-4">{error}</p>
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center px-4">
+        <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-8 max-w-md text-center">
+          <p className="text-red-400 mb-4 text-sm leading-relaxed">{error}</p>
           {noCredits && (
-            <p className="text-gray-400 text-sm mb-4">
+            <p className="text-gray-500 text-sm mb-4">
               You need credits to start an interview. Pick up a plan on the pricing page.
             </p>
           )}
@@ -751,7 +751,7 @@ function SessionPageInner({ params }: SessionPageProps) {
             {noCredits && (
               <button
                 onClick={() => router.push('/pricing')}
-                className="bg-blue-600 text-white px-6 py-2 rounded-xl font-medium text-sm hover:bg-blue-700 transition-colors"
+                className="bg-indigo-600 text-white px-5 py-2 rounded-xl font-medium text-sm hover:bg-indigo-500 transition-colors"
               >
                 View Pricing
               </button>
@@ -759,14 +759,14 @@ function SessionPageInner({ params }: SessionPageProps) {
             {isSpeechError && (
               <button
                 onClick={() => { setError(''); setDeepgramRetry(n => n + 1) }}
-                className="bg-blue-600 text-white px-6 py-2 rounded-xl font-medium text-sm hover:bg-blue-700 transition-colors"
+                className="bg-indigo-600 text-white px-5 py-2 rounded-xl font-medium text-sm hover:bg-indigo-500 transition-colors"
               >
                 Try Again
               </button>
             )}
             <button
               onClick={() => router.push('/dashboard')}
-              className="bg-white text-gray-900 px-6 py-2 rounded-xl font-medium text-sm"
+              className="bg-white/[0.06] text-gray-300 border border-white/[0.08] px-5 py-2 rounded-xl font-medium text-sm hover:bg-white/[0.10] transition-colors"
             >
               Back to Dashboard
             </button>
@@ -778,16 +778,16 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   if (micPermission === 'denied') {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
-        <div className="bg-amber-900/30 border border-amber-500 rounded-2xl p-8 max-w-md text-center">
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center px-4">
+        <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-8 max-w-md text-center">
           <MicOff className="w-12 h-12 text-amber-400 mx-auto mb-4" />
           <h2 className="text-white font-bold text-lg mb-2">Microphone Access Required</h2>
-          <p className="text-amber-200 text-sm mb-4">
+          <p className="text-amber-300/70 text-sm mb-4">
             Please allow microphone access in your browser settings and refresh the page.
           </p>
           <button
             onClick={() => window.location.reload()}
-            className="bg-amber-500 text-white px-6 py-2 rounded-xl font-medium text-sm"
+            className="bg-amber-500/20 text-amber-400 border border-amber-500/30 px-6 py-2 rounded-xl font-medium text-sm hover:bg-amber-500/30 transition-colors"
           >
             Refresh Page
           </button>
@@ -798,14 +798,17 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   if (ending) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="text-center text-white">
-          <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Volume2 className="w-8 h-8" />
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+        <div className="text-center">
+          <div className="relative w-20 h-20 mx-auto mb-6">
+            <div className="absolute inset-0 rounded-full bg-emerald-500/20 animate-ping" style={{animationDuration:'2s'}} />
+            <div className="relative w-20 h-20 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-full flex items-center justify-center shadow-xl shadow-emerald-500/20">
+              <Volume2 className="w-9 h-9 text-white" />
+            </div>
           </div>
-          <h2 className="text-xl font-bold mb-2">Interview Complete!</h2>
-          <p className="text-gray-400">Generating your feedback report...</p>
-          <div className="w-8 h-8 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin mx-auto mt-4" />
+          <h2 className="text-xl font-bold text-white mb-2">Interview Complete!</h2>
+          <p className="text-gray-500 text-sm mb-5">Generating your feedback report...</p>
+          <div className="w-6 h-6 border-2 border-white/10 border-t-indigo-500 rounded-full animate-spin mx-auto" />
         </div>
       </div>
     )
@@ -813,38 +816,41 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   if (!started) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4 py-12">
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center px-4 py-12">
         <div className="text-center max-w-md w-full">
-          <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-5">
-            <span className="text-white text-2xl sm:text-3xl font-bold">{personaName.charAt(0)}</span>
+          <div className="relative w-20 h-20 sm:w-24 sm:h-24 mx-auto mb-6">
+            <div className="absolute inset-0 rounded-full bg-indigo-500/10 animate-ping" style={{animationDuration:'3s'}} />
+            <div className="relative w-20 h-20 sm:w-24 sm:h-24 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-full flex items-center justify-center shadow-2xl shadow-indigo-500/20">
+              <span className="text-white text-2xl sm:text-3xl font-bold">{personaName.charAt(0)}</span>
+            </div>
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-white mb-2">
             {personaName} is ready
           </h1>
-          <p className="text-gray-400 text-sm mb-2">
+          <p className="text-indigo-400 text-sm mb-2 font-medium">
             {sessionData?.session.company} — {sessionData?.session.role}
           </p>
-          <p className="text-gray-500 text-sm mb-7 sm:mb-8 leading-relaxed px-2">
+          <p className="text-gray-500 text-sm mb-8 leading-relaxed px-2">
             Pop on your headphones and find a quiet spot. When you click below, {personaName} will
             greet you and the conversation will begin.
           </p>
           {/* Resume from previous session */}
           {resumeInfo && !resumeDismissed && (
-            <div className="bg-amber-900/30 border border-amber-500 rounded-xl p-4 mb-4 text-left max-w-md w-full">
-              <p className="text-amber-200 text-sm font-medium mb-2">
+            <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-4 mb-5 text-left max-w-md w-full">
+              <p className="text-amber-300 text-sm font-medium mb-1.5">
                 You were on Question {resumeInfo.questionIndex + 1} when you left.
               </p>
-              <p className="text-amber-400 text-xs mb-3">Resume from where you left off, or start fresh from Q1.</p>
+              <p className="text-amber-400/60 text-xs mb-3">Resume from where you left off, or start fresh from Q1.</p>
               <div className="flex gap-2">
                 <button
                   onClick={() => { handleResume(); handleBegin() }}
-                  className="flex-1 bg-amber-500 text-white py-2 rounded-lg text-sm font-semibold hover:bg-amber-600 transition-colors"
+                  className="flex-1 bg-amber-500/20 text-amber-400 border border-amber-500/30 py-2 rounded-xl text-sm font-semibold hover:bg-amber-500/30 transition-colors"
                 >
                   Resume from Q{resumeInfo.questionIndex + 1}
                 </button>
                 <button
                   onClick={() => { setResumeDismissed(true); localStorage.removeItem(`iai_progress_${sessionId}`) }}
-                  className="flex-1 bg-white/10 text-white py-2 rounded-lg text-sm hover:bg-white/20 transition-colors"
+                  className="flex-1 bg-white/[0.05] text-gray-400 border border-white/[0.08] py-2 rounded-xl text-sm hover:bg-white/[0.08] transition-colors"
                 >
                   Start from Q1
                 </button>
@@ -854,7 +860,7 @@ function SessionPageInner({ params }: SessionPageProps) {
           <button
             onClick={handleBegin}
             disabled={micPermission !== 'granted'}
-            className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl font-semibold text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
+            className="inline-flex items-center justify-center gap-2 bg-indigo-600 text-white px-8 py-3.5 rounded-2xl font-semibold text-sm hover:bg-indigo-500 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed w-full sm:w-auto shadow-lg shadow-indigo-500/20"
           >
             {micPermission === 'granted' ? (
               <>
@@ -862,7 +868,7 @@ function SessionPageInner({ params }: SessionPageProps) {
               </>
             ) : (
               <>
-                <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 Requesting microphone…
               </>
             )}
@@ -881,10 +887,10 @@ function SessionPageInner({ params }: SessionPageProps) {
   }
 
   const stateColor: Record<string, string> = {
-    IDLE: 'bg-gray-500',
-    AI_SPEAKING: 'bg-blue-500',
-    LISTENING: 'bg-green-500',
-    USER_SPEAKING: 'bg-green-600',
+    IDLE: 'bg-gray-600',
+    AI_SPEAKING: 'bg-indigo-500',
+    LISTENING: 'bg-emerald-500',
+    USER_SPEAKING: 'bg-emerald-400',
     PROCESSING: 'bg-amber-500',
   }
 
@@ -893,18 +899,18 @@ function SessionPageInner({ params }: SessionPageProps) {
   const timeWarning = elapsed >= sessionLimit - 300 && elapsed < sessionLimit
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white flex flex-col">
+    <div className="min-h-screen bg-[#0a0a0f] text-white flex flex-col">
       <audio ref={audioRef} className="hidden" />
 
       {/* Header */}
-      <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-800 flex items-center justify-between gap-2">
+      <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-white/[0.06] flex items-center justify-between gap-2 bg-[#0a0a0f]/80 backdrop-blur-sm">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-          <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center shrink-0">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-full flex items-center justify-center shrink-0 shadow-lg shadow-indigo-500/20">
             <span className="font-bold text-xs sm:text-sm">{personaName.charAt(0)}</span>
           </div>
           <div className="min-w-0">
-            <div className="font-semibold text-sm truncate">{personaName}</div>
-            <div className="text-xs text-gray-400 truncate">
+            <div className="font-semibold text-sm truncate text-white">{personaName}</div>
+            <div className="text-xs text-gray-500 truncate">
               {sessionData?.session.company} — {sessionData?.session.role}
             </div>
           </div>
@@ -916,69 +922,75 @@ function SessionPageInner({ params }: SessionPageProps) {
               <span className="hidden sm:inline">Reconnecting…</span>
             </div>
           )}
-          <div className={`text-xs sm:text-sm font-mono ${timeWarning ? 'text-amber-400' : 'text-gray-400'}`}>
+          <div className={`text-xs sm:text-sm font-mono tabular-nums ${timeWarning ? 'text-amber-400' : 'text-gray-500'}`}>
             {formatDuration(elapsed)}
             {timeWarning && <span className="ml-1 text-xs hidden sm:inline">⚠ wrapping up</span>}
           </div>
           {phase === 'interview' ? (
-            <div className="text-xs sm:text-sm text-gray-400 tabular-nums">
+            <div className="text-xs sm:text-sm text-gray-500 tabular-nums bg-white/[0.04] px-2.5 py-1 rounded-full">
               Q{questionIndex + 1}/{totalQuestions}
             </div>
           ) : (
-            <div className="text-xs text-blue-400 bg-blue-900/30 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full font-medium">
+            <div className="text-xs text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full font-medium">
               Intro
             </div>
           )}
         </div>
       </div>
 
-      {/* Main area — flex-1 + min-h-0 so it scrolls on very small screens */}
-      <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-6 py-5 sm:py-8 gap-5 sm:gap-8 overflow-y-auto">
+      {/* Main area */}
+      <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-6 py-5 sm:py-8 gap-6 sm:gap-10 overflow-y-auto">
         {/* Status indicator */}
-        <div className="flex items-center gap-2 sm:gap-3">
-          <div className={`w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full ${stateColor[state]} ${state !== 'IDLE' ? 'animate-pulse' : ''}`} />
-          <span className="text-gray-300 text-xs sm:text-sm">{stateLabel[state]}</span>
+        <div className="flex items-center gap-2 sm:gap-3 bg-white/[0.03] border border-white/[0.06] rounded-full px-4 py-2">
+          <div className={`w-2 h-2 rounded-full ${stateColor[state]} ${state !== 'IDLE' ? 'animate-pulse' : ''}`} />
+          <span className="text-gray-400 text-xs sm:text-sm font-medium">{stateLabel[state]}</span>
         </div>
 
         {/* AI speaking animation */}
         {state === 'AI_SPEAKING' && (
-          <div className="relative">
-            <div className="w-20 h-20 sm:w-24 sm:h-24 bg-blue-600 rounded-full flex items-center justify-center">
+          <div className="relative flex items-center justify-center">
+            <div className="absolute w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-indigo-500/10 animate-ping" style={{animationDuration:'2s'}} />
+            <div className="absolute w-24 h-24 sm:w-32 sm:h-32 rounded-full bg-indigo-500/15 animate-ping" style={{animationDuration:'1.5s',animationDelay:'0.3s'}} />
+            <div className="relative w-20 h-20 sm:w-24 sm:h-24 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-full flex items-center justify-center shadow-2xl shadow-indigo-500/30">
               <Volume2 className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
             </div>
-            <div className="absolute inset-0 rounded-full bg-blue-500 animate-pulse-ring opacity-50" />
           </div>
         )}
 
         {/* Mic animation */}
         {(state === 'LISTENING' || state === 'USER_SPEAKING') && (
-          <div className="relative">
-            <div className={`w-20 h-20 sm:w-24 sm:h-24 rounded-full flex items-center justify-center ${
-              state === 'USER_SPEAKING' ? 'bg-green-600' : 'bg-gray-700'
+          <div className="relative flex items-center justify-center">
+            {state === 'USER_SPEAKING' && !muted && (
+              <>
+                <div className="absolute w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-emerald-500/10 animate-ping" style={{animationDuration:'1.8s'}} />
+                <div className="absolute w-24 h-24 sm:w-32 sm:h-32 rounded-full bg-emerald-500/15 animate-ping" style={{animationDuration:'1.3s',animationDelay:'0.2s'}} />
+              </>
+            )}
+            <div className={`relative w-20 h-20 sm:w-24 sm:h-24 rounded-full flex items-center justify-center transition-all duration-300 ${
+              state === 'USER_SPEAKING'
+                ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-2xl shadow-emerald-500/30'
+                : 'bg-white/[0.05] border border-white/[0.10]'
             }`}>
               {muted ? (
                 <MicOff className="w-8 h-8 sm:w-10 sm:h-10 text-gray-400" />
               ) : (
-                <Mic className={`w-8 h-8 sm:w-10 sm:h-10 ${state === 'USER_SPEAKING' ? 'text-white' : 'text-gray-400'}`} />
+                <Mic className={`w-8 h-8 sm:w-10 sm:h-10 ${state === 'USER_SPEAKING' ? 'text-white' : 'text-gray-500'}`} />
               )}
             </div>
-            {state === 'USER_SPEAKING' && !muted && (
-              <div className="absolute inset-0 rounded-full bg-green-500 animate-pulse-ring opacity-40" />
-            )}
           </div>
         )}
 
         {/* Processing */}
         {state === 'PROCESSING' && (
-          <div className="w-20 h-20 sm:w-24 sm:h-24 bg-amber-600/20 border-2 border-amber-500 rounded-full flex items-center justify-center">
-            <div className="w-7 h-7 sm:w-8 sm:h-8 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+          <div className="w-20 h-20 sm:w-24 sm:h-24 bg-amber-500/10 border border-amber-500/30 rounded-full flex items-center justify-center">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
           </div>
         )}
 
         {/* Context card */}
         {phase === 'intro' ? (
-          <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 max-w-2xl w-full text-center">
-            <div className="text-xs text-blue-400 mb-2 uppercase tracking-wide font-medium">
+          <div className="bg-[#111118] border border-white/[0.06] rounded-2xl p-4 sm:p-6 max-w-2xl w-full text-center">
+            <div className="text-xs text-indigo-400 mb-3 uppercase tracking-widest font-medium">
               Introductory Conversation
             </div>
             <p className="text-gray-300 text-sm sm:text-base leading-relaxed">
@@ -990,46 +1002,46 @@ function SessionPageInner({ params }: SessionPageProps) {
             </p>
           </div>
         ) : currentQuestion ? (
-          <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 max-w-2xl w-full text-center">
-            <div className="text-xs text-gray-500 mb-2 uppercase tracking-wide capitalize">
+          <div className="bg-[#111118] border border-white/[0.06] rounded-2xl p-4 sm:p-6 max-w-2xl w-full text-center">
+            <div className="text-xs text-gray-600 mb-3 uppercase tracking-widest capitalize">
               Q{questionIndex + 1} · {currentQuestion.topic_tag.replace(/_/g, ' ')} · Difficulty {currentQuestion.difficulty}/5
             </div>
-            <p className="text-white text-sm sm:text-base lg:text-lg leading-relaxed">{currentQuestion.text}</p>
+            <p className="text-white text-sm sm:text-base lg:text-lg leading-relaxed font-medium">{currentQuestion.text}</p>
           </div>
         ) : null}
 
-        {/* Live transcript — capped height on mobile so it doesn't push controls off-screen */}
+        {/* Live transcript */}
         {(liveTranscript || finalTranscript) && (
-          <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-3 sm:p-4 max-w-2xl w-full max-h-28 sm:max-h-none overflow-y-auto">
-            <div className="text-xs text-gray-500 mb-1.5">Live transcript</div>
-            <p className="text-gray-200 text-xs sm:text-sm">
+          <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-3 sm:p-4 max-w-2xl w-full max-h-28 sm:max-h-none overflow-y-auto">
+            <div className="text-xs text-gray-600 mb-1.5 uppercase tracking-wider">Live transcript</div>
+            <p className="text-gray-300 text-xs sm:text-sm leading-relaxed">
               {finalTranscript}
-              <span className="text-gray-400">{liveTranscript}</span>
+              <span className="text-gray-500">{liveTranscript}</span>
             </p>
           </div>
         )}
       </div>
 
       {/* Controls */}
-      <div className="px-4 sm:px-6 py-4 sm:py-6 border-t border-gray-800 flex items-center justify-center gap-4 sm:gap-6">
+      <div className="px-4 sm:px-6 py-4 sm:py-5 border-t border-white/[0.06] flex items-center justify-center gap-3 sm:gap-4">
         <button
           onClick={() => setMuted((m) => { mutedRef.current = !m; return !m })}
-          className={`flex flex-col items-center gap-1 px-5 py-2.5 rounded-xl transition-colors ${
+          className={`flex flex-col items-center gap-1.5 px-5 py-3 rounded-2xl transition-all duration-200 ${
             muted
-              ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30'
-              : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20'
+              : 'bg-white/[0.05] text-gray-400 hover:bg-white/[0.08] border border-white/[0.08] hover:text-white'
           }`}
         >
           {muted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-          <span className="text-xs">{muted ? 'Unmute' : 'Mute'}</span>
+          <span className="text-xs font-medium">{muted ? 'Unmute' : 'Mute'}</span>
         </button>
 
         <button
           onClick={() => endInterview(true)}
-          className="flex flex-col items-center gap-1 px-5 py-2.5 rounded-xl bg-red-600/20 text-red-400 hover:bg-red-600/30 transition-colors"
+          className="flex flex-col items-center gap-1.5 px-5 py-3 rounded-2xl bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 transition-all duration-200 hover:border-red-500/40"
         >
           <PhoneOff className="w-5 h-5" />
-          <span className="text-xs">End Interview</span>
+          <span className="text-xs font-medium">End Interview</span>
         </button>
       </div>
     </div>
@@ -1039,8 +1051,8 @@ function SessionPageInner({ params }: SessionPageProps) {
 export default function SessionPage({ params }: SessionPageProps) {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-white border-t-blue-500 rounded-full animate-spin" />
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-white/10 border-t-indigo-500 rounded-full animate-spin" />
       </div>
     }>
       <SessionPageInner params={params} />

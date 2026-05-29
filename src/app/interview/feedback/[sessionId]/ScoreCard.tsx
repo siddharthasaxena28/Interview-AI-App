@@ -216,7 +216,7 @@ export default function ScoreCard({
     <div className="flex flex-wrap gap-3">
       <button
         onClick={downloadCard}
-        className="flex items-center justify-center gap-2 border border-gray-200 text-gray-700 px-5 py-2.5 rounded-xl font-semibold text-sm hover:bg-gray-50 transition-colors"
+        className="flex items-center justify-center gap-2 border border-white/[0.08] bg-white/[0.03] text-gray-300 px-5 py-2.5 rounded-xl font-semibold text-sm hover:bg-white/[0.06] hover:border-white/[0.12] transition-colors"
       >
         <Download className="w-4 h-4" /> Download Score Card
       </button>
