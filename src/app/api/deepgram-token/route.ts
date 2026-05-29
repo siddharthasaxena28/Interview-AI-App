@@ -64,14 +64,22 @@ export async function GET() {
         return NextResponse.json({ key })
       }
 
-      console.warn('Deepgram temp key creation failed (%s) — returning 503', res.status)
+      // Log the full Deepgram error so it's visible in server logs / Vercel Functions.
+      const errBody = await res.text().catch(() => '(unreadable)')
+      console.error('Deepgram key creation failed status=%s body=%s', res.status, errBody)
+
+      // 403 means the master key lacks keys:write permission.
+      // Fall back to the master key so interviews aren't broken, but warn loudly.
+      // To fix properly: create a Deepgram API key with the "Member" or "Admin" role
+      // so it can issue short-lived keys.
+      if (res.status === 403) {
+        console.warn('Deepgram key lacks keys:write — using master key as fallback. Rotate to a Member/Admin key to fix this.')
+        return NextResponse.json({ key: apiKey })
+      }
     } catch (err) {
       console.warn('Deepgram temp key error:', err)
     }
 
-    // Fail closed: never return the master key to the browser.
-    // The client should retry; a brief STT outage is preferable to exposing
-    // a full-account-scope credential.
     return NextResponse.json(
       { error: 'Speech recognition temporarily unavailable. Please retry.' },
       { status: 503 },
