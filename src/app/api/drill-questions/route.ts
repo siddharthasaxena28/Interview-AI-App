@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     const [{ data: latestSession }, { data: weakAreas }] = await Promise.all([
       supabase
         .from('interview_sessions')
-        .select('role, company, experience_years, round_type')
+        .select('role, company, experience_years, round_type, jd_text')
         .eq('user_id', user.id)
         .eq('status', 'completed')
         .order('ended_at', { ascending: false })
@@ -60,13 +60,21 @@ export async function POST(request: NextRequest) {
     const role = latestSession?.role ?? null
     const company = latestSession?.company ?? null
     const experienceYears = latestSession?.experience_years ?? null
+    // Truncate JD to 800 chars — enough for key skills/technologies without bloating the prompt
+    const jdSnippet = latestSession?.jd_text
+      ? latestSession.jd_text.trim().slice(0, 800)
+      : null
 
     const roleContext = role && company
       ? `The candidate is preparing for a ${role} role at ${company}${experienceYears ? ` with ${experienceYears} years of experience` : ''}.`
       : 'The candidate is a software professional preparing for tech interviews in India.'
 
+    const jdContext = jdSnippet
+      ? `Job Description (key requirements):\n${jdSnippet}`
+      : ''
+
     const weakContext = (weakAreas ?? []).length > 0
-      ? `Their weak areas to target: ${(weakAreas ?? []).map(w => w.topic_tag.replace(/_/g, ' ')).join(', ')}.`
+      ? `Weak areas to target (lowest scores first): ${(weakAreas ?? []).map(w => w.topic_tag.replace(/_/g, ' ')).join(', ')}.`
       : ''
 
     const roundInstruction = filter === 'mixed'
@@ -74,14 +82,16 @@ export async function POST(request: NextRequest) {
       : `All 3 questions must be for round type: ${filter}. Set roundType to "${filter}" for all.`
 
     const prompt = `${roleContext}
-${weakContext}
+${jdContext ? jdContext + '\n' : ''}${weakContext}
 ${roundInstruction}
 
-Generate 3 targeted practice questions. Prioritise the weak areas if provided.`
+Generate 3 targeted practice questions grounded in the role and JD above.
+If weak areas are listed, at least one question must directly address them.
+Questions must feel specific to this role — not generic textbook problems.`
 
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 600,
+      max_tokens: 800,
       system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
       messages: [{ role: 'user', content: prompt }],
     })

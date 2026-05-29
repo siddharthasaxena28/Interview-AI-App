@@ -4,6 +4,12 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { Mic, MicOff, ChevronRight, CheckCircle, RotateCcw, Zap, Clock, ArrowRight, Sparkles } from 'lucide-react'
 import { getDailyDrillQuestions, type DrillQuestion, type DrillRoundFilter } from '@/lib/drill-questions'
+
+interface DrillQuestionsResponse {
+  questions: DrillQuestion[]
+  personalized: boolean
+  context?: { role: string; company: string }
+}
 import type { RoundType } from '@/types'
 
 const ROUND_LABELS: Record<RoundType, string> = {
@@ -57,6 +63,9 @@ export default function DrillPage() {
   const today = new Date().toISOString().split('T')[0]
   const [filter, setFilter] = useState<DrillRoundFilter>('mixed')
   const [questions, setQuestions] = useState<DrillQuestion[]>([])
+  const [loadingQuestions, setLoadingQuestions] = useState(true)
+  const [personalized, setPersonalized] = useState(false)
+  const [personalizationCtx, setPersonalizationCtx] = useState<{ role: string; company: string } | null>(null)
   const [qIndex, setQIndex] = useState(0)
   const [phase, setPhase] = useState<'intro' | 'answering' | 'scored' | 'done'>('intro')
   const [transcript, setTranscript] = useState('')
@@ -68,8 +77,27 @@ export default function DrillPage() {
   const recognitionRef = useRef<{ stop: () => void } | null>(null)
   const interimRef = useRef('')
 
+  // Fetch personalized questions from the API (uses role, JD, weak areas).
+  // Falls back to static date-seeded questions if the user has no history or the call fails.
   useEffect(() => {
-    setQuestions(getDailyDrillQuestions(today, filter))
+    setLoadingQuestions(true)
+    fetch('/api/drill-questions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filter }),
+    })
+      .then(r => r.json())
+      .then((data: DrillQuestionsResponse) => {
+        setQuestions(data.questions?.length ? data.questions : getDailyDrillQuestions(today, filter))
+        setPersonalized(data.personalized ?? false)
+        setPersonalizationCtx(data.context ?? null)
+      })
+      .catch(() => {
+        setQuestions(getDailyDrillQuestions(today, filter))
+        setPersonalized(false)
+        setPersonalizationCtx(null)
+      })
+      .finally(() => setLoadingQuestions(false))
   }, [filter, today])
 
   useEffect(() => {
@@ -217,10 +245,22 @@ export default function DrillPage() {
               <span className="text-xs bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-3 py-1 rounded-full font-medium">Free — no credits</span>
             </div>
 
-            <p className="text-xs text-gray-600 mb-5 flex items-center justify-center gap-1.5">
-              <Sparkles className="w-3 h-3 text-indigo-500" />
-              Complete your first mock interview to get questions personalised to your role and weak areas.
-            </p>
+            {loadingQuestions ? (
+              <div className="flex items-center justify-center gap-2 text-xs text-gray-600 mb-5">
+                <div className="w-3 h-3 border border-indigo-500/40 border-t-indigo-500 rounded-full animate-spin" />
+                Personalising questions for you…
+              </div>
+            ) : personalized && personalizationCtx ? (
+              <p className="text-xs mb-5 flex items-center justify-center gap-1.5 text-indigo-400">
+                <Sparkles className="w-3 h-3" />
+                Tailored for <span className="font-semibold">{personalizationCtx.role}</span> at <span className="font-semibold">{personalizationCtx.company}</span>
+              </p>
+            ) : (
+              <p className="text-xs text-gray-600 mb-5 flex items-center justify-center gap-1.5">
+                <Sparkles className="w-3 h-3 text-indigo-500" />
+                Complete your first mock interview to get questions personalised to your role and weak areas.
+              </p>
+            )}
 
             {/* Filter pills */}
             <div className="flex flex-wrap justify-center gap-2 mb-6">
@@ -254,9 +294,12 @@ export default function DrillPage() {
 
             <button
               onClick={() => setPhase('answering')}
-              className="flex items-center justify-center gap-2 w-full bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-xl font-semibold transition-colors"
+              disabled={loadingQuestions}
+              className="flex items-center justify-center gap-2 w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white py-4 rounded-xl font-semibold transition-colors"
             >
-              Start Drill <ChevronRight className="w-4 h-4" />
+              {loadingQuestions
+                ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Loading questions…</>
+                : <>Start Drill <ChevronRight className="w-4 h-4" /></>}
             </button>
           </div>
         )}
