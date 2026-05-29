@@ -707,10 +707,12 @@ function SessionPageInner({ params }: SessionPageProps) {
       body: JSON.stringify({ session_id: sessionId }),
     }).catch(() => {})
 
+    // charge: true — credit is only deducted when the user ends the call or
+    // all questions are answered. Browser crashes / network drops never reach here.
     fetch('/api/generate-feedback', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: sessionId }),
+      body: JSON.stringify({ session_id: sessionId, charge: true }),
     }).catch(console.error)
 
     // Step 5 — navigate to the feedback page.

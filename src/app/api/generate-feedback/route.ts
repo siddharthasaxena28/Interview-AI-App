@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { session_id } = await request.json() as { session_id: string }
+    const { session_id, charge } = await request.json() as { session_id: string; charge?: boolean }
 
     // Fetch session, questions, answers, existing report, and user plan in parallel.
     const [
@@ -211,11 +211,13 @@ Generate a comprehensive feedback report for this candidate.`
 
     if (reportError) console.error('Report save error:', reportError)
 
-    // Deduct 1 credit now that the interview is successfully completed.
-    // Doing it here (not at session start) means interruptions never cost a credit.
-    // The unique partial index on credit_transactions(session_id) WHERE type='session_use'
-    // makes this idempotent — retried feedback calls can't double-charge.
-    await chargeSessionCredit(supabase, user.id, session_id, userData?.plan)
+    // Only deduct a credit when the session page explicitly requests it (charge: true).
+    // That flag is set only in endInterview() — triggered by the user clicking "End Call"
+    // or by all questions being answered. Feedback-page retries and crash-recovery calls
+    // never set charge: true, so they never deduct.
+    if (charge === true) {
+      await chargeSessionCredit(supabase, user.id, session_id, userData?.plan)
+    }
 
     // Streak + weak areas: await directly — these power the dashboard stats and
     // must always complete. Both are small DB writes that finish in < 2 s.
