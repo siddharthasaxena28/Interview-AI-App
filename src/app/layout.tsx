@@ -14,6 +14,14 @@ export const metadata: Metadata = {
   description: 'AI-powered voice mock interview platform for the Indian job market. Practice full interview rounds with real-time AI feedback.',
   keywords: 'mock interview, AI interview, job interview practice, India, voice interview',
   manifest: '/manifest.webmanifest',
+  icons: {
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+    ],
+    apple: { url: '/icon.svg', type: 'image/svg+xml' },
+    shortcut: '/icon.svg',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
