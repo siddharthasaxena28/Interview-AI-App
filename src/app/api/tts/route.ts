@@ -52,14 +52,15 @@ async function generateSpeech(voiceId: string, text: string, apiKey: string): Pr
       return { response: res, model }
     }
 
-    // 401 = bad API key, 404 = voice not found — no point trying more models
-    if (res.status === 401 || res.status === 404) {
-      const body = await res.text()
-      console.error(`[TTS] ${res.status} on model=${model} voice=${voiceId}: ${body.slice(0, 200)}`)
+    const body = await res.text()
+
+    // Any 4xx is a client error — retrying with a different model won't fix it
+    if (res.status >= 400 && res.status < 500) {
+      console.error(`[TTS] ${res.status} on model=${model} voice=${voiceId}: ${body.slice(0, 300)}`)
       return { response: new Response(body, { status: res.status }), model }
     }
 
-    const body = await res.text()
+    // 5xx — try next model
     console.warn(`[TTS] ${res.status} on model=${model}: ${body.slice(0, 150)} — trying next model`)
   }
 
@@ -109,12 +110,7 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       const body = await response.text()
-      // ElevenLabs returns 401 for both invalid API keys AND voice IDs from a different account
-      const detail = response.status === 401
-        ? `Voice ID "${voiceIdToUse}" rejected (401) — either ELEVENLABS_API_KEY is invalid OR this voice ID belongs to a different ElevenLabs account. Raw: ${body.slice(0, 200)}`
-        : response.status === 404
-        ? `Voice ID "${voiceIdToUse}" not found (404) — update ELEVENLABS_VOICE_* env vars in Vercel`
-        : `ElevenLabs error ${response.status}: ${body.slice(0, 200)}`
+      const detail = `ElevenLabs ${response.status} — voice=${voiceIdToUse}: ${body.slice(0, 300)}`
       console.error(`[TTS] Failed: ${detail}`)
       return NextResponse.json({ error: 'TTS generation failed', detail }, { status: 502 })
     }
