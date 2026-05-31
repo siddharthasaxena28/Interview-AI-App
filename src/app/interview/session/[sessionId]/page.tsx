@@ -555,27 +555,12 @@ function SessionPageInner({ params }: SessionPageProps) {
       })
       cancelSpeakRef.current = null
       ttsSucceeded = true
-    } catch {
+    } catch (err) {
       cancelSpeakRef.current = null
-      // Fall through to browser synthesis
-    }
-
-    if (!ttsSucceeded && typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      const estDurationMs = Math.max(4000, text.length * 65)
-      await new Promise<void>((resolve) => {
-        let done = false
-        const finish = () => { if (!done) { done = true; resolve() } }
-        cancelSpeakRef.current = finish
-        window.speechSynthesis.cancel()
-        const utterance = new SpeechSynthesisUtterance(text)
-        utterance.rate = 0.92
-        utterance.pitch = 1.0
-        utterance.onend = finish
-        utterance.onerror = finish
-        window.speechSynthesis.speak(utterance)
-        setTimeout(finish, estDurationMs + 2000)
-      })
-      cancelSpeakRef.current = null
+      console.error('[speakText] ElevenLabs TTS failed:', err)
+      // Do NOT fall back to browser speechSynthesis — it uses a foreign accent
+      // and would mask misconfigured ElevenLabs voices. The TTS route already
+      // retries internally with a fallback ElevenLabs voice.
     }
 
     clearInterval(keepAliveInterval)
