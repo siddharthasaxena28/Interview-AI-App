@@ -56,7 +56,7 @@ async function generateSpeech(voiceId: string, text: string, apiKey: string): Pr
     if (res.status === 401 || res.status === 404) {
       const body = await res.text()
       console.error(`[TTS] ${res.status} on model=${model} voice=${voiceId}: ${body.slice(0, 200)}`)
-      return { response: res, model }
+      return { response: new Response(body, { status: res.status }), model }
     }
 
     const body = await res.text()
