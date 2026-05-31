@@ -4,16 +4,7 @@ import type { RoundType } from '@/types'
 
 export const dynamic = 'force-dynamic'
 
-// Voice names to look up in the account's "My Voices"
-const VOICE_NAME_MAP: Record<string, { male: string; female: string }> = {
-  tech_l1:    { male: 'Aarav J',      female: 'Priya' },
-  tech_l2:    { male: 'Akshay',       female: 'Riya Rao' },
-  managerial: { male: 'Vikram',       female: 'Shakuntala' },
-  hr:         { male: 'Aakash Aryan', female: 'Ayesha' },
-  full_loop:  { male: 'Aarav J',      female: 'Priya' },
-}
-
-// env var overrides per round+gender (explicit voice IDs that skip name lookup)
+// Explicit voice IDs per round + gender — set these in Vercel env vars
 const ENV_VOICE_MAP: Record<string, { male: string | undefined; female: string | undefined }> = {
   tech_l1:    { male: process.env.ELEVENLABS_VOICE_TECH_L1,    female: process.env.ELEVENLABS_VOICE_TECH_L1_F },
   tech_l2:    { male: process.env.ELEVENLABS_VOICE_TECH_L2,    female: process.env.ELEVENLABS_VOICE_TECH_L2_F },
@@ -22,104 +13,12 @@ const ENV_VOICE_MAP: Record<string, { male: string | undefined; female: string |
   full_loop:  { male: process.env.ELEVENLABS_VOICE_TECH_L1,    female: process.env.ELEVENLABS_VOICE_TECH_L1_F },
 }
 
-interface AccountVoices {
-  nameToId: Map<string, string> // name.toLowerCase() → voice_id
-  idSet: Set<string>             // all voice_ids present in this account
-  anyId: string | null           // first voice in account (catch-all fallback)
-}
-
-// Cache keyed by API key so different accounts (test vs prod) don't collide
-const voiceCache = new Map<string, AccountVoices>()
-
-async function fetchAccountVoices(apiKey: string): Promise<AccountVoices> {
-  const cached = voiceCache.get(apiKey)
-  if (cached) return cached
-
-  const res = await fetch('https://api.elevenlabs.io/v1/voices', {
-    headers: { 'xi-api-key': apiKey },
-  })
-
-  if (!res.ok) {
-    console.error(`[TTS] /v1/voices failed: ${res.status} — API key may be invalid`)
-    return { nameToId: new Map(), idSet: new Set(), anyId: null }
-  }
-
-  const data = await res.json() as { voices: Array<{ voice_id: string; name: string; category?: string }> }
-  const nameToId = new Map<string, string>()
-  const idSet = new Set<string>()
-  let anyId: string | null = null
-
-  for (const v of data.voices ?? []) {
-    // Skip pre-made voices (Adam, Rachel, etc.) — only index voices the user added
-    if (v.category === 'premade') continue
-    nameToId.set(v.name.toLowerCase(), v.voice_id)
-    idSet.add(v.voice_id)
-    if (!anyId) anyId = v.voice_id
-  }
-
-  voiceCache.set(apiKey, { nameToId, idSet, anyId })
-  console.log(`[TTS] Loaded ${nameToId.size} user voices from account. Names: ${Array.from(nameToId.keys()).join(', ') || '(none)'}`)
-  return { nameToId, idSet, anyId }
-}
-
-function findVoiceByName(nameToId: Map<string, string>, searchName: string): string | undefined {
-  const lower = searchName.toLowerCase()
-  // 1. Exact match
-  if (nameToId.has(lower)) return nameToId.get(lower)
-  const entries = Array.from(nameToId.entries())
-  // 2. Account voice name starts with our search name (e.g. "vikram s" matches "vikram")
-  const startsWith = entries.find(([n]) => n.startsWith(lower) || lower.startsWith(n))
-  if (startsWith) return startsWith[1]
-  // 3. First word match (e.g. "aarav" matches "aarav j")
-  const firstWord = lower.split(' ')[0]
-  const partial = entries.find(([n]) => n.startsWith(firstWord) || n.includes(firstWord))
-  if (partial) return partial[1]
-  return undefined
-}
-
-async function pickVoiceId(
-  apiKey: string,
-  roundType: string | undefined,
-  gender: string | undefined,
-): Promise<string> {
-  // 1. Env var voice IDs — explicit config always wins
-  const envEntry = ENV_VOICE_MAP[roundType ?? '']
-  if (envEntry) {
-    const envId = gender === 'female' ? (envEntry.female ?? envEntry.male) : (envEntry.male ?? envEntry.female)
-    if (envId) {
-      console.log(`[TTS] Using env-var voice ${envId} (${roundType}/${gender})`)
-      return envId
-    }
-  }
-
-  // 2. Name-based lookup — fallback when env vars aren't set
-  const account = await fetchAccountVoices(apiKey)
-  const nameEntry = VOICE_NAME_MAP[roundType ?? '']
-  if (nameEntry) {
-    const wantedName = gender === 'female' ? nameEntry.female : nameEntry.male
-    const id = findVoiceByName(account.nameToId, wantedName)
-    if (id) {
-      console.log(`[TTS] Found "${wantedName}" → ${id} (${roundType}/${gender})`)
-      return id
-    }
-    const otherName = gender === 'female' ? nameEntry.male : nameEntry.female
-    const otherId = findVoiceByName(account.nameToId, otherName)
-    if (otherId) {
-      console.log(`[TTS] "${wantedName}" not found, using "${otherName}" → ${otherId}`)
-      return otherId
-    }
-    console.warn(`[TTS] Neither "${wantedName}" nor "${otherName}" found in account`)
-  }
-
-  // 3. Use any voice available in the account
-  if (account.anyId) {
-    console.warn(`[TTS] No named voice matched — using first account voice ${account.anyId}`)
-    return account.anyId
-  }
-
-  // 4. Last resort: ElevenLabs pre-made Adam voice
-  console.warn('[TTS] No voices in account — trying Adam pre-made voice')
-  return 'pNInz6obpgDQGcFmaJgB'
+function pickVoiceId(roundType: string | undefined, gender: string | undefined): string | null {
+  const entry = ENV_VOICE_MAP[roundType ?? '']
+  if (!entry) return null
+  return gender === 'female'
+    ? (entry.female ?? entry.male ?? null)
+    : (entry.male ?? entry.female ?? null)
 }
 
 // Models ordered: free tier first, paid tiers last
@@ -164,7 +63,7 @@ async function generateSpeech(voiceId: string, text: string, apiKey: string): Pr
     console.warn(`[TTS] ${res.status} on model=${model}: ${body.slice(0, 150)} — trying next model`)
   }
 
-  // All models exhausted — return the last failure
+  // All models exhausted — return last failure
   const lastRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
     method: 'POST',
     headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
@@ -191,14 +90,20 @@ export async function POST(request: NextRequest) {
 
     const apiKey = process.env.ELEVENLABS_API_KEY
     if (!apiKey) {
-      console.error('[TTS] ELEVENLABS_API_KEY is not set in environment variables')
+      console.error('[TTS] ELEVENLABS_API_KEY is not set')
       return NextResponse.json({ error: 'TTS not configured', detail: 'ELEVENLABS_API_KEY missing' }, { status: 503 })
     }
 
-    // Resolve voice ID — validates env vars against account, falls back through names → any voice → Adam
-    const voiceIdToUse = round_type
-      ? await pickVoiceId(apiKey, round_type, gender)
-      : (voice_id && voice_id !== 'default' ? voice_id : await pickVoiceId(apiKey, undefined, gender))
+    // Resolve voice ID — env vars only, no account lookup
+    const voiceIdToUse = voice_id && voice_id !== 'default'
+      ? voice_id
+      : pickVoiceId(round_type, gender)
+
+    if (!voiceIdToUse) {
+      const detail = `No voice configured for round_type="${round_type}" gender="${gender}". Set ELEVENLABS_VOICE_* env vars in Vercel.`
+      console.error(`[TTS] ${detail}`)
+      return NextResponse.json({ error: 'TTS not configured', detail }, { status: 503 })
+    }
 
     const { response, model: modelUsed } = await generateSpeech(voiceIdToUse, text, apiKey)
 
@@ -207,7 +112,7 @@ export async function POST(request: NextRequest) {
       const detail = response.status === 401
         ? 'ELEVENLABS_API_KEY is invalid — update it in Vercel → Settings → Environment Variables'
         : response.status === 404
-        ? `Voice ${voiceIdToUse} not found — check your ElevenLabs My Voices`
+        ? `Voice ID "${voiceIdToUse}" not found — check the ELEVENLABS_VOICE_* env vars in Vercel`
         : `ElevenLabs error ${response.status}: ${body.slice(0, 200)}`
       console.error(`[TTS] Failed: ${detail}`)
       return NextResponse.json({ error: 'TTS generation failed', detail }, { status: 502 })
