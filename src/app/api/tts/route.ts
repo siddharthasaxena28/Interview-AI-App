@@ -82,10 +82,18 @@ async function pickVoiceId(
   roundType: string | undefined,
   gender: string | undefined,
 ): Promise<string> {
-  const account = await fetchAccountVoices(apiKey)
+  // 1. Env var voice IDs — explicit config always wins
+  const envEntry = ENV_VOICE_MAP[roundType ?? '']
+  if (envEntry) {
+    const envId = gender === 'female' ? (envEntry.female ?? envEntry.male) : (envEntry.male ?? envEntry.female)
+    if (envId) {
+      console.log(`[TTS] Using env-var voice ${envId} (${roundType}/${gender})`)
+      return envId
+    }
+  }
 
-  // 1. Name-based lookup FIRST — always prefer the configured Indian voice by name.
-  //    This runs before env vars so stale env var IDs never shadow the right voice.
+  // 2. Name-based lookup — fallback when env vars aren't set
+  const account = await fetchAccountVoices(apiKey)
   const nameEntry = VOICE_NAME_MAP[roundType ?? '']
   if (nameEntry) {
     const wantedName = gender === 'female' ? nameEntry.female : nameEntry.male
@@ -94,7 +102,6 @@ async function pickVoiceId(
       console.log(`[TTS] Found "${wantedName}" → ${id} (${roundType}/${gender})`)
       return id
     }
-    // Try the other gender's voice for this round
     const otherName = gender === 'female' ? nameEntry.male : nameEntry.female
     const otherId = findVoiceByName(account.nameToId, otherName)
     if (otherId) {
@@ -102,17 +109,6 @@ async function pickVoiceId(
       return otherId
     }
     console.warn(`[TTS] Neither "${wantedName}" nor "${otherName}" found in account`)
-  }
-
-  // 2. Env var override — only reached if name lookup found nothing.
-  //    Validates the ID actually exists in THIS account before using it.
-  const envEntry = ENV_VOICE_MAP[roundType ?? '']
-  if (envEntry) {
-    const envId = gender === 'female' ? (envEntry.female ?? envEntry.male) : envEntry.male
-    if (envId && account.idSet.has(envId)) {
-      console.log(`[TTS] Falling back to env-var voice ${envId} (${roundType}/${gender})`)
-      return envId
-    }
   }
 
   // 3. Use any voice available in the account
