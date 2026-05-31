@@ -44,19 +44,21 @@ async function fetchAccountVoices(apiKey: string): Promise<AccountVoices> {
     return { nameToId: new Map(), idSet: new Set(), anyId: null }
   }
 
-  const data = await res.json() as { voices: Array<{ voice_id: string; name: string }> }
+  const data = await res.json() as { voices: Array<{ voice_id: string; name: string; category?: string }> }
   const nameToId = new Map<string, string>()
   const idSet = new Set<string>()
   let anyId: string | null = null
 
   for (const v of data.voices ?? []) {
+    // Skip pre-made voices (Adam, Rachel, etc.) — only index voices the user added
+    if (v.category === 'premade') continue
     nameToId.set(v.name.toLowerCase(), v.voice_id)
     idSet.add(v.voice_id)
     if (!anyId) anyId = v.voice_id
   }
 
   voiceCache.set(apiKey, { nameToId, idSet, anyId })
-  console.log(`[TTS] Loaded ${nameToId.size} voices from account. Names: ${Array.from(nameToId.keys()).join(', ')}`)
+  console.log(`[TTS] Loaded ${nameToId.size} user voices from account. Names: ${Array.from(nameToId.keys()).join(', ') || '(none)'}`)
   return { nameToId, idSet, anyId }
 }
 
