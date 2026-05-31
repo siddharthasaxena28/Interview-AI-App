@@ -1,7 +1,63 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { MessageCircle, Send, Bot, User, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Send, Bot, User, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
+
+function renderInline(text: string): React.ReactNode[] {
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g)
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**'))
+      return <strong key={i} className="text-white font-semibold">{part.slice(2, -2)}</strong>
+    if (part.startsWith('*') && part.endsWith('*'))
+      return <em key={i} className="italic">{part.slice(1, -1)}</em>
+    return part
+  })
+}
+
+function MarkdownMessage({ content }: { content: string }) {
+  const lines = content.split('\n')
+  const elements: React.ReactNode[] = []
+  let i = 0
+
+  while (i < lines.length) {
+    const line = lines[i]
+    const numMatch = line.match(/^(\d+)\.\s+(.+)/)
+    const bulletMatch = line.match(/^[-*]\s+(.+)/)
+
+    if (numMatch) {
+      const items: string[] = [numMatch[2]]
+      while (i + 1 < lines.length && lines[i + 1].match(/^\d+\.\s+/)) {
+        i++
+        const m = lines[i].match(/^\d+\.\s+(.+)/)
+        if (m) items.push(m[1])
+      }
+      elements.push(
+        <ol key={i} className="list-decimal list-outside ml-4 space-y-1 my-1.5">
+          {items.map((item, j) => <li key={j}>{renderInline(item)}</li>)}
+        </ol>
+      )
+    } else if (bulletMatch) {
+      const items: string[] = [bulletMatch[1]]
+      while (i + 1 < lines.length && lines[i + 1].match(/^[-*]\s+/)) {
+        i++
+        const m = lines[i].match(/^[-*]\s+(.+)/)
+        if (m) items.push(m[1])
+      }
+      elements.push(
+        <ul key={i} className="list-disc list-outside ml-4 space-y-1 my-1.5">
+          {items.map((item, j) => <li key={j}>{renderInline(item)}</li>)}
+        </ul>
+      )
+    } else if (line.trim() === '') {
+      if (elements.length > 0) elements.push(<div key={`gap-${i}`} className="h-1.5" />)
+    } else {
+      elements.push(<p key={i} className="leading-relaxed">{renderInline(line)}</p>)
+    }
+    i++
+  }
+
+  return <div className="space-y-0.5 text-sm">{elements}</div>
+}
 
 interface Message {
   role: 'user' | 'assistant'
@@ -137,14 +193,18 @@ export default function CoachChat({ sessionId }: { sessionId: string }) {
                       ? <Bot className="w-3.5 h-3.5 text-indigo-400" />
                       : <User className="w-3.5 h-3.5 text-gray-300" />}
                   </div>
-                  <div className={`rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed max-w-[85%] ${
+                  <div className={`rounded-2xl px-3.5 py-2.5 max-w-[85%] ${
                     m.role === 'assistant'
                       ? 'bg-[#111118] border border-white/[0.06] text-gray-300 rounded-tl-sm'
-                      : 'bg-indigo-600/20 border border-indigo-500/20 text-gray-200 rounded-tr-sm'
+                      : 'bg-indigo-600/20 border border-indigo-500/20 text-gray-200 rounded-tr-sm text-sm leading-relaxed'
                   }`}>
-                    {m.content || (streaming && i === messages.length - 1
-                      ? <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
-                      : null)}
+                    {m.role === 'assistant'
+                      ? (m.content
+                          ? <MarkdownMessage content={m.content} />
+                          : streaming && i === messages.length - 1
+                            ? <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
+                            : null)
+                      : m.content}
                   </div>
                 </div>
               ))}

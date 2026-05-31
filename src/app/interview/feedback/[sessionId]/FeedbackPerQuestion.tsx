@@ -252,7 +252,7 @@ export default function FeedbackPerQuestion({ perQuestion, questions, answers, s
                       </div>
                     </div>
                     {a?.transcript_text ? (
-                      <p className="text-sm text-gray-300 leading-relaxed">{a.transcript_text}</p>
+                      <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap break-words">{a.transcript_text}</p>
                     ) : (
                       <p className="text-sm text-indigo-500 italic">No answer recorded for this question.</p>
                     )}
