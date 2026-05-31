@@ -542,26 +542,47 @@ function SessionPageInner({ params }: SessionPageProps) {
       const audioUrl = URL.createObjectURL(audioBlob)
 
       const estDurationMs = Math.max(5000, text.length * 65)
-      await new Promise<void>((resolve) => {
-        if (!audioRef.current) { resolve(); return }
+      await new Promise<void>((resolve, reject) => {
+        if (!audioRef.current) {
+          URL.revokeObjectURL(audioUrl)
+          reject(new Error('audio element not mounted'))
+          return
+        }
         let done = false
+        // finish: normal end (audio ended or timed out) — resolves
         const finish = () => { if (!done) { done = true; URL.revokeObjectURL(audioUrl); resolve() } }
-        // Register cancel hook so stopAllAudio() can resolve this promise immediately.
+        // fail: audio error or play() blocked — rejects so browser speech triggers
+        const fail = (err?: unknown) => {
+          if (!done) {
+            done = true
+            URL.revokeObjectURL(audioUrl)
+            reject(err instanceof Error ? err : new Error('audio playback failed'))
+          }
+        }
+        // cancelSpeakRef lets stopAllAudio() resolve this immediately (not reject)
         cancelSpeakRef.current = finish
         audioRef.current.src = audioUrl
         audioRef.current.onended = finish
-        audioRef.current.onerror = finish
-        audioRef.current.play().catch(finish)
-        setTimeout(finish, estDurationMs + 3000)
+        audioRef.current.onerror = fail  // audio decode/load error → browser speech
+        audioRef.current.play().catch(fail)  // autoplay block → browser speech
+        setTimeout(finish, estDurationMs + 3000)  // timeout resolves, not fails
       })
       cancelSpeakRef.current = null
       ttsSucceeded = true
     } catch (err) {
       cancelSpeakRef.current = null
-      console.error('[speakText] ElevenLabs TTS failed, using browser speech fallback:', err)
-      // Browser speech as absolute last resort — interview must not go silent
+      console.error('[speakText] ElevenLabs TTS failed — using browser speech:', err)
+      // Browser speech as absolute last resort so the interview never goes silent
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         setTtsFallback(true)
+        // Wait for voices to load (Chrome loads them asynchronously; speak() silently
+        // does nothing if called before getVoices() returns a non-empty list)
+        if (window.speechSynthesis.getVoices().length === 0) {
+          await new Promise<void>((r) => {
+            window.speechSynthesis.addEventListener('voiceschanged', () => r(), { once: true })
+            setTimeout(r, 1500)
+          })
+        }
         await new Promise<void>((resolve) => {
           const utter = new SpeechSynthesisUtterance(text)
           utter.rate = 0.95

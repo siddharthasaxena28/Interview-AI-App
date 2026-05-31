@@ -126,19 +126,38 @@ async function callElevenLabsWithModelFallback(
       }),
     })
     if (res.ok) {
-      console.log(`[TTS] Success with model ${model} voice ${voiceId}`)
+      console.log(`[TTS] Success with model=${model} voice=${voiceId}`)
       return res
     }
-    // 401 = bad API key — no point trying other models
+    // 401 = bad API key — pointless to try other models
     if (res.status === 401) {
-      console.error('[TTS] 401 Unauthorized — check ELEVENLABS_API_KEY in Vercel env vars')
+      console.error('[TTS] 401 Unauthorized — ELEVENLABS_API_KEY is invalid or not set in Vercel')
+      return res
+    }
+    // 404 = voice not in this account — pointless to try other models (same voice ID)
+    if (res.status === 404) {
+      const errText = await res.text()
+      console.warn(`[TTS] Voice not found (404) voice=${voiceId}: ${errText.slice(0, 150)}`)
       return res
     }
     const errText = await res.text()
-    console.warn(`[TTS] Model ${model} failed (${res.status}): ${errText.slice(0, 200)}`)
+    console.warn(`[TTS] model=${model} failed (${res.status}): ${errText.slice(0, 200)}`)
     lastResponse = res
   }
   return lastResponse!
+}
+
+// Force name-based lookup — skips env var IDs, looks up voice by name in this account
+async function resolveVoiceIdByName(
+  apiKey: string,
+  roundType: string | undefined,
+  gender: string | undefined,
+): Promise<string | null> {
+  const nameEntry = VOICE_NAME_MAP[roundType ?? '']
+  if (!nameEntry) return null
+  const searchName = gender === 'female' ? nameEntry.female : nameEntry.male
+  const nameMap = await fetchVoiceMap(apiKey)
+  return findVoiceId(nameMap, searchName) ?? null
 }
 
 export async function POST(request: NextRequest) {
@@ -170,26 +189,39 @@ export async function POST(request: NextRequest) {
 
     let response = await callElevenLabsWithModelFallback(primaryVoiceId, text, apiKey)
 
-    // If primary voice failed on all models, try the other gender's voice
+    // Voice not found (404) — env var IDs may be from a different ElevenLabs account.
+    // Retry using name-based lookup against this account's actual voices.
+    if (response.status === 404) {
+      voiceCache.delete(apiKey) // bust stale cache
+      const nameId = await resolveVoiceIdByName(apiKey, round_type, gender)
+      if (nameId && nameId !== primaryVoiceId) {
+        console.log(`[TTS] 404 on env-var voice — retrying with account voice ${nameId}`)
+        response = await callElevenLabsWithModelFallback(nameId, text, apiKey)
+      }
+      // Also try the other gender's named voice if same gender failed
+      if (!response.ok && response.status !== 401) {
+        const fallbackGender = gender === 'female' ? 'male' : 'female'
+        const fallbackNameId = await resolveVoiceIdByName(apiKey, round_type, fallbackGender)
+        if (fallbackNameId && fallbackNameId !== primaryVoiceId && fallbackNameId !== nameId) {
+          console.log(`[TTS] Retrying with ${fallbackGender} name-based voice ${fallbackNameId}`)
+          response = await callElevenLabsWithModelFallback(fallbackNameId, text, apiKey)
+        }
+      }
+    }
+
+    // All custom voices failed — try Adam (pre-made, available in all ElevenLabs accounts)
     if (!response.ok && response.status !== 401) {
-      console.error(`[TTS] Primary voice ${primaryVoiceId} failed on all models — trying gender fallback`)
-      voiceCache.delete(apiKey)
-
-      const fallbackGender = gender === 'female' ? 'male' : 'female'
-      const fallbackId = round_type
-        ? await resolveVoiceId(apiKey, round_type, fallbackGender)
-        : 'pNInz6obpgDQGcFmaJgB'
-
-      if (fallbackId !== primaryVoiceId) {
-        console.warn(`[TTS] Retrying with ${fallbackGender} voice: ${fallbackId}`)
-        response = await callElevenLabsWithModelFallback(fallbackId, text, apiKey)
+      const adamId = 'pNInz6obpgDQGcFmaJgB'
+      if (primaryVoiceId !== adamId) {
+        console.warn('[TTS] All custom voices failed — falling back to Adam pre-made voice')
+        response = await callElevenLabsWithModelFallback(adamId, text, apiKey)
       }
     }
 
     if (!response.ok) {
       const detail = response.status === 401
-        ? 'Invalid or missing ELEVENLABS_API_KEY'
-        : `All voices/models failed (last status: ${response.status})`
+        ? 'Invalid or missing ELEVENLABS_API_KEY — update it in Vercel → Settings → Environment Variables'
+        : `All voices failed (last HTTP status: ${response.status})`
       console.error(`[TTS] ${detail}`)
       return NextResponse.json({ error: 'TTS generation failed', detail }, { status: 502 })
     }
