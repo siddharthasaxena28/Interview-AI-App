@@ -91,25 +91,54 @@ async function resolveVoiceId(
   return 'pNInz6obpgDQGcFmaJgB' // Adam
 }
 
-async function callElevenLabs(voiceId: string, text: string, apiKey: string, model = 'eleven_multilingual_v2'): Promise<Response> {
-  return fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-    method: 'POST',
-    headers: {
-      'xi-api-key': apiKey,
-      'Content-Type': 'application/json',
-      Accept: 'audio/mpeg',
-    },
-    body: JSON.stringify({
-      text,
-      model_id: model,
-      voice_settings: {
-        stability: 0.5,
-        similarity_boost: 0.75,
-        style: 0.0,
-        use_speaker_boost: true,
+// Models ordered from most-available (free tier) to least-available (paid only).
+// eleven_flash_v2_5 works on ALL plans including free; multilingual_v2 needs Creator+.
+const MODEL_FALLBACK_CHAIN = [
+  'eleven_flash_v2_5',
+  'eleven_turbo_v2_5',
+  'eleven_multilingual_v2',
+  'eleven_monolingual_v1',
+]
+
+async function callElevenLabsWithModelFallback(
+  voiceId: string,
+  text: string,
+  apiKey: string,
+): Promise<Response> {
+  let lastResponse: Response | null = null
+  for (const model of MODEL_FALLBACK_CHAIN) {
+    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      method: 'POST',
+      headers: {
+        'xi-api-key': apiKey,
+        'Content-Type': 'application/json',
+        Accept: 'audio/mpeg',
       },
-    }),
-  })
+      body: JSON.stringify({
+        text,
+        model_id: model,
+        voice_settings: {
+          stability: 0.5,
+          similarity_boost: 0.75,
+          style: 0.0,
+          use_speaker_boost: true,
+        },
+      }),
+    })
+    if (res.ok) {
+      console.log(`[TTS] Success with model ${model} voice ${voiceId}`)
+      return res
+    }
+    // 401 = bad API key — no point trying other models
+    if (res.status === 401) {
+      console.error('[TTS] 401 Unauthorized — check ELEVENLABS_API_KEY in Vercel env vars')
+      return res
+    }
+    const errText = await res.text()
+    console.warn(`[TTS] Model ${model} failed (${res.status}): ${errText.slice(0, 200)}`)
+    lastResponse = res
+  }
+  return lastResponse!
 }
 
 export async function POST(request: NextRequest) {
@@ -127,7 +156,7 @@ export async function POST(request: NextRequest) {
 
     if (!rawText) return NextResponse.json({ error: 'Missing text' }, { status: 400 })
 
-    const text = rawText.slice(0, 500)
+    const text = rawText.slice(0, 2000)
 
     const apiKey = process.env.ELEVENLABS_API_KEY
     if (!apiKey) {
@@ -139,19 +168,11 @@ export async function POST(request: NextRequest) {
       ? await resolveVoiceId(apiKey, round_type, gender)
       : (voice_id && voice_id !== 'default' ? voice_id : 'pNInz6obpgDQGcFmaJgB')
 
-    let response = await callElevenLabs(primaryVoiceId, text, apiKey, 'eleven_multilingual_v2')
+    let response = await callElevenLabsWithModelFallback(primaryVoiceId, text, apiKey)
 
-    // Model fallback: multilingual_v2 may be unavailable on free tier
+    // If primary voice failed on all models, try the other gender's voice
     if (!response.ok && response.status !== 401) {
-      const errBody = await response.text()
-      console.warn(`[TTS] eleven_multilingual_v2 failed (${response.status}), trying eleven_monolingual_v1: ${errBody}`)
-      response = await callElevenLabs(primaryVoiceId, text, apiKey, 'eleven_monolingual_v1')
-    }
-
-    // If primary voice still fails, try the other gender's voice
-    if (!response.ok) {
-      const errBody = await response.text()
-      console.error(`[TTS] Voice ${primaryVoiceId} failed (${response.status}): ${errBody}`)
+      console.error(`[TTS] Primary voice ${primaryVoiceId} failed on all models — trying gender fallback`)
       voiceCache.delete(apiKey)
 
       const fallbackGender = gender === 'female' ? 'male' : 'female'
@@ -161,17 +182,16 @@ export async function POST(request: NextRequest) {
 
       if (fallbackId !== primaryVoiceId) {
         console.warn(`[TTS] Retrying with ${fallbackGender} voice: ${fallbackId}`)
-        response = await callElevenLabs(fallbackId, text, apiKey, 'eleven_multilingual_v2')
-        if (!response.ok) {
-          response = await callElevenLabs(fallbackId, text, apiKey, 'eleven_monolingual_v1')
-        }
+        response = await callElevenLabsWithModelFallback(fallbackId, text, apiKey)
       }
     }
 
     if (!response.ok) {
-      const detail = await response.text()
-      console.error(`[TTS] All voices/models failed: ${detail}`)
-      return NextResponse.json({ error: 'TTS generation failed' }, { status: 502 })
+      const detail = response.status === 401
+        ? 'Invalid or missing ELEVENLABS_API_KEY'
+        : `All voices/models failed (last status: ${response.status})`
+      console.error(`[TTS] ${detail}`)
+      return NextResponse.json({ error: 'TTS generation failed', detail }, { status: 502 })
     }
 
     const audioBuffer = await response.arrayBuffer()
