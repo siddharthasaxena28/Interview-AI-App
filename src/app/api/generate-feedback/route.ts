@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { waitUntil } from '@vercel/functions'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { Resend } from 'resend'
 import { generateShareToken } from '@/lib/utils'
 import type { Question, Answer, FeedbackJSON } from '@/types'
 
 export const dynamic = 'force-dynamic'
-// Allow up to 60 s on Vercel Pro; Hobby is capped at 10 s regardless,
-// but Haiku is fast enough (~4 s) to fit within both limits.
 export const maxDuration = 60
 
 const client = new Anthropic()
+
+// Max chars per answer in the LLM prompt. 1500 chars ≈ 250 spoken words — generous
+// enough to capture any complete answer, while preventing a single rambling response
+// from bloating the prompt. The score itself is never affected (it was set by
+// evaluate-answer which saw the full transcript in real time).
+const MAX_ANSWER_CHARS = 1500
 
 const FEEDBACK_SYSTEM_PROMPT = `You are an expert interview coach who provides detailed, specific feedback.
 Analyse the complete interview transcript and generate a structured feedback report.
@@ -66,28 +71,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { session_id } = await request.json() as { session_id: string }
+    const { session_id, charge } = await request.json() as { session_id: string; charge?: boolean }
 
-    // Fetch session, questions, answers, and any existing report in parallel.
+    // Fetch session, questions, answers, existing report, and user plan in parallel.
     const [
       { data: session },
       { data: questions },
       { data: answers },
       { data: existingReport },
+      { data: userData },
     ] = await Promise.all([
       supabase.from('interview_sessions').select('*').eq('id', session_id).eq('user_id', user.id).single(),
       supabase.from('questions').select('*').eq('session_id', session_id).eq('asked', true).order('order_index'),
       supabase.from('answers').select('*').eq('session_id', session_id).order('recorded_at'),
       supabase.from('feedback_reports').select('*').eq('session_id', session_id).maybeSingle(),
+      supabase.from('users').select('plan, credit_balance').eq('id', user.id).single(),
     ])
 
     if (!session) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 })
     }
 
-    // Dedup: the session page fires this early (head start) and the feedback page
-    // retries it. If a report already exists, return it instead of re-paying for the LLM.
+    // Dedup: if a report already exists (e.g. from the background pre-generation that
+    // fires in evaluate-answer when the last question is answered), return it immediately.
+    // If this is a charge request, still deduct — the pre-gen doesn't charge.
     if (existingReport) {
+      if (charge === true) {
+        await chargeSessionCredit(supabase, user.id, session_id, userData?.plan)
+      }
       return NextResponse.json({ report: existingReport, cached: true })
     }
 
@@ -98,7 +109,6 @@ export async function POST(request: NextRequest) {
     let feedback: FeedbackJSON
 
     if (!questions || questions.length === 0) {
-      // Interview was abandoned before any questions were answered — synthesise a minimal report
       feedback = {
         overall_score: 0,
         selection_probability: 0,
@@ -113,20 +123,30 @@ export async function POST(request: NextRequest) {
           { title: 'N/A', example: '', advice: '' },
         ],
         per_question: [],
-        communication: { score: 0, clarity: 0, pacing: 0, confidence: 0, filler_words: 0 },
+        communication: {
+          score: 0, clarity: 0, pacing: 0, confidence: 0, filler_words: 0,
+          clarity_note: 'Interview not completed.',
+          pacing_note: 'Interview not completed.',
+          confidence_note: 'Interview not completed.',
+          filler_note: 'Interview not completed.',
+        },
         summary: 'This interview session ended before any questions were answered. No scored feedback can be generated. Start a new session and try to answer at least a few questions to receive a detailed report.',
       }
     } else {
-      // Build transcript for Claude — include the real question UUID on each entry
-      // so Claude can echo it back in per_question_json. Without the ID in the prompt,
-      // Claude invents UUIDs that never match the DB, breaking the per-question display.
+      // Cap each answer at MAX_ANSWER_CHARS to keep prompt size bounded for long
+      // interviews — a 15-question session with verbose answers can push input tokens
+      // past 6 k, significantly slowing Haiku. 800 chars captures the full substance.
       const transcript = (questions as Question[]).map((q, i) => {
         const answer = answerMap.get(q.id)
+        let answerText = answer?.transcript_text ?? '[No answer provided]'
+        if (answerText.length > MAX_ANSWER_CHARS) {
+          answerText = answerText.slice(0, MAX_ANSWER_CHARS) + '… [truncated]'
+        }
         return `Q${i + 1} [question_id:${q.id}, topic:${q.topic_tag}, difficulty:${q.difficulty}/5]:
 "${q.text}"
 
 Candidate's answer:
-"${answer?.transcript_text ?? '[No answer provided]'}"
+"${answerText}"
 Score given: ${answer?.score ?? 'N/A'}/5
 `
       }).join('\n---\n\n')
@@ -143,13 +163,13 @@ ${transcript}
 
 Generate a comprehensive feedback report for this candidate.`
 
-      // Use Haiku: fast (~6 s) and capable. max_tokens must comfortably exceed the
-      // full report size — at 1024 the JSON truncated mid-string, JSON.parse threw,
-      // and the route 500'd on every call, so the report never reached the DB and the
-      // feedback page polled forever.
       const message = await client.messages.create({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 4096,
+        // 8192 is Haiku's ceiling. A 15-question full_loop with ideal_answer_hints on
+        // every low-scoring answer easily exceeds 4096 output tokens — the old limit
+        // silently truncated the JSON mid-string, causing JSON.parse to throw and the
+        // report to never save, leaving the feedback page polling forever.
+        max_tokens: 8192,
         system: [
           {
             type: 'text',
@@ -167,7 +187,15 @@ Generate a comprehensive feedback report for this candidate.`
         const jsonMatch = content.text.match(/\{[\s\S]*\}/)
         feedback = JSON.parse(jsonMatch ? jsonMatch[0] : content.text)
       } catch {
+        // Log the raw output so truncation is visible in Vercel logs
+        console.error('Feedback parse failed. stop_reason:', message.stop_reason, '— output length:', content.text.length)
         throw new Error('Failed to parse feedback from AI')
+      }
+
+      // Haiku hit its token limit before closing the JSON — treat as a parse failure.
+      // This is logged above; increasing max_tokens is the fix.
+      if (message.stop_reason === 'max_tokens') {
+        console.error('Haiku hit max_tokens limit during feedback generation — output truncated')
       }
 
       // Re-assign question_id by position — safety net in case Claude echoed the IDs
@@ -182,7 +210,7 @@ Generate a comprehensive feedback report for this candidate.`
 
     const shareToken = generateShareToken()
 
-    // Save report + mark session completed (critical — do these first)
+    // Save report + mark session completed — do these before responding.
     const [{ data: report, error: reportError }] = await Promise.all([
       supabase.from('feedback_reports').upsert({
         session_id,
@@ -203,21 +231,22 @@ Generate a comprehensive feedback report for this candidate.`
 
     if (reportError) console.error('Report save error:', reportError)
 
-    // Streak + weak areas: await directly — these power the dashboard stats and
-    // must always complete. Both are small DB writes that finish in < 2 s.
-    await Promise.allSettled([
-      updateStreak(supabase, user.id),
-      updateWeakAreas(supabase, user.id, questions as Question[] ?? [], answerMap),
-    ])
+    // Credit deduction is fast (~300 ms) and must be reliable — keep it before response.
+    if (charge === true) {
+      await chargeSessionCredit(supabase, user.id, session_id, userData?.plan)
+    }
 
-    // Referral credit + email: non-critical, 3 s budget so they don't stall the response.
-    await Promise.race([
+    // Streak, weak areas, referral credit, and email are all non-critical for the
+    // user to see their report. Defer them with waitUntil so they complete after the
+    // response is sent — removes ~4-5 s of blocking from the critical path.
+    waitUntil(
       Promise.allSettled([
+        updateStreak(supabase, user.id),
+        updateWeakAreas(supabase, user.id, questions as Question[] ?? [], answerMap),
         completeReferral(supabase, user.id),
         sendFeedbackEmail(supabase, user.id, session, feedback, session_id, shareToken),
-      ]),
-      new Promise((resolve) => setTimeout(resolve, 3000)),
-    ])
+      ])
+    )
 
     return NextResponse.json({ report, feedback })
   } catch (error) {
@@ -230,6 +259,37 @@ Generate a comprehensive feedback report for this candidate.`
 }
 
 // ── Side-effect helpers ────────────────────────────────────────────────────
+
+async function chargeSessionCredit(
+  supabase: Awaited<ReturnType<typeof import('@/lib/supabase-server').createServerSupabaseClient>>,
+  userId: string,
+  sessionId: string,
+  plan?: string | null,
+) {
+  if (plan === 'unlimited') return
+
+  const { createServiceClient } = await import('@/lib/supabase-server')
+  const svc = await createServiceClient()
+
+  // Insert the debit transaction first. The unique partial index on
+  // credit_transactions(session_id) WHERE type='session_use' causes this INSERT
+  // to fail with a unique violation if the session was already charged (e.g. on a
+  // retry). We catch that and skip the balance update — idempotent by design.
+  const { error: txError } = await svc.from('credit_transactions').insert({
+    user_id: userId,
+    amount: -1,
+    type: 'session_use',
+    session_id: sessionId,
+  })
+
+  if (txError) {
+    if (txError.code !== '23505') console.error('chargeSessionCredit tx error:', txError)
+    return
+  }
+
+  const { error: balErr } = await svc.rpc('increment_user_credits', { p_user_id: userId, p_amount: -1 })
+  if (balErr) console.error('chargeSessionCredit balance update error:', balErr)
+}
 
 async function updateStreak(supabase: Awaited<ReturnType<typeof import('@/lib/supabase-server').createServerSupabaseClient>>, userId: string) {
   const today = new Date().toISOString().slice(0, 10)
@@ -248,7 +308,6 @@ async function updateStreak(supabase: Awaited<ReturnType<typeof import('@/lib/su
     else if (diffDays === 1) newStreak = currentUser.current_streak + 1
   }
   const newLongest = Math.max(newStreak, currentUser?.longest_streak ?? 0)
-  // users writes go through the service client (clients can't mutate their own row).
   const { createServiceClient } = await import('@/lib/supabase-server')
   const svc = await createServiceClient()
   await svc
@@ -295,16 +354,6 @@ async function completeReferral(
   supabase: Awaited<ReturnType<typeof import('@/lib/supabase-server').createServerSupabaseClient>>,
   userId: string,
 ) {
-  const { count: completedCount } = await supabase
-    .from('interview_sessions')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .eq('status', 'completed')
-  if (completedCount !== 1) return
-
-  // Crediting writes the referrer's row (a different user) and credit_transactions
-  // for both parties — both require the service client, since per-user RLS correctly
-  // blocks a user from writing another user's balance.
   const { createServiceClient } = await import('@/lib/supabase-server')
   const svc = await createServiceClient()
 
@@ -316,8 +365,6 @@ async function completeReferral(
     .single()
   if (!referral) return
 
-  // Claim atomically: only the request that flips pending->completed credits, so
-  // concurrent/retried feedback calls can't grant the bonus twice.
   const { data: claimed } = await svc.from('referrals')
     .update({ status: 'completed', completed_at: new Date().toISOString() })
     .eq('id', referral.id)
@@ -336,9 +383,7 @@ async function creditReferralBonus(
   svc: Awaited<ReturnType<typeof import('@/lib/supabase-server').createServiceClient>>,
   id: string,
 ) {
-  const { data: u } = await svc.from('users').select('credit_balance').eq('id', id).single()
-  await svc.from('users').update({ credit_balance: (u?.credit_balance ?? 0) + 1 }).eq('id', id)
-  // 'referral' is the value allowed by the credit_transactions type CHECK constraint.
+  await svc.rpc('increment_user_credits', { p_user_id: id, p_amount: 1 })
   await svc.from('credit_transactions').insert({ user_id: id, amount: 1, type: 'referral' })
 }
 
@@ -387,9 +432,9 @@ function buildEmailHtml({
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f9fafb;margin:0;padding:20px;">
   <div style="max-width:600px;margin:0 auto;background:white;border-radius:16px;overflow:hidden;border:1px solid #e5e7eb;">
-    <div style="background:#1d4ed8;padding:32px;text-align:center;">
+    <div style="background:#4f46e5;padding:32px;text-align:center;">
       <h1 style="color:white;margin:0;font-size:24px;">InterviewAI</h1>
-      <p style="color:#93c5fd;margin:8px 0 0;">Your Interview Report is Ready</p>
+      <p style="color:#c7d2fe;margin:8px 0 0;">Your Interview Report is Ready</p>
     </div>
     <div style="padding:32px;">
       <p style="color:#374151;margin-bottom:24px;">Hi ${name},</p>
@@ -401,7 +446,7 @@ function buildEmailHtml({
       </div>
       <p style="color:#374151;line-height:1.6;margin-bottom:24px;">${summary.split('\n')[0]}</p>
       <div style="text-align:center;">
-        <a href="${reportUrl}" style="background:#1d4ed8;color:white;text-decoration:none;padding:12px 32px;border-radius:8px;font-weight:600;display:inline-block;">View Full Report →</a>
+        <a href="${reportUrl}" style="background:#4f46e5;color:white;text-decoration:none;padding:12px 32px;border-radius:8px;font-weight:600;display:inline-block;">View Full Report →</a>
       </div>
     </div>
     <div style="background:#f9fafb;padding:16px;text-align:center;border-top:1px solid #e5e7eb;">

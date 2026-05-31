@@ -61,12 +61,21 @@ export async function POST(request: NextRequest) {
         downloadUrl = `https://drive.google.com/uc?export=download&id=${parsed.id}`
       }
 
-      const driveRes = await fetch(downloadUrl, { redirect: 'follow' })
+      const driveRes = await fetch(downloadUrl, {
+        redirect: 'follow',
+        signal: AbortSignal.timeout(15_000),
+      })
       if (!driveRes.ok) {
         return NextResponse.json(
           { error: 'Could not download file. Make sure the file is shared as "Anyone with the link can view".' },
           { status: 400 }
         )
+      }
+
+      // Reject before buffering if Content-Length exceeds the limit
+      const contentLength = Number(driveRes.headers.get('content-length') ?? 0)
+      if (contentLength > MAX_FILE_BYTES) {
+        return NextResponse.json({ error: 'File too large (max 5 MB).' }, { status: 413 })
       }
 
       const driveContentType = driveRes.headers.get('content-type') ?? ''

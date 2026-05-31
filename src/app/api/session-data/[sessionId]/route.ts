@@ -25,19 +25,20 @@ export async function GET(
       return NextResponse.json({ error: 'Session not found' }, { status: 404 })
     }
 
-    // Plan + balance for the fast-path gate. Unlimited subscribers don't spend credits.
+    // Plan + balance gate. Credits are NOT deducted here — only when the interview
+    // is successfully completed (generate-feedback). This ensures interrupted or
+    // errored sessions don't waste a credit.
     const { data: userData } = await supabase
       .from('users')
       .select('credit_balance, plan')
       .eq('id', user.id)
       .single()
 
-    // Fast UX gate; the authoritative atomic check is in start_interview_session().
-    if (session.status === 'setup' && (userData?.credit_balance ?? 0) <= 0) {
+    if (session.status === 'setup' && userData?.plan !== 'unlimited' && (userData?.credit_balance ?? 0) <= 0) {
       return NextResponse.json({ error: 'No credits available' }, { status: 402 })
     }
 
-    // Start the session if it was in setup.
+    // Transition setup → in_progress (idempotent: .eq('status', 'setup') is a no-op if already started)
     if (session.status === 'setup') {
       // Rate limit: max 10 sessions started per hour. Credits are the real abuse
       // guard; this just stops runaway loops. 3/hr was too tight for normal practice.
@@ -55,44 +56,13 @@ export async function GET(
         )
       }
 
-      // Atomic claim + credit consumption in a single DB transaction. Closes the
-      // cross-session race (two simultaneous starts both spending the last credit)
-      // and is idempotent against double-fired GETs. Runs on the service client.
       const svc = await createServiceClient()
-      const { data: rpcResult, error: rpcError } = await svc.rpc('start_interview_session', {
-        p_session_id: sessionId,
-        p_user_id: user.id,
-      })
-
-      if (rpcError && (rpcError.code === 'PGRST202' || rpcError.code === '42883')) {
-        // RPC not deployed yet (migration not run) — fall back to an in-app claim.
-        const { data: claimed } = await svc
-          .from('interview_sessions')
-          .update({ status: 'in_progress', started_at: new Date().toISOString() })
-          .eq('id', sessionId)
-          .eq('user_id', user.id)
-          .eq('status', 'setup')
-          .select('id')
-          .maybeSingle()
-
-        if (claimed) {
-          const balance = userData?.credit_balance ?? 0
-          if (balance > 0) {
-            await svc.from('users').update({ credit_balance: balance - 1 }).eq('id', user.id)
-            await svc.from('credit_transactions').insert({
-              user_id: user.id,
-              amount: -1,
-              type: 'session_use',
-              session_id: sessionId,
-            })
-          }
-        }
-      } else if (rpcError) {
-        console.error('start_interview_session error:', rpcError)
-        return NextResponse.json({ error: 'Failed to start session' }, { status: 500 })
-      } else if (rpcResult === 'no_credits') {
-        return NextResponse.json({ error: 'No credits available' }, { status: 402 })
-      }
+      await svc
+        .from('interview_sessions')
+        .update({ status: 'in_progress', started_at: new Date().toISOString() })
+        .eq('id', sessionId)
+        .eq('user_id', user.id)
+        .eq('status', 'setup')
     }
 
     const { data: questions } = await supabase

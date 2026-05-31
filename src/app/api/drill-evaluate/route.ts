@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { checkRateLimit } from '@/lib/rate-limit'
 
 const client = new Anthropic()
 
@@ -21,6 +23,14 @@ Return ONLY this JSON:
 
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createServerSupabaseClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    if (!checkRateLimit(`drill-eval:${user.id}`, 30, 3_600_000)) {
+      return NextResponse.json({ error: 'Rate limit exceeded. Try again later.' }, { status: 429 })
+    }
+
     const { transcript, question, topic_tag, difficulty } = await request.json() as {
       transcript: string
       question: string
@@ -57,8 +67,35 @@ Candidate's answer:
       result = { score: 3, one_line: 'Keep practicing!', missing: '' }
     }
 
+    const score = Math.min(5, Math.max(1, result.score ?? 3))
+
+    // Feed drill scores into weak_areas so personalization improves over time
+    const normalizedTag = (topic_tag ?? '').toLowerCase().replace(/[\s-]+/g, '_')
+    if (normalizedTag) {
+      const { data: existing } = await supabase
+        .from('weak_areas')
+        .select('avg_score, session_count')
+        .eq('user_id', user.id)
+        .eq('topic_tag', normalizedTag)
+        .maybeSingle()
+
+      const existingCount = existing?.session_count ?? 0
+      const newCount = existingCount + 1
+      const newAvg = ((existing?.avg_score ?? 0) * existingCount + score) / newCount
+      await supabase.from('weak_areas').upsert(
+        {
+          user_id: user.id,
+          topic_tag: normalizedTag,
+          avg_score: Math.round(newAvg * 100) / 100,
+          session_count: newCount,
+          last_updated: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,topic_tag' },
+      )
+    }
+
     return NextResponse.json({
-      score: Math.min(5, Math.max(1, result.score ?? 3)),
+      score,
       one_line: result.one_line ?? '',
       missing: result.missing ?? '',
     })

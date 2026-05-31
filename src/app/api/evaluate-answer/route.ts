@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { waitUntil } from '@vercel/functions'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { PERSONA_SPEECH_STYLE } from '@/lib/personas'
 import type { Question, RoundType } from '@/types'
@@ -28,7 +29,28 @@ Implicit signals:
 When candidate_wants_to_skip is true:
   - ALWAYS set "probe": false and "probe_question": ""
   - Score honestly, lean towards 2 if no real attempt
-  - "spoken_response" must be gracious and non-pressuring. Examples: "No worries at all." / "That's fine." / "Sure, no problem."
+  - "spoken_response" must be brief, gracious, and FEEL DIFFERENT every time.
+    React to the specific words the candidate used — if they said "I'll pass" react differently than if they said "I'm blanking on this one."
+    NEVER use the same phrase twice in a conversation. Rotate naturally through responses like a real person would.
+
+    Varied examples to draw from (pick whichever fits the moment, or invent a similar one):
+    "Sure, no problem — let's move on."
+    "Of course, that's completely fine."
+    "Understood, we'll skip that one."
+    "Fair enough, these can be tricky."
+    "Not a problem at all."
+    "Alright, let's keep going."
+    "Okay, no pressure on that one."
+    "Got it — totally fine."
+    "Sure thing, moving on."
+    "That's okay, we've got more to cover."
+    "Happy to move on."
+    "Noted — no worries."
+    "Absolutely, let's continue."
+    "No pressure — let's go to the next one."
+    "That's fine, happens to everyone."
+
+    IMPORTANT: Do NOT always default to "No worries at all" — vary naturally based on what was said.
 
 --- PROBING (only when candidate has NOT signalled skip) ---
 Probe when:
@@ -48,7 +70,7 @@ When you probe, "probe_question" is a single specific follow-up — phrased conv
 - NEVER be sycophantic for weak answers ("Wonderful!" for a score-2 answer is dishonest)
 - NEVER include "Let's move on" or "Here's the next question" — only react to this answer
 - For probes: lead naturally into the follow-up ("Hmm, let me push on that a bit —")
-- For skips: brief, gracious ("No worries." / "That's fine.")
+- For skips: brief and gracious — vary the phrasing every time (see SKIP DETECTION section for examples)
 
 Examples by score:
   Score 5: "Excellent — I really liked how you tied in the trade-offs."
@@ -98,11 +120,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 })
     }
 
-    // Get the current question
+    // Scope question fetch to this session — prevents cross-session score tampering
     const { data: question } = await supabase
       .from('questions')
       .select('*')
       .eq('id', question_id)
+      .eq('session_id', session_id)
       .single()
 
     if (!question) {
@@ -158,19 +181,23 @@ Candidate's answer:
 
     const score = Math.min(5, Math.max(1, evaluation.score ?? 3))
 
-    // Save answer to Supabase
-    await supabase.from('answers').insert({
-      session_id,
-      question_id,
-      transcript_text: transcript,
-      duration_seconds: durationSeconds,
-      score,
-    })
+    // Persist answer and mark question asked in parallel — both are independent writes
+    const [{ error: answerError }, { error: askedError }] = await Promise.all([
+      supabase.from('answers').insert({
+        session_id,
+        question_id,
+        transcript_text: transcript,
+        duration_seconds: durationSeconds,
+        score,
+      }),
+      supabase.from('questions').update({ asked: true }).eq('id', question_id),
+    ])
 
-    // Mark question as asked
-    await supabase.from('questions').update({ asked: true }).eq('id', question_id)
+    if (answerError) console.error('Failed to save answer:', answerError)
+    if (askedError) console.error('Failed to mark question asked:', askedError)
 
-    // Select next question using adaptive difficulty
+    // Select next question using adaptive difficulty — sort buckets so we step
+    // through difficulties incrementally rather than jumping based on insert order
     const { data: remainingQuestions } = await supabase
       .from('questions')
       .select('*')
@@ -184,15 +211,16 @@ Candidate's answer:
       const remaining = remainingQuestions as Question[]
 
       if (score >= 4) {
-        // Good answer — pick harder question
-        const harder = remaining.filter((q) => q.difficulty > question.difficulty)
+        const harder = remaining
+          .filter((q) => q.difficulty > question.difficulty)
+          .sort((a, b) => a.difficulty - b.difficulty) // nearest harder first
         nextQuestion = harder.length > 0 ? harder[0] : remaining[0]
       } else if (score <= 2) {
-        // Poor answer — pick easier or same difficulty
-        const easier = remaining.filter((q) => q.difficulty <= question.difficulty)
+        const easier = remaining
+          .filter((q) => q.difficulty <= question.difficulty)
+          .sort((a, b) => b.difficulty - a.difficulty) // nearest easier first
         nextQuestion = easier.length > 0 ? easier[0] : remaining[0]
       } else {
-        // Average — pick in sequence
         nextQuestion = remaining[0]
       }
     }
@@ -219,6 +247,25 @@ Candidate's answer:
       }
     }
 
+    const questionsRemaining = (remainingQuestions?.length ?? 0) + (isProbe ? 1 : 0)
+
+    // When the last question has been answered, kick off feedback generation in the
+    // background immediately. The LLM call runs while the AI speaks its closing words
+    // and the user navigates — so the report is ready (or nearly ready) by the time
+    // the feedback page loads, instead of making the user stare at a spinner.
+    // No charge here — credit deduction happens only via endInterview() on the client.
+    if (questionsRemaining === 0) {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+      const cookieHeader = request.headers.get('cookie') ?? ''
+      waitUntil(
+        fetch(`${appUrl}/api/generate-feedback`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Cookie': cookieHeader },
+          body: JSON.stringify({ session_id }),
+        }).catch(() => {}) // silent — the feedback page retries if this fails
+      )
+    }
+
     return NextResponse.json({
       score,
       spoken_response: evaluation.spoken_response ?? '',
@@ -227,7 +274,7 @@ Candidate's answer:
       candidate_wants_to_skip: evaluation.candidate_wants_to_skip ?? false,
       // Count the freshly-inserted probe so the client doesn't end the interview
       // prematurely when the candidate is probed on the last scripted question.
-      questions_remaining: (remainingQuestions?.length ?? 0) + (isProbe ? 1 : 0),
+      questions_remaining: questionsRemaining,
     })
   } catch (error) {
     console.error('evaluate-answer error:', error)

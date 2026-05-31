@@ -66,19 +66,21 @@ export default function FeedbackClient({
   if (!hasReport && timedOut) {
     return (
       <div className="mt-6 text-center">
-        <p className="text-sm text-amber-600 mb-3">
-          Report is taking longer than expected.
-        </p>
-        <button
-          onClick={() => {
-            retriedRef.current = false
-            setTimedOut(false)
-            router.refresh()
-          }}
-          className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          Try again
-        </button>
+        <div className="inline-block bg-amber-500/10 border border-amber-500/20 rounded-2xl px-6 py-4">
+          <p className="text-sm text-amber-400 mb-3">
+            Report is taking longer than expected.
+          </p>
+          <button
+            onClick={() => {
+              retriedRef.current = false
+              setTimedOut(false)
+              router.refresh()
+            }}
+            className="text-sm bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
+          >
+            Try again
+          </button>
+        </div>
       </div>
     )
   }

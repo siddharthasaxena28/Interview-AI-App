@@ -4,13 +4,24 @@ import './globals.css'
 import { PostHogProvider } from './providers'
 import PWARegister from './PWARegister'
 
-const inter = Inter({ subsets: ['latin'] })
+const inter = Inter({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700'],
+})
 
 export const metadata: Metadata = {
   title: 'InterviewAI — Practice like it\'s real. Perform when it matters.',
   description: 'AI-powered voice mock interview platform for the Indian job market. Practice full interview rounds with real-time AI feedback.',
   keywords: 'mock interview, AI interview, job interview practice, India, voice interview',
   manifest: '/manifest.webmanifest',
+  icons: {
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+    ],
+    apple: { url: '/icon.svg', type: 'image/svg+xml' },
+    shortcut: '/icon.svg',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
@@ -24,7 +35,7 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: '#2563eb',
+  themeColor: '#6366f1',
 }
 
 export default function RootLayout({
