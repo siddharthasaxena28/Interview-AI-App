@@ -109,10 +109,11 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       const body = await response.text()
+      // ElevenLabs returns 401 for both invalid API keys AND voice IDs from a different account
       const detail = response.status === 401
-        ? 'ELEVENLABS_API_KEY is invalid — update it in Vercel → Settings → Environment Variables'
+        ? `Voice ID "${voiceIdToUse}" rejected (401) — either ELEVENLABS_API_KEY is invalid OR this voice ID belongs to a different ElevenLabs account. Raw: ${body.slice(0, 200)}`
         : response.status === 404
-        ? `Voice ID "${voiceIdToUse}" not found — check the ELEVENLABS_VOICE_* env vars in Vercel`
+        ? `Voice ID "${voiceIdToUse}" not found (404) — update ELEVENLABS_VOICE_* env vars in Vercel`
         : `ElevenLabs error ${response.status}: ${body.slice(0, 200)}`
       console.error(`[TTS] Failed: ${detail}`)
       return NextResponse.json({ error: 'TTS generation failed', detail }, { status: 502 })
