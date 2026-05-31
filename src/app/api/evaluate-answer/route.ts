@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { waitUntil } from '@vercel/functions'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
-import type { Question } from '@/types'
+import { PERSONA_SPEECH_STYLE } from '@/lib/personas'
+import type { Question, RoundType } from '@/types'
 
 const client = new Anthropic()
 
-const EVAL_SYSTEM_PROMPT = `You are an expert interviewer scoring candidate answers.
+const EVAL_SYSTEM_PROMPT = `You are a sharp, fair human interviewer conducting a live voice interview. You score the candidate's answer and decide how to react in the moment — exactly as a real person would.
+
 Score the answer on a scale of 1-5:
 1 = Very poor / No understanding
 2 = Basic / Incomplete
@@ -13,11 +16,76 @@ Score the answer on a scale of 1-5:
 4 = Good / Well-explained
 5 = Excellent / Demonstrates deep expertise
 
+--- SKIP DETECTION (check this FIRST) ---
+Set "candidate_wants_to_skip": true whenever the candidate signals — explicitly or implicitly — that they want to move on:
+
+Explicit signals: "pass", "skip", "next question", "move on", "I don't know", "I have no idea", "I'm not sure about this one", "I'll pass"
+
+Implicit signals:
+  - Answer is 1-3 words with no substance ("hmm", "not sure", "uh", "yeah")
+  - Candidate expresses discomfort or unwillingness ("I'm blanking", "I'd rather not")
+  - Candidate trails off with no real attempt
+
+When candidate_wants_to_skip is true:
+  - ALWAYS set "probe": false and "probe_question": ""
+  - Score honestly, lean towards 2 if no real attempt
+  - "spoken_response" must be brief, gracious, and FEEL DIFFERENT every time.
+    React to the specific words the candidate used — if they said "I'll pass" react differently than if they said "I'm blanking on this one."
+    NEVER use the same phrase twice in a conversation. Rotate naturally through responses like a real person would.
+
+    Varied examples to draw from (pick whichever fits the moment, or invent a similar one):
+    "Sure, no problem — let's move on."
+    "Of course, that's completely fine."
+    "Understood, we'll skip that one."
+    "Fair enough, these can be tricky."
+    "Not a problem at all."
+    "Alright, let's keep going."
+    "Okay, no pressure on that one."
+    "Got it — totally fine."
+    "Sure thing, moving on."
+    "That's okay, we've got more to cover."
+    "Happy to move on."
+    "Noted — no worries."
+    "Absolutely, let's continue."
+    "No pressure — let's go to the next one."
+    "That's fine, happens to everyone."
+
+    IMPORTANT: Do NOT always default to "No worries at all" — vary naturally based on what was said.
+
+--- PROBING (only when candidate has NOT signalled skip) ---
+Probe when:
+- The answer is vague, uses buzzwords without substance, or is clearly a guess
+- The candidate gave a correct but shallow answer and an obvious deeper question exists
+Do NOT probe when the answer was thorough and confident (score 4-5 with specifics).
+Do NOT probe more than once per topic.
+
+When you probe, "probe_question" is a single specific follow-up — phrased conversationally, as you'd say it aloud.
+
+--- spoken_response RULES ---
+"spoken_response" is what you say out loud immediately after the candidate finishes. It must:
+- Be EXACTLY ONE sentence (10 words maximum)
+- Sound completely natural — never robotic or formulaic
+- Match your persona's style (provided in the user message)
+- React genuinely to what was actually said — if they gave a strong answer, acknowledge it specifically; if weak, be neutral
+- NEVER be sycophantic for weak answers ("Wonderful!" for a score-2 answer is dishonest)
+- NEVER include "Let's move on" or "Here's the next question" — only react to this answer
+- For probes: lead naturally into the follow-up ("Hmm, let me push on that a bit —")
+- For skips: brief and gracious — vary the phrasing every time (see SKIP DETECTION section for examples)
+
+Examples by score:
+  Score 5: "Excellent — I really liked how you tied in the trade-offs."
+  Score 4: "Good, you covered the key points well."
+  Score 3: "Okay, that gives me a sense of where you're at."
+  Score 2: "Fair enough, I appreciate the honesty."
+  Score 1: "Alright, no worries."
+
 Return ONLY a JSON object with this exact structure:
 {
   "score": <number 1-5>,
-  "brief_feedback": "<one sentence feedback>",
-  "generate_followup": <true if score ≤ 2, false otherwise>
+  "spoken_response": "<one natural sentence — your immediate spoken reaction, in your persona's voice>",
+  "probe": <true|false>,
+  "probe_question": "<specific follow-up question phrased conversationally, or empty string>",
+  "candidate_wants_to_skip": <true|false>
 }`
 
 export async function POST(request: NextRequest) {
@@ -52,11 +120,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 })
     }
 
-    // Get the current question
+    // Scope question fetch to this session — prevents cross-session score tampering
     const { data: question } = await supabase
       .from('questions')
       .select('*')
       .eq('id', question_id)
+      .eq('session_id', session_id)
       .single()
 
     if (!question) {
@@ -66,10 +135,12 @@ export async function POST(request: NextRequest) {
     const q = question as Question
     const durationSeconds = start_time ? Math.round((Date.now() - start_time) / 1000) : 0
 
+    const personaStyle = PERSONA_SPEECH_STYLE[session.round_type as RoundType] ?? 'Professional and conversational.'
+
     // Score the answer with Claude Haiku
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 256,
+      max_tokens: 400,
       system: [
         {
           type: 'text',
@@ -80,7 +151,9 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: 'user',
-          content: `Question (difficulty ${q.difficulty}/5, topic: ${q.topic_tag}):
+          content: `Your interviewer persona: ${personaStyle}
+
+Question (difficulty ${q.difficulty}/5, topic: ${q.topic_tag}):
 "${q.text}"
 
 Candidate's answer:
@@ -92,29 +165,39 @@ Candidate's answer:
     const content = message.content[0]
     if (content.type !== 'text') throw new Error('Unexpected response type')
 
-    let evaluation: { score: number; brief_feedback: string; generate_followup: boolean }
+    let evaluation: { score: number; spoken_response: string; probe: boolean; probe_question: string; candidate_wants_to_skip: boolean }
     try {
       const jsonMatch = content.text.match(/\{[\s\S]*\}/)
       evaluation = JSON.parse(jsonMatch ? jsonMatch[0] : content.text)
     } catch {
-      evaluation = { score: 3, brief_feedback: '', generate_followup: false }
+      evaluation = { score: 3, spoken_response: '', probe: false, probe_question: '', candidate_wants_to_skip: false }
+    }
+
+    // Safety net: never probe a candidate who wants to skip regardless of what the model returned.
+    if (evaluation.candidate_wants_to_skip) {
+      evaluation.probe = false
+      evaluation.probe_question = ''
     }
 
     const score = Math.min(5, Math.max(1, evaluation.score ?? 3))
 
-    // Save answer to Supabase
-    await supabase.from('answers').insert({
-      session_id,
-      question_id,
-      transcript_text: transcript,
-      duration_seconds: durationSeconds,
-      score,
-    })
+    // Persist answer and mark question asked in parallel — both are independent writes
+    const [{ error: answerError }, { error: askedError }] = await Promise.all([
+      supabase.from('answers').insert({
+        session_id,
+        question_id,
+        transcript_text: transcript,
+        duration_seconds: durationSeconds,
+        score,
+      }),
+      supabase.from('questions').update({ asked: true }).eq('id', question_id),
+    ])
 
-    // Mark question as asked
-    await supabase.from('questions').update({ asked: true }).eq('id', question_id)
+    if (answerError) console.error('Failed to save answer:', answerError)
+    if (askedError) console.error('Failed to mark question asked:', askedError)
 
-    // Select next question using adaptive difficulty
+    // Select next question using adaptive difficulty — sort buckets so we step
+    // through difficulties incrementally rather than jumping based on insert order
     const { data: remainingQuestions } = await supabase
       .from('questions')
       .select('*')
@@ -128,52 +211,70 @@ Candidate's answer:
       const remaining = remainingQuestions as Question[]
 
       if (score >= 4) {
-        // Good answer — pick harder question
-        const harder = remaining.filter((q) => q.difficulty > question.difficulty)
+        const harder = remaining
+          .filter((q) => q.difficulty > question.difficulty)
+          .sort((a, b) => a.difficulty - b.difficulty) // nearest harder first
         nextQuestion = harder.length > 0 ? harder[0] : remaining[0]
       } else if (score <= 2) {
-        // Poor answer — pick easier or same difficulty
-        const easier = remaining.filter((q) => q.difficulty <= question.difficulty)
+        const easier = remaining
+          .filter((q) => q.difficulty <= question.difficulty)
+          .sort((a, b) => b.difficulty - a.difficulty) // nearest easier first
         nextQuestion = easier.length > 0 ? easier[0] : remaining[0]
       } else {
-        // Average — pick in sequence
         nextQuestion = remaining[0]
       }
     }
 
-    // Generate a follow-up probe question when the candidate struggles
-    if (evaluation.generate_followup) {
-      try {
-        const followUpMsg = await client.messages.create({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 128,
-          messages: [{
-            role: 'user',
-            content: `The candidate struggled to answer this interview question:\n"${q.text}"\n\nTheir answer: "${transcript || '[no answer]'}"\n\nWrite one short follow-up question to probe their basic understanding of the underlying concept. Return only the question text, nothing else.`,
-          }],
-        })
-        const followUpText = followUpMsg.content[0].type === 'text' ? followUpMsg.content[0].text.trim() : null
-        if (followUpText) {
-          const { data: fq } = await supabase.from('questions').insert({
-            session_id,
-            text: followUpText,
-            topic_tag: q.topic_tag,
-            difficulty: Math.max(1, (q.difficulty as number) - 1),
-            order_index: 999,
-            asked: false,
-          }).select().single()
-          if (fq) nextQuestion = fq as Question
-        }
-      } catch {
-        // non-fatal — continue without follow-up if generation fails
+    // The interviewer decided to push back — the probe came from the same scoring
+    // call (no extra LLM round-trip). Insert it and make it the next question so
+    // the AI challenges the candidate before moving on.
+    let isProbe = false
+    const probeText = (evaluation.probe_question ?? '').trim()
+    if (evaluation.probe && probeText) {
+      const { data: fq } = await supabase.from('questions').insert({
+        session_id,
+        text: probeText,
+        round_type: session.round_type,
+        topic_tag: q.topic_tag,
+        // Probes don't escalate difficulty — they dig into the same topic.
+        difficulty: q.difficulty,
+        order_index: 999,
+        asked: false,
+      }).select().single()
+      if (fq) {
+        nextQuestion = fq as Question
+        isProbe = true
       }
+    }
+
+    const questionsRemaining = (remainingQuestions?.length ?? 0) + (isProbe ? 1 : 0)
+
+    // When the last question has been answered, kick off feedback generation in the
+    // background immediately. The LLM call runs while the AI speaks its closing words
+    // and the user navigates — so the report is ready (or nearly ready) by the time
+    // the feedback page loads, instead of making the user stare at a spinner.
+    // No charge here — credit deduction happens only via endInterview() on the client.
+    if (questionsRemaining === 0) {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+      const cookieHeader = request.headers.get('cookie') ?? ''
+      waitUntil(
+        fetch(`${appUrl}/api/generate-feedback`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Cookie': cookieHeader },
+          body: JSON.stringify({ session_id }),
+        }).catch(() => {}) // silent — the feedback page retries if this fails
+      )
     }
 
     return NextResponse.json({
       score,
-      brief_feedback: evaluation.brief_feedback,
+      spoken_response: evaluation.spoken_response ?? '',
       next_question: nextQuestion,
-      questions_remaining: remainingQuestions?.length ?? 0,
+      is_probe: isProbe,
+      candidate_wants_to_skip: evaluation.candidate_wants_to_skip ?? false,
+      // Count the freshly-inserted probe so the client doesn't end the interview
+      // prematurely when the candidate is probed on the last scripted question.
+      questions_remaining: questionsRemaining,
     })
   } catch (error) {
     console.error('evaluate-answer error:', error)

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { CheckCircle, Mic, ArrowRight } from 'lucide-react'
+import { CheckCircle, Mic, ArrowRight, Zap, Clock, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
 import { useAnalytics } from '@/hooks/useAnalytics'
 
@@ -11,211 +11,221 @@ declare global {
   }
 }
 
+const PACKS = [
+  {
+    key: 'single',
+    name: 'Single Session',
+    price: '₹249',
+    priceNote: '₹249 per session',
+    sessions: 1,
+    total: 249,
+    saving: null,
+    features: [
+      'All 4 round types',
+      'JD-personalised questions',
+      'Full feedback report',
+      'Selection probability score',
+      'Shareable report link',
+    ],
+    cta: 'Buy 1 Session',
+    highlighted: false,
+    badge: null,
+  },
+  {
+    key: 'starter',
+    name: 'Starter Pack',
+    price: '₹999',
+    priceNote: '₹200 per session',
+    sessions: 5,
+    total: 999,
+    saving: '₹246 saved vs single',
+    features: [
+      'All 4 round types',
+      'JD-personalised questions',
+      'Full feedback report',
+      'Selection probability score',
+      'Shareable report link',
+    ],
+    cta: 'Buy 5 Sessions',
+    highlighted: true,
+    badge: 'Most Popular',
+  },
+  {
+    key: 'serious',
+    name: 'Serious Prep',
+    price: '₹1,799',
+    priceNote: '₹180 per session',
+    sessions: 10,
+    total: 1799,
+    saving: '₹691 saved vs single',
+    features: [
+      'All 4 round types',
+      'JD-personalised questions',
+      'Full feedback report',
+      'Selection probability score',
+      'Shareable report link',
+    ],
+    cta: 'Buy 10 Sessions',
+    highlighted: false,
+    badge: 'Best Value',
+  },
+] as const
+
+type PackKey = 'single' | 'starter' | 'serious'
+
 export default function PricingPage() {
-  const [loadingPlan, setLoadingPlan] = useState<string | null>(null)
+  const [loadingPack, setLoadingPack] = useState<PackKey | null>(null)
   const analytics = useAnalytics()
 
-  async function handlePayg() {
-    setLoadingPlan('payg')
-    analytics.capture('payment_initiated', { plan: 'payg', amount: 249 })
+  async function handlePurchase(pack: PackKey, amount: number) {
+    setLoadingPack(pack)
+    analytics.capture('payment_initiated', { pack, amount })
     try {
       const res = await fetch('/api/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: 24900 }),
+        body: JSON.stringify({ pack }),
       })
       const order = await res.json()
-
       if (!order.order_id) throw new Error('Failed to create order')
 
-      const script = document.createElement('script')
-      script.src = 'https://checkout.razorpay.com/v1/checkout.js'
-      document.head.appendChild(script)
-      script.onload = () => {
-        const rzp = new window.Razorpay({
-          key: order.key_id,
-          amount: order.amount,
-          currency: order.currency,
-          name: 'InterviewAI',
-          description: 'Pay-per-session — 1 Interview',
-          order_id: order.order_id,
-          handler: async (response: Record<string, string>) => {
-            const verifyRes = await fetch('/api/verify-payment', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(response),
-            })
-            if (verifyRes.ok) {
-              analytics.capture('payment_completed', { plan: 'payg', amount: 249 })
-              window.location.href = '/dashboard'
-            }
-          },
-          prefill: { name: '', email: '', contact: '' },
-          theme: { color: '#2563eb' },
-        })
-        rzp.open()
-      }
+      await new Promise<void>((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js'
+        script.onload = () => resolve()
+        script.onerror = () => reject(new Error('Failed to load Razorpay'))
+        document.head.appendChild(script)
+      })
+
+      const rzp = new window.Razorpay({
+        key: order.key_id,
+        amount: order.amount,
+        currency: order.currency,
+        name: 'InterviewAI',
+        description: order.label,
+        order_id: order.order_id,
+        handler: async (response: Record<string, string>) => {
+          const verifyRes = await fetch('/api/verify-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(response),
+          })
+          if (verifyRes.ok) {
+            analytics.capture('payment_completed', { pack, amount })
+            window.location.href = '/dashboard'
+          } else {
+            alert('Payment verification failed. Please contact support if credits were not added.')
+          }
+        },
+        prefill: { name: '', email: '', contact: '' },
+        theme: { color: '#4f46e5' },
+      })
+      rzp.open()
     } catch {
       alert('Payment failed. Please try again.')
     } finally {
-      setLoadingPlan(null)
+      setLoadingPack(null)
     }
   }
-
-  async function handleSubscription(plan: 'pro' | 'unlimited') {
-    setLoadingPlan(plan)
-    analytics.capture('payment_initiated', { plan, amount: plan === 'pro' ? 399 : 699 })
-    try {
-      const res = await fetch('/api/create-subscription', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan }),
-      })
-      const sub = await res.json()
-
-      if (!sub.subscription_id) throw new Error('Failed to create subscription')
-
-      const script = document.createElement('script')
-      script.src = 'https://checkout.razorpay.com/v1/checkout.js'
-      document.head.appendChild(script)
-      script.onload = () => {
-        const rzp = new window.Razorpay({
-          key: sub.key_id,
-          subscription_id: sub.subscription_id,
-          name: 'InterviewAI',
-          description: plan === 'pro' ? 'Pro Plan — ₹399/month' : 'Unlimited Plan — ₹699/month',
-          handler: () => {
-            analytics.capture('payment_completed', { plan, amount: plan === 'pro' ? 399 : 699 })
-            window.location.href = '/dashboard'
-          },
-          prefill: { name: '', email: '', contact: '' },
-          theme: { color: '#2563eb' },
-        })
-        rzp.open()
-      }
-    } catch {
-      alert('Subscription failed. Please try again.')
-    } finally {
-      setLoadingPlan(null)
-    }
-  }
-
-  const plans = [
-    {
-      key: 'free',
-      name: 'Free',
-      price: '₹0',
-      period: 'forever',
-      sessions: '1 session ever',
-      features: ['All 4 round types', 'Full feedback report', 'Selection probability', 'Email report'],
-      action: () => window.location.href = '/auth/login',
-      cta: 'Get Started',
-      highlighted: false,
-    },
-    {
-      key: 'payg',
-      name: 'Pay-as-you-go',
-      price: '₹249',
-      period: 'per session',
-      sessions: '1 session',
-      features: ['All 4 round types', 'Full feedback report', 'Interview history', 'Shareable link'],
-      action: handlePayg,
-      cta: 'Buy a Session',
-      highlighted: false,
-    },
-    {
-      key: 'pro',
-      name: 'Pro',
-      price: '₹399',
-      period: 'per month',
-      sessions: '8 sessions/month',
-      features: ['All 4 round types', 'Full feedback report', 'Progress analytics', 'Shareable reports', '₹50/session effective'],
-      action: () => handleSubscription('pro'),
-      cta: 'Start Pro',
-      highlighted: true,
-    },
-    {
-      key: 'unlimited',
-      name: 'Unlimited',
-      price: '₹699',
-      period: 'per month',
-      sessions: 'Unlimited sessions',
-      features: ['Everything in Pro', 'Unlimited practice', 'Best for active job hunters', '₹35/session (at 20 sessions)'],
-      action: () => handleSubscription('unlimited'),
-      cta: 'Go Unlimited',
-      highlighted: false,
-    },
-  ]
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="bg-[#0a0a0f] min-h-screen">
       {/* Nav */}
-      <nav className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
+      <nav className="sticky top-0 z-50 bg-[#0a0a0f]/80 backdrop-blur-md border-b border-white/[0.06] px-6 py-4">
+        <div className="max-w-5xl mx-auto flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center">
+            <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center">
               <Mic className="w-3.5 h-3.5 text-white" />
             </div>
-            <span className="font-bold text-gray-900">InterviewAI</span>
+            <span className="font-bold text-white">InterviewAI</span>
           </Link>
-          <Link href="/dashboard" className="text-sm text-blue-600 font-medium">Dashboard →</Link>
+          <Link href="/dashboard" className="text-sm text-indigo-400 font-medium hover:text-indigo-300 transition-colors">
+            Dashboard →
+          </Link>
         </div>
       </nav>
 
-      <main className="max-w-6xl mx-auto px-6 py-16">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">Simple, honest pricing</h1>
-          <p className="text-gray-600 max-w-xl mx-auto">
-            Priced for Indian students and professionals. No hidden fees.
-            2 PAYG sessions = ₹498 — upgrade to Pro and save.
+      <main className="max-w-5xl mx-auto px-6 py-16">
+
+        {/* Header */}
+        <div className="text-center mb-10">
+          <div className="inline-flex items-center gap-2 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-full text-xs font-semibold px-3 py-1.5 mb-5">
+            <Zap className="w-3 h-3" /> Simple, honest pricing
+          </div>
+          <h1 className="text-4xl font-bold text-white mb-3">Buy sessions when you need them</h1>
+          <p className="text-gray-400 max-w-lg mx-auto">
+            No subscription. No monthly bills. Credits never expire — use them at your own pace.
           </p>
         </div>
 
-        <div className="grid md:grid-cols-4 gap-4 mb-12">
-          {plans.map((plan) => (
+        {/* Trust badges */}
+        <div className="flex flex-wrap justify-center gap-3 mb-12">
+          <span className="flex items-center gap-1.5 text-sm text-gray-400 bg-white/[0.03] border border-white/[0.06] rounded-full px-4 py-2">
+            <Clock className="w-4 h-4 text-indigo-400" /> Credits never expire
+          </span>
+          <span className="flex items-center gap-1.5 text-sm text-gray-400 bg-white/[0.03] border border-white/[0.06] rounded-full px-4 py-2">
+            <RefreshCw className="w-4 h-4 text-indigo-400" /> Use across any round type
+          </span>
+          <span className="flex items-center gap-1.5 text-sm text-gray-400 bg-white/[0.03] border border-white/[0.06] rounded-full px-4 py-2">
+            <Zap className="w-4 h-4 text-indigo-400" /> Instant access after payment
+          </span>
+        </div>
+
+        {/* Pack cards */}
+        <div className="grid md:grid-cols-3 gap-6 mb-12">
+          {PACKS.map((pack) => (
             <div
-              key={plan.key}
-              className={`rounded-2xl p-6 border transition-shadow hover:shadow-md ${
-                plan.highlighted
-                  ? 'border-blue-500 bg-blue-600 text-white shadow-lg'
-                  : 'border-gray-200 bg-white'
+              key={pack.key}
+              className={`rounded-2xl p-8 border relative transition-all ${
+                pack.highlighted
+                  ? 'bg-gradient-to-b from-indigo-600/20 to-transparent border-indigo-500/40 shadow-lg shadow-indigo-500/10'
+                  : 'bg-[#111118] border-white/[0.06] hover:border-white/[0.10]'
               }`}
             >
-              {plan.highlighted && (
-                <div className="text-xs font-bold bg-white text-blue-600 px-2 py-0.5 rounded-full w-fit mb-3">
-                  Most Popular
+              {pack.badge && (
+                <div className={`absolute -top-3 left-1/2 -translate-x-1/2 text-xs font-bold px-4 py-1 rounded-full whitespace-nowrap ${
+                  pack.highlighted
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-white/10 text-gray-300 border border-white/10'
+                }`}>
+                  {pack.badge}
                 </div>
               )}
-              <div className="font-bold text-lg mb-1">{plan.name}</div>
-              <div className="text-3xl font-bold mb-0.5">{plan.price}</div>
-              <div className={`text-sm mb-3 ${plan.highlighted ? 'text-blue-100' : 'text-gray-500'}`}>
-                {plan.period}
+
+              <div className="mb-5">
+                <div className="text-sm font-medium text-gray-400 mb-1">{pack.name}</div>
+                <div className="text-4xl font-bold text-white mb-0.5">{pack.price}</div>
+                <div className="text-sm text-gray-400">{pack.priceNote}</div>
+                {pack.saving && (
+                  <div className="text-xs font-semibold mt-2 text-emerald-400">
+                    {pack.saving}
+                  </div>
+                )}
               </div>
-              <div className={`text-sm font-semibold mb-4 ${plan.highlighted ? 'text-blue-100' : 'text-gray-700'}`}>
-                {plan.sessions}
+
+              <div className="text-sm font-semibold text-gray-300 mb-5 pb-5 border-b border-white/[0.06]">
+                {pack.sessions} interview session{pack.sessions > 1 ? 's' : ''}
               </div>
-              <ul className="space-y-2 mb-6">
-                {plan.features.map((f) => (
+
+              <ul className="space-y-2.5 mb-7">
+                {pack.features.map((f) => (
                   <li key={f} className="flex items-start gap-2 text-sm">
-                    <CheckCircle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${plan.highlighted ? 'text-blue-200' : 'text-green-500'}`} />
-                    <span className={plan.highlighted ? 'text-blue-50' : 'text-gray-700'}>{f}</span>
+                    <CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-indigo-400" />
+                    <span className="text-gray-400">{f}</span>
                   </li>
                 ))}
               </ul>
+
               <button
-                onClick={plan.action}
-                disabled={loadingPlan === plan.key}
-                className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 ${
-                  plan.highlighted
-                    ? 'bg-white text-blue-600 hover:bg-blue-50'
-                    : 'bg-blue-600 text-white hover:bg-blue-700'
-                }`}
+                onClick={() => handlePurchase(pack.key as PackKey, pack.total)}
+                disabled={loadingPack === pack.key}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 bg-indigo-600 hover:bg-indigo-500 text-white"
               >
-                {loadingPlan === plan.key ? (
-                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                {loadingPack === pack.key ? (
+                  <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
                 ) : (
                   <>
-                    {plan.cta}
+                    {pack.cta}
                     <ArrowRight className="w-3.5 h-3.5" />
                   </>
                 )}
@@ -224,39 +234,64 @@ export default function PricingPage() {
           ))}
         </div>
 
-        {/* Comparison table */}
-        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100">
-            <h2 className="font-semibold text-gray-900">Cost per session comparison</h2>
+        {/* Free tier callout */}
+        <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-6 mb-12 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <div className="font-semibold text-white mb-1">New here? Start for free</div>
+            <div className="text-sm text-gray-400">
+              Every new account includes 1 free interview session — no payment needed.
+              Try all 4 round types, get a full feedback report, see if it works for you.
+            </div>
+          </div>
+          <Link
+            href="/auth/login"
+            className="flex-shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors whitespace-nowrap"
+          >
+            Try free →
+          </Link>
+        </div>
+
+        {/* Per-session comparison table */}
+        <div className="bg-[#111118] border border-white/[0.06] rounded-2xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-white/[0.06]">
+            <h2 className="font-semibold text-white">Cost per session breakdown</h2>
           </div>
           <table className="w-full text-sm">
-            <thead className="bg-gray-50">
+            <thead className="bg-white/[0.03]">
               <tr>
-                <th className="text-left px-6 py-3 text-gray-600 font-medium">Sessions / month</th>
-                <th className="text-right px-6 py-3 text-gray-600 font-medium">PAYG cost</th>
-                <th className="text-right px-6 py-3 text-gray-600 font-medium">Pro cost</th>
-                <th className="text-right px-6 py-3 text-green-600 font-medium">Savings with Pro</th>
+                <th className="text-left px-6 py-3 text-gray-400 font-medium">Pack</th>
+                <th className="text-right px-6 py-3 text-gray-400 font-medium">Sessions</th>
+                <th className="text-right px-6 py-3 text-gray-400 font-medium">Total</th>
+                <th className="text-right px-6 py-3 text-gray-400 font-medium">Per session</th>
+                <th className="text-right px-6 py-3 text-emerald-400 font-medium">You save</th>
               </tr>
             </thead>
             <tbody>
-              {[
-                { sessions: 1, payg: 249, pro: 399, note: 'PAYG cheaper' },
-                { sessions: 2, payg: 498, pro: 399, note: 'Save ₹99' },
-                { sessions: 4, payg: 996, pro: 399, note: 'Save ₹597' },
-                { sessions: 8, payg: 1992, pro: 399, note: 'Save ₹1,593' },
-              ].map((row) => (
-                <tr key={row.sessions} className="border-t border-gray-100">
-                  <td className="px-6 py-3 text-gray-700">{row.sessions} session{row.sessions > 1 ? 's' : ''}</td>
-                  <td className="px-6 py-3 text-right text-gray-700">₹{row.payg.toLocaleString('en-IN')}</td>
-                  <td className="px-6 py-3 text-right text-gray-700">₹{row.pro.toLocaleString('en-IN')}</td>
-                  <td className={`px-6 py-3 text-right font-medium ${row.payg > row.pro ? 'text-green-600' : 'text-gray-400'}`}>
-                    {row.note}
-                  </td>
-                </tr>
-              ))}
+              <tr className="border-t border-white/[0.04]">
+                <td className="px-6 py-3 text-gray-300">Single</td>
+                <td className="px-6 py-3 text-right text-gray-300">1</td>
+                <td className="px-6 py-3 text-right text-gray-300">₹249</td>
+                <td className="px-6 py-3 text-right text-gray-300">₹249</td>
+                <td className="px-6 py-3 text-right text-gray-600">—</td>
+              </tr>
+              <tr className="border-t border-white/[0.04] bg-indigo-500/5">
+                <td className="px-6 py-3 font-medium text-indigo-400">Starter (5)</td>
+                <td className="px-6 py-3 text-right text-gray-300">5</td>
+                <td className="px-6 py-3 text-right text-gray-300">₹999</td>
+                <td className="px-6 py-3 text-right font-medium text-indigo-400">₹200</td>
+                <td className="px-6 py-3 text-right font-medium text-emerald-400">₹246 (20%)</td>
+              </tr>
+              <tr className="border-t border-white/[0.04]">
+                <td className="px-6 py-3 font-medium text-white">Serious (10)</td>
+                <td className="px-6 py-3 text-right text-gray-300">10</td>
+                <td className="px-6 py-3 text-right text-gray-300">₹1,799</td>
+                <td className="px-6 py-3 text-right font-medium text-white">₹180</td>
+                <td className="px-6 py-3 text-right font-medium text-emerald-400">₹691 (28%)</td>
+              </tr>
             </tbody>
           </table>
         </div>
+
       </main>
     </div>
   )

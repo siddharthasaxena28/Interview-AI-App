@@ -17,11 +17,15 @@ export function CopyReferral({ link }: { link: string }) {
       <input
         readOnly
         value={link}
-        className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-gray-50 font-mono truncate"
+        className="flex-1 bg-[#0a0a0f] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-gray-400 font-mono truncate focus:outline-none"
       />
       <button
         onClick={handleCopy}
-        className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors whitespace-nowrap"
+        className={`text-sm px-4 py-2 rounded-xl font-medium transition-all duration-200 whitespace-nowrap ${
+          copied
+            ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+            : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+        }`}
       >
         {copied ? 'Copied!' : 'Copy Link'}
       </button>

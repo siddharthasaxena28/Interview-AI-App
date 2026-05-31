@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase-server'
+import { sendPushToUser } from '@/lib/push-server'
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('Authorization')
@@ -24,11 +25,12 @@ export async function GET(request: NextRequest) {
   }
 
   let sent = 0
+  let pushed = 0
 
   // Streak at risk: last practiced yesterday, active streak
   const { data: streakUsers } = await supabase
     .from('users')
-    .select('email, name, current_streak')
+    .select('id, email, name, current_streak')
     .eq('last_session_date', toDate(1))
     .gte('current_streak', 2)
 
@@ -42,27 +44,56 @@ export async function GET(request: NextRequest) {
       })
       sent++
     } catch { /* non-fatal */ }
+    // Push notification (no-ops if VAPID keys aren't configured)
+    pushed += await sendPushToUser(supabase, u.id, {
+      title: `🔥 ${u.current_streak}-day streak at risk`,
+      body: 'Practise one interview today to keep your streak alive.',
+      url: '/interview/setup',
+    }).catch(() => 0)
   }
 
   // Re-engagement: last practiced 3 days ago
   const { data: nudgeUsers } = await supabase
     .from('users')
-    .select('email, name')
+    .select('id, email, name')
     .eq('last_session_date', toDate(3))
 
   for (const u of nudgeUsers ?? []) {
+    // Fetch top weak area for personalised message
+    const { data: topWeak } = await supabase
+      .from('weak_areas')
+      .select('topic_tag, avg_score')
+      .eq('user_id', u.id)
+      .order('avg_score', { ascending: true })
+      .limit(1)
+      .single()
+
+    const weakTopic = topWeak
+      ? topWeak.topic_tag.replace(/_/g, ' ')
+      : null
+    const weakScore = topWeak ? topWeak.avg_score.toFixed(1) : null
+
     try {
       await resend.emails.send({
         from,
         to: u.email,
-        subject: `Ready for your next practice interview?`,
-        html: reEngageHtml({ name: u.name, appUrl }),
+        subject: weakTopic
+          ? `Time to work on your ${weakTopic} skills`
+          : `Ready for your next practice interview?`,
+        html: reEngageHtml({ name: u.name, appUrl, weakTopic, weakScore }),
       })
       sent++
     } catch { /* non-fatal */ }
+    pushed += await sendPushToUser(supabase, u.id, {
+      title: weakTopic ? `Work on ${weakTopic} today` : 'Ready for your next mock interview?',
+      body: weakTopic
+        ? `You scored ${weakScore}/5 on ${weakTopic} — a targeted practice session today will help.`
+        : 'A quick 20-minute practice session keeps you sharp.',
+      url: '/interview/setup',
+    }).catch(() => 0)
   }
 
-  return NextResponse.json({ sent, timestamp: new Date().toISOString() })
+  return NextResponse.json({ sent, pushed, timestamp: new Date().toISOString() })
 }
 
 function streakAtRiskHtml({ name, streak, appUrl }: { name: string; streak: number; appUrl: string }) {
@@ -99,7 +130,7 @@ function streakAtRiskHtml({ name, streak, appUrl }: { name: string; streak: numb
 </html>`
 }
 
-function reEngageHtml({ name, appUrl }: { name: string; appUrl: string }) {
+function reEngageHtml({ name, appUrl, weakTopic, weakScore }: { name: string; appUrl: string; weakTopic: string | null; weakScore: string | null }) {
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
@@ -111,11 +142,18 @@ function reEngageHtml({ name, appUrl }: { name: string; appUrl: string }) {
     </div>
     <div style="padding:32px;">
       <p style="color:#374151;margin-bottom:16px;">Hi ${name},</p>
-      <p style="color:#374151;margin-bottom:16px;">
-        It's been a few days since your last practice interview. The best time to sharpen your skills is before you need them — not after.
-      </p>
+      ${weakTopic ? `
+<div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:12px;padding:16px;margin-bottom:16px;">
+  <div style="font-size:13px;color:#92400e;font-weight:600;margin-bottom:4px;">Your focus area: ${weakTopic}</div>
+  <div style="font-size:13px;color:#92400e;">You scored ${weakScore}/5 on ${weakTopic} in your last session — a targeted practice today will make a real difference.</div>
+</div>
+` : `
+<p style="color:#374151;margin-bottom:16px;">
+  It's been a few days since your last practice interview. The best time to sharpen your skills is before you need them — not after.
+</p>
+`}
       <p style="color:#374151;margin-bottom:24px;">
-        Pick a round and get 20 minutes of focused practice today. Your future self will thank you.
+        Get 20 minutes of focused practice today. Your future self will thank you.
       </p>
       <div style="text-align:center;">
         <a href="${appUrl}/interview/setup" style="background:#1d4ed8;color:white;text-decoration:none;padding:14px 36px;border-radius:10px;font-weight:600;font-size:15px;display:inline-block;">
