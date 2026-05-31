@@ -91,7 +91,7 @@ async function resolveVoiceId(
   return 'pNInz6obpgDQGcFmaJgB' // Adam
 }
 
-async function callElevenLabs(voiceId: string, text: string, apiKey: string): Promise<Response> {
+async function callElevenLabs(voiceId: string, text: string, apiKey: string, model = 'eleven_multilingual_v2'): Promise<Response> {
   return fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
     method: 'POST',
     headers: {
@@ -101,7 +101,7 @@ async function callElevenLabs(voiceId: string, text: string, apiKey: string): Pr
     },
     body: JSON.stringify({
       text,
-      model_id: 'eleven_multilingual_v2',
+      model_id: model,
       voice_settings: {
         stability: 0.5,
         similarity_boost: 0.75,
@@ -139,15 +139,21 @@ export async function POST(request: NextRequest) {
       ? await resolveVoiceId(apiKey, round_type, gender)
       : (voice_id && voice_id !== 'default' ? voice_id : 'pNInz6obpgDQGcFmaJgB')
 
-    let response = await callElevenLabs(primaryVoiceId, text, apiKey)
+    let response = await callElevenLabs(primaryVoiceId, text, apiKey, 'eleven_multilingual_v2')
 
-    // If primary fails, invalidate cache and retry once with name lookup
+    // Model fallback: multilingual_v2 may be unavailable on free tier
+    if (!response.ok && response.status !== 401) {
+      const errBody = await response.text()
+      console.warn(`[TTS] eleven_multilingual_v2 failed (${response.status}), trying eleven_monolingual_v1: ${errBody}`)
+      response = await callElevenLabs(primaryVoiceId, text, apiKey, 'eleven_monolingual_v1')
+    }
+
+    // If primary voice still fails, try the other gender's voice
     if (!response.ok) {
       const errBody = await response.text()
       console.error(`[TTS] Voice ${primaryVoiceId} failed (${response.status}): ${errBody}`)
-      voiceCache.delete(apiKey) // clear cache so next request re-fetches fresh list
+      voiceCache.delete(apiKey)
 
-      // Try the other gender's voice as fallback before giving up
       const fallbackGender = gender === 'female' ? 'male' : 'female'
       const fallbackId = round_type
         ? await resolveVoiceId(apiKey, round_type, fallbackGender)
@@ -155,13 +161,16 @@ export async function POST(request: NextRequest) {
 
       if (fallbackId !== primaryVoiceId) {
         console.warn(`[TTS] Retrying with ${fallbackGender} voice: ${fallbackId}`)
-        response = await callElevenLabs(fallbackId, text, apiKey)
+        response = await callElevenLabs(fallbackId, text, apiKey, 'eleven_multilingual_v2')
+        if (!response.ok) {
+          response = await callElevenLabs(fallbackId, text, apiKey, 'eleven_monolingual_v1')
+        }
       }
     }
 
     if (!response.ok) {
       const detail = await response.text()
-      console.error(`[TTS] All voices failed: ${detail}`)
+      console.error(`[TTS] All voices/models failed: ${detail}`)
       return NextResponse.json({ error: 'TTS generation failed' }, { status: 502 })
     }
 

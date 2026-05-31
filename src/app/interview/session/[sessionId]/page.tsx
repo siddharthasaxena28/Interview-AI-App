@@ -52,6 +52,7 @@ function SessionPageInner({ params }: SessionPageProps) {
   const [reconnecting, setReconnecting] = useState(false)
   const [resumeInfo, setResumeInfo] = useState<{ questionIndex: number; currentQuestionId: string } | null>(null)
   const [resumeDismissed, setResumeDismissed] = useState(false)
+  const [ttsFallback, setTtsFallback] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -557,10 +558,22 @@ function SessionPageInner({ params }: SessionPageProps) {
       ttsSucceeded = true
     } catch (err) {
       cancelSpeakRef.current = null
-      console.error('[speakText] ElevenLabs TTS failed:', err)
-      // Do NOT fall back to browser speechSynthesis — it uses a foreign accent
-      // and would mask misconfigured ElevenLabs voices. The TTS route already
-      // retries internally with a fallback ElevenLabs voice.
+      console.error('[speakText] ElevenLabs TTS failed, using browser speech fallback:', err)
+      // Browser speech as absolute last resort — interview must not go silent
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        setTtsFallback(true)
+        await new Promise<void>((resolve) => {
+          const utter = new SpeechSynthesisUtterance(text)
+          utter.rate = 0.95
+          utter.onend = () => resolve()
+          utter.onerror = () => resolve()
+          window.speechSynthesis.speak(utter)
+          cancelSpeakRef.current = () => { window.speechSynthesis.cancel(); resolve() }
+          setTimeout(resolve, text.length * 80 + 5000)
+        })
+        cancelSpeakRef.current = null
+        ttsSucceeded = true
+      }
     }
 
     clearInterval(keepAliveInterval)
@@ -905,6 +918,12 @@ function SessionPageInner({ params }: SessionPageProps) {
             <div className="flex items-center gap-1 text-xs text-amber-400">
               <div className="w-3 h-3 border border-amber-400 border-t-transparent rounded-full animate-spin" />
               <span className="hidden sm:inline">Reconnecting…</span>
+            </div>
+          )}
+          {ttsFallback && (
+            <div className="flex items-center gap-1 text-xs text-amber-400" title="ElevenLabs TTS unavailable — using browser voice">
+              <span>⚠</span>
+              <span className="hidden sm:inline">Browser voice (TTS error)</span>
             </div>
           )}
           <div className={`text-xs sm:text-sm font-mono tabular-nums ${timeWarning ? 'text-amber-400' : 'text-gray-500'}`}>
