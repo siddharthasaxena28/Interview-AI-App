@@ -523,17 +523,17 @@ function SessionPageInner({ params }: SessionPageProps) {
       }
     }, 8000)
 
-    const persona = PERSONAS[sessionData.session.round_type]
-    const voiceId = genderParam === 'female' && persona.femaleVoiceId
-      ? persona.femaleVoiceId
-      : persona.voiceId
     let ttsSucceeded = false
 
     try {
       const res = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voice_id: voiceId }),
+        body: JSON.stringify({
+          text,
+          round_type: sessionData.session.round_type,
+          gender: genderParam,
+        }),
       })
       if (!res.ok) throw new Error('TTS failed')
 
