@@ -540,6 +540,7 @@ function SessionPageInner({ params }: SessionPageProps) {
         const errBody = await res.json().catch(() => ({ error: 'unknown' })) as { detail?: string; error?: string }
         throw new Error(`TTS ${res.status}: ${errBody.detail ?? errBody.error ?? 'unknown error'}`)
       }
+      console.log(`[TTS] OK — voice=${res.headers.get('X-Voice-Id') ?? 'unknown'} model=${res.headers.get('X-TTS-Model') ?? 'unknown'} round=${sessionData.session.round_type} gender=${genderParam}`)
 
       const audioBlob = await res.blob()
       const audioUrl = URL.createObjectURL(audioBlob)

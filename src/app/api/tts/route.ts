@@ -134,7 +134,7 @@ const MODELS = [
   'eleven_monolingual_v1',
 ]
 
-async function generateSpeech(voiceId: string, text: string, apiKey: string): Promise<Response> {
+async function generateSpeech(voiceId: string, text: string, apiKey: string): Promise<{ response: Response; model: string }> {
   for (const model of MODELS) {
     const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
       method: 'POST',
@@ -152,14 +152,14 @@ async function generateSpeech(voiceId: string, text: string, apiKey: string): Pr
 
     if (res.ok) {
       console.log(`[TTS] OK — model=${model} voice=${voiceId}`)
-      return res
+      return { response: res, model }
     }
 
     // 401 = bad API key, 404 = voice not found — no point trying more models
     if (res.status === 401 || res.status === 404) {
       const body = await res.text()
       console.error(`[TTS] ${res.status} on model=${model} voice=${voiceId}: ${body.slice(0, 200)}`)
-      return res
+      return { response: res, model }
     }
 
     const body = await res.text()
@@ -167,11 +167,12 @@ async function generateSpeech(voiceId: string, text: string, apiKey: string): Pr
   }
 
   // All models exhausted — return the last failure
-  return await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+  const lastRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
     method: 'POST',
     headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
     body: JSON.stringify({ text, model_id: MODELS[0] }),
   })
+  return { response: lastRes, model: MODELS[0] }
 }
 
 export async function POST(request: NextRequest) {
@@ -201,7 +202,7 @@ export async function POST(request: NextRequest) {
       ? await pickVoiceId(apiKey, round_type, gender)
       : (voice_id && voice_id !== 'default' ? voice_id : await pickVoiceId(apiKey, undefined, gender))
 
-    const response = await generateSpeech(voiceIdToUse, text, apiKey)
+    const { response, model: modelUsed } = await generateSpeech(voiceIdToUse, text, apiKey)
 
     if (!response.ok) {
       const body = await response.text()
@@ -221,6 +222,7 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'audio/mpeg',
         'Content-Length': audioBuffer.byteLength.toString(),
         'X-Voice-Id': voiceIdToUse,
+        'X-TTS-Model': modelUsed,
       },
     })
   } catch (error) {
