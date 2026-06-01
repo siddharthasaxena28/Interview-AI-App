@@ -78,6 +78,9 @@ function SessionPageInner({ params }: SessionPageProps) {
   const hasGreetedRef = useRef(false)
   const reconnectAttemptsRef = useRef(0)
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null)
+  // Tracks how many times the interviewer has asked for clarification on the
+  // current question so we don't loop forever on persistent audio issues.
+  const clarificationAttemptsRef = useRef<Record<string, number>>({})
   // Holds a resolve() callback for the currently-playing speakText promise so
   // stopAllAudio() can resolve it immediately from outside the function.
   const cancelSpeakRef = useRef<(() => void) | null>(null)
@@ -632,6 +635,30 @@ function SessionPageInner({ params }: SessionPageProps) {
       })
 
       const data = await res.json()
+
+      // Interviewer couldn't hear/understand — ask the candidate to repeat.
+      // Don't advance the question or save the answer. Cap at 2 attempts per
+      // question so a persistent audio problem doesn't loop indefinitely.
+      if (data.needs_clarification) {
+        const qId = currentQuestion.id
+        const attempts = (clarificationAttemptsRef.current[qId] ?? 0) + 1
+        clarificationAttemptsRef.current[qId] = attempts
+
+        if (attempts <= 2) {
+          const spoken: string = data.spoken_response ?? "Sorry, I didn't catch that — could you say it again?"
+          await speakText(spoken)
+          // Return without advancing — the Deepgram listener will pick up the next utterance.
+          return
+        }
+        // 3rd failure: treat as a graceful skip so the interview continues.
+        // Fall through with the original data but clear needs_clarification so
+        // the rest of the branch logic runs normally.
+        data.needs_clarification = false
+        delete clarificationAttemptsRef.current[qId]
+      } else {
+        // Successful answer — clear any prior clarification count for this question.
+        delete clarificationAttemptsRef.current[currentQuestion.id]
+      }
 
       if (data.next_question && data.questions_remaining > 0) {
         setCurrentQuestion(data.next_question)
