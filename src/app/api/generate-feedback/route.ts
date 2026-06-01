@@ -7,60 +7,76 @@ import { generateShareToken } from '@/lib/utils'
 import type { Question, Answer, FeedbackJSON } from '@/types'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+// Raised from 60 → 120 so cold-start + two parallel Haiku calls never race the wall clock
+export const maxDuration = 120
 
 const client = new Anthropic()
 
-// Max chars per answer in the LLM prompt. 1500 chars ≈ 250 spoken words — generous
-// enough to capture any complete answer, while preventing a single rambling response
-// from bloating the prompt. The score itself is never affected (it was set by
-// evaluate-answer which saw the full transcript in real time).
-const MAX_ANSWER_CHARS = 1500
+// Adaptive answer truncation: scores are already in the DB from evaluate-answer, so
+// we only need enough text for Claude to write specific feedback. Shorter answers =
+// smaller prompts = faster generation. Long interviews get the most aggressive cut.
+function answerMaxChars(questionCount: number): number {
+  if (questionCount >= 15) return 500   // full_loop (~20 q) — be aggressive
+  if (questionCount >= 10) return 750   // medium interview
+  return 1200                           // short interview — keep most detail
+}
 
-const FEEDBACK_SYSTEM_PROMPT = `You are an expert interview coach who provides detailed, specific feedback.
-Analyse the complete interview transcript and generate a structured feedback report.
+// ── System prompts (cached on Anthropic's side via cache_control) ────────────
 
-Return ONLY a valid JSON object with this exact structure:
+const PER_QUESTION_SYSTEM_PROMPT = `You are an expert interview coach providing question-by-question feedback.
+
+The score (1-5) for each answer has ALREADY been computed by a real-time evaluator — do NOT change it.
+Your job: write specific feedback text referencing what the candidate actually said, and for weak answers (scores 1-3) provide a hint showing what a strong answer covers.
+
+Return ONLY a valid JSON array — no wrapper object, just the array:
+[
+  {
+    "question_id": "the exact uuid provided",
+    "score": <copy the pre_scored value unchanged>,
+    "feedback": "2-3 sentences specific to this answer. Reference actual words, concepts, or gaps from what they said. No generic observations.",
+    "ideal_answer_hint": "For scores 1-3 ONLY: 2-3 bullet points starting with • covering key elements a strong answer must include. OMIT this field entirely for scores 4 and 5."
+  }
+]
+
+Rules:
+- Copy each score exactly as provided — never modify it
+- Reference actual phrases or specific things the candidate said (or conspicuously failed to say)
+- For [No answer provided] responses: note the skip gracefully and give brief encouragement
+- Return one entry per question in the exact same order as input
+- Keep feedback concise and actionable`
+
+const OVERALL_SYSTEM_PROMPT = `You are an expert interview coach generating an overall interview performance assessment.
+
+Return ONLY a valid JSON object (no per_question array):
 {
-  "overall_score": <0-100>,
-  "selection_probability": <0-100>,
+  "overall_score": <0-100, weighted average considering depth, accuracy, and communication>,
+  "selection_probability": <0-100, honest realistic estimate of advancing to the next round>,
   "strengths": [
-    {"title": "strength name", "example": "quote from their answer", "advice": "how to leverage this in future interviews"}
+    {"title": "strength name", "example": "quote or specific reference from their answers", "advice": "how to leverage this in future interviews"}
   ],
   "gaps": [
-    {"title": "gap name", "example": "specific instance from answers", "advice": "concrete 1-2 sentence improvement action"}
-  ],
-  "per_question": [
-    {
-      "question_id": "uuid",
-      "score": <1-5>,
-      "feedback": "specific feedback referencing what they actually said",
-      "ideal_answer_hint": "For scores 1-3 only: 2-3 bullet points (use • character) covering what a strong answer must include. Omit this field entirely for scores 4-5."
-    }
+    {"title": "gap name", "example": "specific instance from answers or a key concept they missed", "advice": "concrete 1-2 sentence improvement action"}
   ],
   "communication": {
-    "score": <0-100, overall communication score>,
+    "score": <0-100, overall communication quality>,
     "clarity": <0-100, how clearly ideas were expressed>,
     "clarity_note": "one concise sentence assessment",
-    "pacing": <0-100, appropriate speed and rhythm — 100=perfect pacing>,
+    "pacing": <0-100, appropriate speed and rhythm — 100=perfect>,
     "pacing_note": "one concise sentence assessment",
     "confidence": <0-100, assertiveness and conviction in delivery>,
     "confidence_note": "one concise sentence assessment",
-    "filler_words": <0-100, where 100=no fillers at all, lower=more filler words>,
+    "filler_words": <0-100, where 100=no fillers at all>,
     "filler_note": "one concise sentence assessment"
   },
-  "summary": "2-3 paragraph honest narrative assessment"
+  "summary": "2-3 paragraph honest narrative assessment of the overall interview performance"
 }
 
 Rules:
-- overall_score: weighted average considering depth, accuracy, communication
-- selection_probability: realistic estimate of getting to next round
-- strengths: exactly 3, based on actual things said
-- gaps: exactly 3, specific to what was actually said (or not said)
-- Be specific — reference actual words and phrases used
-- No generic feedback — every point must trace back to something in the transcript
-- Be honest but constructive — this helps candidates improve
-- ideal_answer_hint: only include for per_question scores 1-3; use bullet points starting with •`
+- strengths: exactly 3, grounded in actual things they demonstrated
+- gaps: exactly 3, grounded in what was weak or missing
+- Be honest and constructive — generic praise hurts candidates
+- Use topic performance patterns to identify themes
+- overall_score must reflect true performance, not a confidence boost`
 
 export async function POST(request: NextRequest) {
   try {
@@ -92,8 +108,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 })
     }
 
-    // Dedup: if a report already exists (e.g. from the background pre-generation that
-    // fires in evaluate-answer when the last question is answered), return it immediately.
+    // Dedup: if a report already exists (e.g. from background pre-generation that fires
+    // in evaluate-answer when the last question is answered), return it immediately.
     // If this is a charge request, still deduct — the pre-gen doesn't charge.
     if (existingReport) {
       if (charge === true) {
@@ -133,79 +149,120 @@ export async function POST(request: NextRequest) {
         summary: 'This interview session ended before any questions were answered. No scored feedback can be generated. Start a new session and try to answer at least a few questions to receive a detailed report.',
       }
     } else {
-      // Cap each answer at MAX_ANSWER_CHARS to keep prompt size bounded for long
-      // interviews — a 15-question session with verbose answers can push input tokens
-      // past 6 k, significantly slowing Haiku. 800 chars captures the full substance.
-      const transcript = (questions as Question[]).map((q, i) => {
+      const orderedQuestions = questions as Question[]
+      const qCount = orderedQuestions.length
+      const maxChars = answerMaxChars(qCount)
+
+      // ── Build two separate transcripts ─────────────────────────────────────
+      // Per-question call: full answer text (adaptively truncated) so feedback
+      // is grounded in exactly what the candidate said.
+      const perQTranscript = orderedQuestions.map((q, i) => {
         const answer = answerMap.get(q.id)
         let answerText = answer?.transcript_text ?? '[No answer provided]'
-        if (answerText.length > MAX_ANSWER_CHARS) {
-          answerText = answerText.slice(0, MAX_ANSWER_CHARS) + '… [truncated]'
-        }
-        return `Q${i + 1} [question_id:${q.id}, topic:${q.topic_tag}, difficulty:${q.difficulty}/5]:
-"${q.text}"
-
-Candidate's answer:
-"${answerText}"
-Score given: ${answer?.score ?? 'N/A'}/5
-`
+        if (answerText.length > maxChars) answerText = answerText.slice(0, maxChars) + '… [truncated]'
+        return `Q${i + 1} [question_id:${q.id}, topic:${q.topic_tag}, difficulty:${q.difficulty}/5, pre_scored:${answer?.score ?? 'N/A'}/5]:\n"${q.text}"\nAnswer: "${answerText}"`
       }).join('\n---\n\n')
 
-      const userMessage = `Interview Details:
-Company: ${session.company}
-Role: ${session.role}
-Round: ${session.round_type}
-Experience: ${session.experience_years} years
-Questions asked: ${questions.length}
+      // Overall call: condensed answers (250 chars) — enough for quotes and theme
+      // detection without blowing up the input token count for the second call.
+      const condensedTranscript = orderedQuestions.map((q, i) => {
+        const answer = answerMap.get(q.id)
+        const text = (answer?.transcript_text ?? '[No answer]').slice(0, 250)
+        return `Q${i + 1} [${q.topic_tag}, score:${answer?.score ?? 'N/A'}/5]: "${text}"`
+      }).join('\n')
 
-Complete Interview Transcript:
-${transcript}
+      // Topic performance summary for the overall call
+      const topicMap = new Map<string, number[]>()
+      for (const q of orderedQuestions) {
+        const score = answerMap.get(q.id)?.score
+        if (score != null) {
+          const arr = topicMap.get(q.topic_tag) ?? []
+          arr.push(score)
+          topicMap.set(q.topic_tag, arr)
+        }
+      }
+      const topicSummary = Array.from(topicMap.entries())
+        .map(([tag, scores]) => {
+          const avg = (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)
+          return `${tag}: ${avg}/5 (${scores.length} question${scores.length > 1 ? 's' : ''})`
+        })
+        .join('\n')
 
-Generate a comprehensive feedback report for this candidate.`
+      const avgScore = (
+        orderedQuestions
+          .map(q => answerMap.get(q.id)?.score ?? 0)
+          .reduce((a, b) => a + b, 0) / qCount
+      ).toFixed(1)
 
-      const message = await client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        // 8192 is Haiku's ceiling. A 15-question full_loop with ideal_answer_hints on
-        // every low-scoring answer easily exceeds 4096 output tokens — the old limit
-        // silently truncated the JSON mid-string, causing JSON.parse to throw and the
-        // report to never save, leaving the feedback page polling forever.
-        max_tokens: 8192,
-        system: [
-          {
-            type: 'text',
-            text: FEEDBACK_SYSTEM_PROMPT,
-            cache_control: { type: 'ephemeral' },
-          },
-        ],
-        messages: [{ role: 'user', content: userMessage }],
-      })
+      // ── Two parallel Claude calls — wall-clock ≈ max(A, B) instead of A + B ──
+      const [perQMessage, overallMessage] = await Promise.all([
+        client.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          // Per-question: ~150 tokens × n questions. 4096 is safe up to ~27 questions.
+          max_tokens: 4096,
+          system: [{ type: 'text', text: PER_QUESTION_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+          messages: [{
+            role: 'user',
+            content: `Interview: ${session.company} — ${session.role} (${session.round_type}), ${session.experience_years} yrs experience\nQuestions: ${qCount}\n\n${perQTranscript}\n\nGenerate per-question feedback. Use each pre_scored value unchanged.`,
+          }],
+        }),
+        client.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          // Overall: ~1800 tokens (no per_question array). 2048 has comfortable headroom.
+          max_tokens: 2048,
+          system: [{ type: 'text', text: OVERALL_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+          messages: [{
+            role: 'user',
+            content: `Interview: ${session.company} — ${session.role} (${session.round_type}), ${session.experience_years} yrs experience\nQuestions answered: ${qCount}, Average score: ${avgScore}/5\n\nTopic performance:\n${topicSummary}\n\nInterview highlights:\n${condensedTranscript}\n\nGenerate the overall assessment.`,
+          }],
+        }),
+      ])
 
-      const content = message.content[0]
-      if (content.type !== 'text') throw new Error('Unexpected response type')
+      // ── Parse per-question result ───────────────────────────────────────────
+      const perQContent = perQMessage.content[0]
+      if (perQContent.type !== 'text') throw new Error('Unexpected per-question response type')
 
+      let perQuestionFeedback: FeedbackJSON['per_question'] = []
       try {
-        const jsonMatch = content.text.match(/\{[\s\S]*\}/)
-        feedback = JSON.parse(jsonMatch ? jsonMatch[0] : content.text)
+        const arrMatch = perQContent.text.match(/\[[\s\S]*\]/)
+        perQuestionFeedback = JSON.parse(arrMatch ? arrMatch[0] : perQContent.text)
+        // Re-assign question_ids by position — safety net if Claude echoed IDs incorrectly
+        perQuestionFeedback = perQuestionFeedback.map((pq, i) => ({
+          ...pq,
+          question_id: orderedQuestions[i]?.id ?? pq.question_id,
+        }))
       } catch {
-        // Log the raw output so truncation is visible in Vercel logs
-        console.error('Feedback parse failed. stop_reason:', message.stop_reason, '— output length:', content.text.length)
-        throw new Error('Failed to parse feedback from AI')
+        console.error('Per-question parse failed. stop_reason:', perQMessage.stop_reason, '— output length:', perQContent.text.length)
+        // Fall back: build minimal per-question from DB scores
+        perQuestionFeedback = orderedQuestions.map(q => ({
+          question_id: q.id,
+          score: answerMap.get(q.id)?.score ?? 3,
+          feedback: 'Feedback generation encountered an issue for this question.',
+        }))
       }
 
-      // Haiku hit its token limit before closing the JSON — treat as a parse failure.
-      // This is logged above; increasing max_tokens is the fix.
-      if (message.stop_reason === 'max_tokens') {
-        console.error('Haiku hit max_tokens limit during feedback generation — output truncated')
+      // ── Parse overall result ────────────────────────────────────────────────
+      const overallContent = overallMessage.content[0]
+      if (overallContent.type !== 'text') throw new Error('Unexpected overall response type')
+
+      let overallFeedback: Omit<FeedbackJSON, 'per_question'>
+      try {
+        const objMatch = overallContent.text.match(/\{[\s\S]*\}/)
+        overallFeedback = JSON.parse(objMatch ? objMatch[0] : overallContent.text)
+      } catch {
+        console.error('Overall parse failed. stop_reason:', overallMessage.stop_reason, '— output length:', overallContent.text.length)
+        throw new Error('Failed to parse overall feedback from AI')
       }
 
-      // Re-assign question_id by position — safety net in case Claude echoed the IDs
-      // incorrectly. The transcript is ordered, Claude returns per_question in the same
-      // order, so index 0 in per_question always corresponds to questions[0].
-      const orderedQuestions = questions as Question[]
-      feedback.per_question = feedback.per_question.map((pq, i) => ({
-        ...pq,
-        question_id: orderedQuestions[i]?.id ?? pq.question_id,
-      }))
+      if (overallMessage.stop_reason === 'max_tokens') {
+        console.error('Overall Haiku call hit max_tokens — increase max_tokens if this recurs')
+      }
+
+      // ── Merge both call results into the final feedback object ──────────────
+      feedback = {
+        ...overallFeedback,
+        per_question: perQuestionFeedback,
+      } as FeedbackJSON
     }
 
     const shareToken = generateShareToken()
