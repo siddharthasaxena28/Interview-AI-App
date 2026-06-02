@@ -53,6 +53,10 @@ function SessionPageInner({ params }: SessionPageProps) {
   const [resumeInfo, setResumeInfo] = useState<{ questionIndex: number; currentQuestionId: string } | null>(null)
   const [resumeDismissed, setResumeDismissed] = useState(false)
   const [ttsFallback, setTtsFallback] = useState(false)
+  // Non-fatal in-interview error banner for transient answer evaluation failures
+  const [evalError, setEvalError] = useState<{ msg: string; retry: () => void } | null>(null)
+  // TTS fallback — brief announcement banner (auto-dismisses)
+  const [ttsNotice, setTtsNotice] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -81,6 +85,10 @@ function SessionPageInner({ params }: SessionPageProps) {
   // Tracks how many times the interviewer has asked for clarification on the
   // current question so we don't loop forever on persistent audio issues.
   const clarificationAttemptsRef = useRef<Record<string, number>>({})
+  // Auto-retry tracking for answer evaluation API failures
+  const evalAutoRetriedRef = useRef(false)
+  // Ensures TTS fallback announcement fires only once per session
+  const ttsFallbackAnnouncedRef = useRef(false)
   // Holds a resolve() callback for the currently-playing speakText promise so
   // stopAllAudio() can resolve it immediately from outside the function.
   const cancelSpeakRef = useRef<(() => void) | null>(null)
@@ -359,7 +367,7 @@ function SessionPageInner({ params }: SessionPageProps) {
           // 1000 = normal close, 1001 = going away — don't reconnect
           if (event.code === 1000 || event.code === 1001 || endingRef.current || !isMountedRef.current) return
           if (reconnectAttemptsRef.current >= 3) {
-            if (isMountedRef.current) setError('Connection lost. Please refresh to continue.')
+            if (isMountedRef.current) setError('Speech recognition disconnected. Tap Try Again to reconnect.')
             return
           }
           reconnectAttemptsRef.current++
@@ -582,6 +590,11 @@ function SessionPageInner({ params }: SessionPageProps) {
       // Browser speech as absolute last resort so the interview never goes silent
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         setTtsFallback(true)
+        if (!ttsFallbackAnnouncedRef.current) {
+          ttsFallbackAnnouncedRef.current = true
+          setTtsNotice(true)
+          setTimeout(() => setTtsNotice(false), 4000)
+        }
         // Wait for voices to load (Chrome loads them asynchronously; speak() silently
         // does nothing if called before getVoices() returns a non-empty list)
         if (window.speechSynthesis.getVoices().length === 0) {
@@ -618,6 +631,9 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   const handleAnswerComplete = useCallback(async (transcript: string) => {
     if (!currentQuestion || !sessionData) return
+    // Each new question resets the auto-retry budget.
+    evalAutoRetriedRef.current = false
+    setEvalError(null)
     setProcessing()
     setFinalTranscript('')
     stopAnswerRecording(currentQuestion.id)
@@ -687,7 +703,23 @@ function SessionPageInner({ params }: SessionPageProps) {
         await endInterview()
       }
     } catch {
-      setError('Failed to evaluate answer. Please refresh.')
+      if (!evalAutoRetriedRef.current) {
+        // First failure: retry silently after a brief pause.
+        evalAutoRetriedRef.current = true
+        setTimeout(() => handleAnswerCompleteRef.current(transcript), 1500)
+      } else {
+        // Second failure: show a non-fatal in-interview banner with a manual retry button.
+        // This keeps the session alive — no hard refresh required.
+        setListening()
+        setEvalError({
+          msg: 'Could not submit your answer. Check your connection and try again.',
+          retry: () => {
+            setEvalError(null)
+            evalAutoRetriedRef.current = false
+            handleAnswerCompleteRef.current(transcript)
+          },
+        })
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentQuestion, sessionData, sessionId])
@@ -993,6 +1025,26 @@ function SessionPageInner({ params }: SessionPageProps) {
           )}
         </div>
       </div>
+
+      {/* TTS fallback announcement — auto-dismisses after 4 s */}
+      {ttsNotice && (
+        <div className="px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-center">
+          <span className="text-amber-400 text-xs">⚠ Audio quality reduced — switched to browser voice</span>
+        </div>
+      )}
+
+      {/* Non-fatal answer evaluation error banner */}
+      {evalError && (
+        <div className="px-4 py-2 bg-red-500/10 border-b border-red-500/20 flex items-center justify-center gap-3">
+          <span className="text-red-400 text-xs">{evalError.msg}</span>
+          <button
+            onClick={evalError.retry}
+            className="text-xs bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 px-3 py-1 rounded-lg transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Main area */}
       <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-6 py-5 sm:py-8 gap-6 sm:gap-10 overflow-y-auto">

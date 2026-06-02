@@ -13,7 +13,9 @@ export function CopyReferral({ link }: { link: string }) {
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div>
+      <p className="text-xs text-gray-500 mb-2">You both earn 1 free session when your friend completes their first interview.</p>
+      <div className="flex items-center gap-2">
       <input
         readOnly
         value={link}
@@ -29,6 +31,7 @@ export function CopyReferral({ link }: { link: string }) {
       >
         {copied ? 'Copied!' : 'Copy Link'}
       </button>
+    </div>
     </div>
   )
 }

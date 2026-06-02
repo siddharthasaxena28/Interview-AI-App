@@ -65,7 +65,6 @@ export default async function FeedbackPage({
           <div className="text-center">
             <div className="w-12 h-12 border-2 border-white/10 border-t-indigo-500 rounded-full animate-spin mx-auto mb-4" />
             <p className="text-white font-semibold">Generating your feedback report…</p>
-            <p className="text-sm text-gray-500 mt-1">This takes about 30 seconds</p>
             <FeedbackClient sessionId={sessionId} hasReport={false} />
           </div>
         </div>

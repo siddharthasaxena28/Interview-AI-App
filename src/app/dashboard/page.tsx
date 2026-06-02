@@ -183,6 +183,37 @@ export default async function DashboardPage() {
         {/* Interview countdown (client — reads localStorage) */}
         <InterviewCountdown />
 
+        {/* Zero-credit — earn free sessions section */}
+        {creditBalance === 0 && (
+          <div className="mb-8 bg-indigo-500/5 border border-indigo-500/20 rounded-2xl p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Gift className="w-5 h-5 text-indigo-400 flex-shrink-0" />
+              <h2 className="text-white font-semibold text-sm">Earn free sessions</h2>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-4">
+              {referralLink && (
+                <div className="bg-[#111118] border border-white/[0.06] rounded-xl p-4">
+                  <p className="text-sm font-medium text-white mb-1">Invite a friend</p>
+                  <p className="text-xs text-gray-500 mb-3">You both get 1 free session when they complete their first interview.</p>
+                  <CopyReferral link={referralLink} />
+                </div>
+              )}
+              <div className="bg-[#111118] border border-white/[0.06] rounded-xl p-4 flex flex-col justify-between">
+                <div>
+                  <p className="text-sm font-medium text-white mb-1">Stay sharp for free</p>
+                  <p className="text-xs text-gray-500 mb-3">Practice with Daily Drill — 3 questions, 5 min, no credits needed.</p>
+                </div>
+                <Link
+                  href="/drill"
+                  className="inline-flex items-center gap-1.5 text-xs bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 px-3 py-1.5 rounded-lg font-medium transition-colors w-fit"
+                >
+                  <Zap className="w-3 h-3" /> Start Drill
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Daily Drill CTA */}
         <div className="bg-[#111118] border border-white/[0.06] hover:border-white/[0.12] rounded-2xl p-4 mb-8 flex items-center justify-between gap-4 transition-all duration-200">
           <div className="flex items-center gap-3">
