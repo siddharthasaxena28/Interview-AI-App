@@ -700,6 +700,12 @@ function SessionPageInner({ params }: SessionPageProps) {
 
         await speakText(ackText)
       } else {
+        // Speak a closing line before navigating away so the interview doesn't
+        // cut off mid-conversation. startListening=false — no mic needed after this.
+        const closing = data.spoken_response
+          ? `${data.spoken_response}... That wraps up our interview. Thank you for your time — your feedback report will be ready in just a moment.`
+          : `That wraps up our interview. Thank you for your time — your feedback report will be ready in just a moment.`
+        await speakText(closing, false)
         await endInterview()
       }
     } catch {
@@ -1007,7 +1013,7 @@ function SessionPageInner({ params }: SessionPageProps) {
           {ttsFallback && (
             <div className="flex items-center gap-1 text-xs text-amber-400" title="ElevenLabs TTS unavailable — using browser voice">
               <span>⚠</span>
-              <span className="hidden sm:inline">Browser voice (TTS error)</span>
+              <span>Browser voice</span>
             </div>
           )}
           <div className={`text-xs sm:text-sm font-mono tabular-nums ${timeWarning ? 'text-amber-400' : 'text-gray-500'}`}>
