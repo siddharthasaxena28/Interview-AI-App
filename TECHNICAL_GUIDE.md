@@ -379,10 +379,28 @@ CRON_SECRET                       # Random secret to authenticate /api/cron/nudg
 2. Interviewer intro text → `POST /api/tts` → ElevenLabs audio plays
 3. `GET /api/deepgram-token` → browser opens Deepgram WebSocket
 4. User speaks → transcript streams in real-time
-5. Silence detected → transcript sent to `POST /api/evaluate-answer` → Claude returns score + next action (probe / advance / end)
+5. Silence detected → transcript sent to `POST /api/evaluate-answer` → Claude returns score + next action
 6. Next question text → `POST /api/tts` → audio plays → loop
-7. All questions done → `POST /api/end-session` → feedback generated async via `waitUntil`
+7. All questions done → `POST /api/end-session` → feedback kicked off async via `waitUntil`
 8. User redirected to `/interview/feedback/[sessionId]` → polls until report ready
+
+### Answer Evaluation Decision Tree (`src/app/api/evaluate-answer/route.ts`)
+
+Claude evaluates each answer and returns one of three mutually exclusive actions (priority order):
+
+```
+1. candidate_wants_to_skip  — explicit or implicit skip signal ("pass", "I don't know",
+                               trailing off with no attempt) → graceful skip, move to next question
+2. needs_clarification      — transcript too short/garbled without skip intent ("I think", "uh uh uh",
+                               cut-off mid-sentence) → ask candidate to repeat, DO NOT save answer or
+                               mark question asked. Capped at 2 clarification attempts per question;
+                               3rd failure falls through as a graceful skip.
+3. probe                    — answer is vague/shallow but shows some attempt → insert follow-up
+                               question into DB and route it next (no extra LLM call)
+4. advance                  — answer is sufficient → move to next question with adaptive difficulty
+```
+
+When `needs_clarification` is true the API skips all DB writes (answer not saved, question stays `asked: false`) and returns the same question as `next_question`. The client (`session/[sessionId]/page.tsx`) tracks per-question clarification attempts in `clarificationAttemptsRef`.
 
 ### Audio State Machine (`src/hooks/useAudioStateMachine.ts`)
 ```
@@ -390,17 +408,42 @@ IDLE → AI_SPEAKING → LISTENING → USER_SPEAKING → PROCESSING → IDLE
 ```
 Guards prevent simultaneous TTS playback and microphone recording.
 
+### Error Recovery in Session Page
+The session page distinguishes fatal vs. recoverable errors:
+
+| Error | Behaviour |
+|---|---|
+| Deepgram disconnects after 3 auto-reconnect attempts | Shows "Try Again" button that resets `deepgramRetry` counter and re-runs `setupDeepgram` — no page refresh |
+| Answer evaluation API failure (transient network) | Auto-retries once silently; on second failure shows an inline red banner with a Retry button — session state preserved, no page refresh |
+| No credits | Full-screen error with "View Pricing" button |
+
 ### TTS Voice Selection (`src/app/api/tts/route.ts`)
-- Reads voice ID directly from env var (`ELEVENLABS_VOICE_*`) — no account lookup
-- Falls back to browser `window.speechSynthesis` if ElevenLabs returns any error
+- Reads voice ID directly from env var (`ELEVENLABS_VOICE_*`) — no account lookup at runtime
+- On any ElevenLabs error: falls back to browser `window.speechSynthesis`
+- When fallback first activates: a brief amber banner fires for 4 s ("Audio quality reduced — switched to browser voice"); a persistent amber badge stays in the header for the rest of the session
 - **ElevenLabs free tier cannot use Voice Library voices via API** — Starter plan ($5/mo) minimum required
+- Model tried in order: `eleven_flash_v2_5` → `eleven_flash_v2` → `eleven_turbo_v2_5` → `eleven_turbo_v2` → `eleven_multilingual_v2` → `eleven_monolingual_v1`. Any 4xx short-circuits immediately (no point trying other models).
+
+### Feedback Report Generation (`src/app/api/generate-feedback/route.ts`)
+Two parallel Claude Haiku calls via `Promise.all()` — total wall-clock time ~8 s for a full_loop interview (was 25 s with a single call):
+
+| Call | max_tokens | Input | Output |
+|---|---|---|---|
+| Per-question | 4096 | Full transcripts (adaptively truncated: 500 chars/answer for ≥15 questions, 750 for ≥10, 1200 for shorter) + pre-scored scores from DB | JSON array of per-question feedback text |
+| Overall | 2048 | Condensed 250-char/answer transcript + topic performance summary | overall_score, selection_probability, strengths, gaps, communication |
+
+Scores are **not** re-computed in this call — they come from the real-time `evaluate-answer` scores already stored in the DB. Claude only writes feedback text. `maxDuration` is set to 120 s. Both system prompts use `cache_control: { type: 'ephemeral' }` for prompt caching.
+
+Feedback loading state: `FeedbackClient.tsx` polls every 3 s (`router.refresh()`), shows cycling step messages ("Reviewing your answers… → Scoring each question… → Identifying strengths and gaps… → Building your report… → Almost ready…"), and times out after 60 s with a retry option.
 
 ### Credit System
 - 1 free credit on signup (enforced by `phone_claims` table — 1 per phone number)
 - 1 credit deducted per completed interview session
-- Referral bonus: both referrer and referee get credits when referee completes first interview
+- Referral bonus: both referrer and referee get +1 credit when referee completes their first interview
 - `credit_transactions` table is the ledger; `users.credit_balance` is the running total
 - Top-up via Razorpay → `/api/verify-payment` → atomic credit update
+- **Zero-credit UX:** dashboard shows an "Earn free sessions" card (inline referral link + drill shortcut) instead of a bare "Buy Credits" wall
+- **Last-credit warning:** setup page shows an amber notice when `creditBalance === 1`
 
 ### Feedback Report Structure (7 sections, generated by Claude)
 1. Overall score (0–100) + selection probability label
@@ -408,7 +451,7 @@ Guards prevent simultaneous TTS playback and microphone recording.
 3. Top 3 gaps — title, example from transcript, improvement advice
 4. Communication quality — clarity, pacing, confidence, filler word count
 5. Topic performance — scores per topic_tag
-6. Per-question breakdown — score + feedback + ideal answer hint
+6. Per-question breakdown — score + feedback + ideal answer hint (hint omitted for scores 4–5)
 7. Next steps — personalised study plan
 
 ### Interviewer Personas (`src/lib/personas.ts`)
