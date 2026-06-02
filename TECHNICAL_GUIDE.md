@@ -381,8 +381,9 @@ CRON_SECRET                       # Random secret to authenticate /api/cron/nudg
 4. User speaks → transcript streams in real-time
 5. Silence detected → transcript sent to `POST /api/evaluate-answer` → Claude returns score + next action
 6. Next question text → `POST /api/tts` → audio plays → loop
-7. All questions done → `POST /api/end-session` → feedback kicked off async via `waitUntil`
-8. User redirected to `/interview/feedback/[sessionId]` → polls until report ready
+7. All questions done → interviewer speaks a closing statement ("That wraps up our interview. Thank you for your time…") using `speakText(closing, false)` — `false` prevents returning to LISTENING after the audio ends
+8. `POST /api/end-session` → feedback kicked off async via `waitUntil` → navigate to feedback page
+9. Feedback page polls every 3 s until report is ready
 
 ### Answer Evaluation Decision Tree (`src/app/api/evaluate-answer/route.ts`)
 
@@ -420,7 +421,7 @@ The session page distinguishes fatal vs. recoverable errors:
 ### TTS Voice Selection (`src/app/api/tts/route.ts`)
 - Reads voice ID directly from env var (`ELEVENLABS_VOICE_*`) — no account lookup at runtime
 - On any ElevenLabs error: falls back to browser `window.speechSynthesis`
-- When fallback first activates: a brief amber banner fires for 4 s ("Audio quality reduced — switched to browser voice"); a persistent amber badge stays in the header for the rest of the session
+- When fallback first activates: a brief amber banner fires for 4 s ("Audio quality reduced — switched to browser voice"); a persistent amber "⚠ Browser voice" badge stays in the header for the rest of the session — visible on all screen sizes including mobile
 - **ElevenLabs free tier cannot use Voice Library voices via API** — Starter plan ($5/mo) minimum required
 - Model tried in order: `eleven_flash_v2_5` → `eleven_flash_v2` → `eleven_turbo_v2_5` → `eleven_turbo_v2` → `eleven_multilingual_v2` → `eleven_monolingual_v1`. Any 4xx short-circuits immediately (no point trying other models).
 
