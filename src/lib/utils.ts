@@ -33,3 +33,7 @@ export function getProbabilityLabel(prob: number): string {
 export function generateShareToken(): string {
   return crypto.randomUUID()
 }
+
+export function normalizeTopic(tag: string): string {
+  return tag.toLowerCase().replace(/[\s-]+/g, '_')
+}

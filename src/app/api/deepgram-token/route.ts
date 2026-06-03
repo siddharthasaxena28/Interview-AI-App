@@ -69,12 +69,10 @@ export async function GET() {
       console.error('Deepgram key creation failed status=%s body=%s', res.status, errBody)
 
       // 403 means the master key lacks keys:write permission.
-      // Fall back to the master key so interviews aren't broken, but warn loudly.
-      // To fix properly: create a Deepgram API key with the "Member" or "Admin" role
-      // so it can issue short-lived keys.
+      // Do NOT fall back to the master key — it has full account access.
+      // Fix: create a Deepgram API key with the "Member" or "Admin" role in the dashboard.
       if (res.status === 403) {
-        console.warn('Deepgram key lacks keys:write — using master key as fallback. Rotate to a Member/Admin key to fix this.')
-        return NextResponse.json({ key: apiKey })
+        console.error('Deepgram key lacks keys:write — create a Member/Admin API key in the Deepgram dashboard.')
       }
     } catch (err) {
       console.warn('Deepgram temp key error:', err)

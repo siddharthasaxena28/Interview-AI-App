@@ -83,17 +83,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Payment verification failed' }, { status: 500 })
     }
 
-    // First time for this payment — grant the credits.
-    const { data: userData } = await svc
-      .from('users')
-      .select('credit_balance')
-      .eq('id', user.id)
-      .single()
-
-    await svc
-      .from('users')
-      .update({ credit_balance: (userData?.credit_balance ?? 0) + credits, plan: 'payg' })
-      .eq('id', user.id)
+    // First time for this payment — grant the credits atomically.
+    await svc.rpc('increment_user_credits', { p_user_id: user.id, p_amount: credits })
+    await svc.from('users').update({ plan: 'payg' }).eq('id', user.id)
 
     return NextResponse.json({ success: true, credits_granted: credits })
   } catch (error) {

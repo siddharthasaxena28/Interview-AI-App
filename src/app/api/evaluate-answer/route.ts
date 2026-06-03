@@ -170,7 +170,8 @@ Candidate's answer:
       const jsonMatch = content.text.match(/\{[\s\S]*\}/)
       evaluation = JSON.parse(jsonMatch ? jsonMatch[0] : content.text)
     } catch {
-      evaluation = { score: 3, spoken_response: '', probe: false, probe_question: '', candidate_wants_to_skip: false }
+      console.error('[evaluate-answer] Failed to parse Claude response:', content.text.slice(0, 200))
+      return NextResponse.json({ error: 'Failed to parse evaluation response' }, { status: 502 })
     }
 
     // Safety net: never probe a candidate who wants to skip regardless of what the model returned.

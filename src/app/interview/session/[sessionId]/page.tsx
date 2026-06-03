@@ -53,6 +53,7 @@ function SessionPageInner({ params }: SessionPageProps) {
   const [resumeInfo, setResumeInfo] = useState<{ questionIndex: number; currentQuestionId: string } | null>(null)
   const [resumeDismissed, setResumeDismissed] = useState(false)
   const [ttsFallback, setTtsFallback] = useState(false)
+  const [evalError, setEvalError] = useState<{ msg: string; retry: () => void } | null>(null)
 
   const wsRef = useRef<WebSocket | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -90,6 +91,7 @@ function SessionPageInner({ params }: SessionPageProps) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const recordedChunksRef = useRef<Blob[]>([])
   const recordingQuestionIdRef = useRef<string | null>(null)
+  const evalAutoRetriedRef = useRef(false)
 
   // Keep isMountedRef true for the lifetime of this mount. Without this dedicated
   // effect the ref stays false after any remount (StrictMode or client-side
@@ -614,6 +616,8 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   const handleAnswerComplete = useCallback(async (transcript: string) => {
     if (!currentQuestion || !sessionData) return
+    evalAutoRetriedRef.current = false
+    setEvalError(null)
     setProcessing()
     setFinalTranscript('')
     stopAnswerRecording(currentQuestion.id)
@@ -659,7 +663,24 @@ function SessionPageInner({ params }: SessionPageProps) {
         await endInterview()
       }
     } catch {
-      setError('Failed to evaluate answer. Please refresh.')
+      if (!evalAutoRetriedRef.current) {
+        // First failure: retry silently after a brief pause.
+        evalAutoRetriedRef.current = true
+        setTimeout(() => handleAnswerCompleteRef.current(transcript), 1500)
+      } else {
+        // Second failure: show a non-fatal in-interview banner with a manual retry button.
+        // This keeps the session alive — no hard refresh required.
+        isProcessingRef.current = false
+        setListening()
+        setEvalError({
+          msg: 'Could not submit your answer. Check your connection and try again.',
+          retry: () => {
+            setEvalError(null)
+            evalAutoRetriedRef.current = false
+            handleAnswerCompleteRef.current(transcript)
+          },
+        })
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentQuestion, sessionData, sessionId])
@@ -965,6 +986,19 @@ function SessionPageInner({ params }: SessionPageProps) {
           )}
         </div>
       </div>
+
+      {/* Non-fatal answer evaluation error banner */}
+      {evalError && (
+        <div className="px-4 py-2 bg-red-500/10 border-b border-red-500/20 flex items-center justify-center gap-3">
+          <span className="text-red-400 text-xs">{evalError.msg}</span>
+          <button
+            onClick={evalError.retry}
+            className="text-xs bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 px-3 py-1 rounded-lg transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Main area */}
       <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-6 py-5 sm:py-8 gap-6 sm:gap-10 overflow-y-auto">

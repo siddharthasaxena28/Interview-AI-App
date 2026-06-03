@@ -49,16 +49,8 @@ export async function POST(request: NextRequest) {
         })
 
         if (!txnError) {
-          const { data: userData } = await supabase
-            .from('users')
-            .select('credit_balance')
-            .eq('id', userId)
-            .single()
-
-          await supabase
-            .from('users')
-            .update({ credit_balance: (userData?.credit_balance ?? 0) + credits, plan: 'payg' })
-            .eq('id', userId)
+          await supabase.rpc('increment_user_credits', { p_user_id: userId, p_amount: credits })
+          await supabase.from('users').update({ plan: 'payg' }).eq('id', userId)
         } else if (txnError.code !== '23505') {
           console.error('webhook payment.captured txn error:', txnError)
         }

@@ -79,7 +79,7 @@ ${transcript}`
     const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
       { role: 'user', content: contextBlock },
       { role: 'assistant', content: 'Got it — I\'ve reviewed the interview. What would you like to explore?' },
-      ...(history ?? []).slice(-6),
+      ...(Array.isArray(history) ? history : []).slice(-6),
       { role: 'user', content: message },
     ]
 

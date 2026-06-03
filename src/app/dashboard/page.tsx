@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { normalizeTopic } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 import { Mic, Plus, Clock, TrendingUp, CreditCard, Flame, Target, Gift, ArrowRight, Zap } from 'lucide-react'
@@ -35,7 +36,7 @@ const TOPIC_ROUND_MAP: Record<string, RoundType> = {
 }
 
 function topicToRoundType(topic: string): RoundType {
-  const key = topic.toLowerCase().replace(/[\s-]+/g, '_')
+  const key = normalizeTopic(topic)
   return TOPIC_ROUND_MAP[key] ?? 'tech_l1'
 }
 
@@ -95,7 +96,7 @@ export default async function DashboardPage() {
   const chartData = sessionsWithReports
     .slice(-8)
     .map((s: InterviewSession) => ({
-      score: (reportMap.get(s.id) as { overall_score: number }).overall_score,
+      score: (reportMap.get(s.id) as { overall_score: number | null })?.overall_score ?? 0,
       label: s.ended_at
         ? new Date(s.ended_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
         : '',
@@ -103,7 +104,7 @@ export default async function DashboardPage() {
 
   // Progress comparison: earliest-3 avg vs latest-3 avg.
   // Requires >= 6 reports so the two windows never overlap.
-  const scoreOf = (s: InterviewSession) => (reportMap.get(s.id) as { overall_score: number }).overall_score
+  const scoreOf = (s: InterviewSession) => (reportMap.get(s.id) as { overall_score: number | null })?.overall_score ?? 0
   let progressDelta: number | null = null
   if (sessionsWithReports.length >= 6) {
     const first3 = sessionsWithReports.slice(0, 3)

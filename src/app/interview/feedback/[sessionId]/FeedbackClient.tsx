@@ -29,6 +29,7 @@ export default function FeedbackClient({
       })
       return
     }
+    if (timedOut) return
 
     // Trigger generation immediately. The session page already fired it as a head
     // start, but the route dedups (returns the existing report), so this is safe and
@@ -61,7 +62,7 @@ export default function FeedbackClient({
       clearInterval(pollInterval)
       clearTimeout(giveUpTimer)
     }
-  }, [hasReport, sessionId, overallScore, selectionProbability, analytics, router])
+  }, [hasReport, timedOut, sessionId, overallScore, selectionProbability, analytics, router])
 
   if (!hasReport && timedOut) {
     return (
