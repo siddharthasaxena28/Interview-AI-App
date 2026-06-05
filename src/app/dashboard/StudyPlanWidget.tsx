@@ -22,9 +22,9 @@ interface StoredPlan {
 const ROUND_COLORS: Record<string, string> = {
   tech_l1: 'bg-indigo-50 text-indigo-600 border border-indigo-200',
   tech_l2: 'bg-violet-50 text-violet-600 border border-violet-200',
-  managerial: 'bg-blue-500/10 text-blue-400 border border-blue-500/20',
+  managerial: 'bg-blue-50 text-blue-600 border border-blue-200',
   hr: 'bg-emerald-50 text-emerald-600 border border-emerald-200',
-  full_loop: 'bg-orange-500/10 text-orange-400 border border-orange-500/20',
+  full_loop: 'bg-orange-50 text-orange-600 border border-orange-200',
   drill: 'bg-gray-100 text-gray-600 border border-gray-200',
 }
 
@@ -119,7 +119,7 @@ export default function StudyPlanWidget() {
                   type="date"
                   value={interviewDate}
                   onChange={e => setInterviewDate(e.target.value)}
-                  className="text-sm bg-slate-50 border border-gray-200 text-gray-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 focus:border-indigo-500/50"
+                  className="text-sm bg-slate-50 border border-gray-200 text-gray-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-500/50"
                   placeholder="Interview date (optional)"
                   min={new Date().toISOString().split('T')[0]}
                 />

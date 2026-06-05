@@ -105,7 +105,7 @@ export default function LoginPage() {
             className="bg-gray-100 hover:bg-gray-100 border border-gray-200 text-gray-900 rounded-xl px-6 py-3 w-full flex items-center justify-center gap-3 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? (
-              <div className="w-4 h-4 border-2 border-white/20 border-t-indigo-400 rounded-full animate-spin" />
+              <div className="w-4 h-4 border-2 border-gray-200 border-t-indigo-600 rounded-full animate-spin" />
             ) : (
               <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />

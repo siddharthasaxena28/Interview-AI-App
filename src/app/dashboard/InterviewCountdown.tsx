@@ -62,7 +62,7 @@ export default function InterviewCountdown() {
             value={inputDate}
             min={todayStr}
             onChange={(e) => setInputDate(e.target.value)}
-            className="flex-1 bg-slate-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 focus:border-indigo-500/50"
+            className="flex-1 bg-slate-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-500/50"
           />
           <button
             onClick={save}

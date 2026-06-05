@@ -21,27 +21,27 @@ const ROUND_LABELS: Record<RoundType, string> = {
 }
 
 const ROUND_COLORS: Record<RoundType, string> = {
-  tech_l1: 'bg-blue-500/10 text-blue-400 border border-blue-500/20',
-  tech_l2: 'bg-purple-500/10 text-purple-400 border border-purple-500/20',
-  managerial: 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20',
-  hr: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20',
-  full_loop: 'bg-white/5 text-gray-400 border border-white/10',
+  tech_l1: 'bg-blue-50 text-blue-600 border border-blue-200',
+  tech_l2: 'bg-purple-50 text-purple-600 border border-purple-200',
+  managerial: 'bg-indigo-50 text-indigo-600 border border-indigo-200',
+  hr: 'bg-emerald-50 text-emerald-600 border border-emerald-200',
+  full_loop: 'bg-gray-100 text-gray-600 border border-gray-200',
 }
 
 const SCORE_LABEL = ['', 'Needs Work', 'Below Par', 'Developing', 'Good', 'Excellent'] as const
 
 const scoreBg = (s: number) =>
-  s >= 4 ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
-  : s === 3 ? 'bg-amber-500/10 border border-amber-500/30 text-amber-400'
-  : 'bg-red-500/10 border border-red-500/30 text-red-400'
+  s >= 4 ? 'bg-emerald-50 border border-emerald-200 text-emerald-600'
+  : s === 3 ? 'bg-amber-50 border border-amber-200 text-amber-600'
+  : 'bg-red-50 border border-red-200 text-red-600'
 
 const scoreRing = (s: number) =>
-  s >= 4 ? 'ring-4 ring-emerald-500/30'
-  : s === 3 ? 'ring-4 ring-amber-500/30'
-  : 'ring-4 ring-red-500/30'
+  s >= 4 ? 'ring-4 ring-emerald-200'
+  : s === 3 ? 'ring-4 ring-amber-200'
+  : 'ring-4 ring-red-200'
 
 const scoreText = (s: number) =>
-  s >= 4 ? 'text-emerald-400' : s === 3 ? 'text-amber-400' : 'text-red-400'
+  s >= 4 ? 'text-emerald-600' : s === 3 ? 'text-amber-600' : 'text-red-600'
 
 interface DrillResult {
   question: DrillQuestion
@@ -211,21 +211,21 @@ export default function DrillPage() {
   const currentQ = questions[qIndex]
   const currentResult = results[qIndex]
 
-  const timerColor = elapsed >= 270 ? 'text-red-400' : elapsed >= 240 ? 'text-amber-400' : 'text-gray-500'
+  const timerColor = elapsed >= 270 ? 'text-red-600' : elapsed >= 240 ? 'text-amber-600' : 'text-gray-500'
 
   return (
-    <div className="bg-[#0a0a0f] min-h-screen">
+    <div className="bg-slate-50 min-h-screen">
       {/* Nav */}
-      <nav className="border-b border-white/[0.06] px-6 py-4 bg-[#0a0a0f]/80 backdrop-blur-md sticky top-0 z-50">
+      <nav className="border-b border-gray-200 px-6 py-4 bg-white/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <Link href="/dashboard" className="flex items-center gap-2">
             <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center">
               <Zap className="w-3.5 h-3.5 text-white" />
             </div>
-            <span className="font-bold text-white">Daily Drill</span>
-            <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-medium">Free</span>
+            <span className="font-bold text-gray-900">Daily Drill</span>
+            <span className="text-xs bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-0.5 rounded-full font-medium">Free</span>
           </Link>
-          <Link href="/dashboard" className="text-sm text-gray-500 hover:text-gray-300 transition-colors">← Dashboard</Link>
+          <Link href="/dashboard" className="text-sm text-gray-500 hover:text-gray-700 transition-colors">← Dashboard</Link>
         </div>
       </nav>
 
@@ -233,30 +233,30 @@ export default function DrillPage() {
 
         {/* ── INTRO ── */}
         {phase === 'intro' && (
-          <div className="bg-[#111118] border border-white/[0.06] rounded-2xl p-8 text-center">
-            <div className="w-16 h-16 bg-indigo-600/20 border border-indigo-500/30 rounded-2xl flex items-center justify-center mx-auto mb-5">
-              <Zap className="w-8 h-8 text-indigo-400" />
+          <div className="bg-white border border-gray-200 rounded-2xl p-8 text-center shadow-sm">
+            <div className="w-16 h-16 bg-indigo-100 border border-indigo-300 rounded-2xl flex items-center justify-center mx-auto mb-5">
+              <Zap className="w-8 h-8 text-indigo-600" />
             </div>
-            <h1 className="text-3xl font-bold text-white mb-3">Daily Drill</h1>
+            <h1 className="text-3xl font-bold text-gray-900 mb-3">Daily Drill</h1>
 
             <div className="flex flex-wrap items-center justify-center gap-2 mb-5">
-              <span className="text-xs bg-white/5 border border-white/10 text-gray-400 px-3 py-1 rounded-full">3 questions</span>
-              <span className="text-xs bg-white/5 border border-white/10 text-gray-400 px-3 py-1 rounded-full">~5 minutes</span>
-              <span className="text-xs bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-3 py-1 rounded-full font-medium">Free — no credits</span>
+              <span className="text-xs bg-gray-100 border border-gray-200 text-gray-600 px-3 py-1 rounded-full">3 questions</span>
+              <span className="text-xs bg-gray-100 border border-gray-200 text-gray-600 px-3 py-1 rounded-full">~5 minutes</span>
+              <span className="text-xs bg-emerald-50 border border-emerald-200 text-emerald-600 px-3 py-1 rounded-full font-medium">Free — no credits</span>
             </div>
 
             {loadingQuestions ? (
-              <div className="flex items-center justify-center gap-2 text-xs text-gray-600 mb-5">
-                <div className="w-3 h-3 border border-indigo-500/40 border-t-indigo-500 rounded-full animate-spin" />
+              <div className="flex items-center justify-center gap-2 text-xs text-gray-400 mb-5">
+                <div className="w-3 h-3 border border-indigo-300 border-t-indigo-500 rounded-full animate-spin" />
                 Personalising questions for you…
               </div>
             ) : personalized && personalizationCtx ? (
-              <p className="text-xs mb-5 flex items-center justify-center gap-1.5 text-indigo-400">
+              <p className="text-xs mb-5 flex items-center justify-center gap-1.5 text-indigo-600">
                 <Sparkles className="w-3 h-3" />
                 Tailored for <span className="font-semibold">{personalizationCtx.role}</span> at <span className="font-semibold">{personalizationCtx.company}</span>
               </p>
             ) : (
-              <p className="text-xs text-gray-600 mb-5 flex items-center justify-center gap-1.5">
+              <p className="text-xs text-gray-400 mb-5 flex items-center justify-center gap-1.5">
                 <Sparkles className="w-3 h-3 text-indigo-500" />
                 Complete your first mock interview to get questions personalised to your role and weak areas.
               </p>
@@ -271,7 +271,7 @@ export default function DrillPage() {
                   className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
                     filter === f.value
                       ? 'bg-indigo-600 text-white border-indigo-600'
-                      : 'bg-white/5 text-gray-400 border-white/10 hover:border-white/20 hover:text-gray-300'
+                      : 'bg-gray-100 text-gray-600 border-gray-200 hover:border-gray-300 hover:text-gray-900'
                   }`}
                 >
                   {f.label}
@@ -280,15 +280,15 @@ export default function DrillPage() {
             </div>
 
             {/* Checklist */}
-            <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4 mb-6 text-left space-y-2">
-              <div className="flex items-center gap-2 text-sm text-gray-400">
-                <CheckCircle className="w-4 h-4 text-indigo-400 flex-shrink-0" /> Speak or type your answer
+            <div className="bg-slate-50 border border-gray-200 rounded-xl p-4 mb-6 text-left space-y-2">
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <CheckCircle className="w-4 h-4 text-indigo-600 flex-shrink-0" /> Speak or type your answer
               </div>
-              <div className="flex items-center gap-2 text-sm text-gray-400">
-                <CheckCircle className="w-4 h-4 text-indigo-400 flex-shrink-0" /> Instant AI evaluation after each answer
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <CheckCircle className="w-4 h-4 text-indigo-600 flex-shrink-0" /> Instant AI evaluation after each answer
               </div>
-              <div className="flex items-center gap-2 text-sm text-gray-400">
-                <CheckCircle className="w-4 h-4 text-indigo-400 flex-shrink-0" /> No interview credit needed — unlimited daily practice
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <CheckCircle className="w-4 h-4 text-indigo-600 flex-shrink-0" /> No interview credit needed — unlimited daily practice
               </div>
             </div>
 
@@ -308,7 +308,7 @@ export default function DrillPage() {
         {phase === 'answering' && currentQ && (
           <div className="space-y-4">
             {/* Top progress bar */}
-            <div className="w-full bg-white/[0.06] rounded-full h-1">
+            <div className="w-full bg-gray-200 rounded-full h-1">
               <div
                 className="bg-indigo-600 h-1 rounded-full transition-all"
                 style={{ width: `${((qIndex) / questions.length) * 100}%` }}
@@ -317,7 +317,7 @@ export default function DrillPage() {
 
             {/* Counter + timer row */}
             <div className="flex items-center justify-between">
-              <span className="text-xs bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-3 py-1 rounded-full font-semibold">
+              <span className="text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 px-3 py-1 rounded-full font-semibold">
                 Q{qIndex + 1} / {questions.length}
               </span>
               <span className={`flex items-center gap-1.5 text-sm font-mono tabular-nums ${timerColor}`}>
@@ -326,34 +326,34 @@ export default function DrillPage() {
             </div>
 
             {/* Question card */}
-            <div className="bg-[#111118] border border-white/[0.06] rounded-2xl p-6">
+            <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
               <div className="flex items-center gap-2 mb-4 flex-wrap">
                 <span className={`text-xs font-medium px-2.5 py-0.5 rounded-full ${ROUND_COLORS[currentQ.roundType]}`}>
                   {ROUND_LABELS[currentQ.roundType]}
                 </span>
-                <span className="text-xs text-gray-600 capitalize">{currentQ.topicTag.replace(/_/g, ' ')}</span>
-                <span className="text-xs text-gray-600">Diff {currentQ.difficulty}/5</span>
+                <span className="text-xs text-gray-400 capitalize">{currentQ.topicTag.replace(/_/g, ' ')}</span>
+                <span className="text-xs text-gray-400">Diff {currentQ.difficulty}/5</span>
               </div>
-              <p className="text-white font-medium leading-relaxed text-xl">{currentQ.text}</p>
+              <p className="text-gray-900 font-medium leading-relaxed text-xl">{currentQ.text}</p>
             </div>
 
             {/* Answer input */}
-            <div className="bg-[#111118] border border-white/[0.06] rounded-2xl p-4 space-y-3">
+            <div className="bg-white border border-gray-200 rounded-2xl p-4 space-y-3 shadow-sm">
               <textarea
                 value={transcript}
                 onChange={e => setTranscript(e.target.value)}
                 placeholder="Type your answer here, or click the mic to speak…"
                 rows={5}
-                className="w-full bg-transparent text-sm text-gray-200 placeholder:text-gray-600 resize-none outline-none leading-relaxed"
+                className="w-full bg-transparent text-sm text-gray-900 placeholder:text-gray-400 resize-none outline-none leading-relaxed"
               />
-              <div className="flex items-center justify-between pt-3 border-t border-white/[0.06]">
+              <div className="flex items-center justify-between pt-3 border-t border-gray-200">
                 {/* Mic button */}
                 <button
                   onClick={toggleMic}
                   className={`relative flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-xl transition-all ${
                     listening
                       ? 'bg-red-500 text-white shadow-lg shadow-red-500/25'
-                      : 'bg-white/[0.06] text-gray-300 border border-white/10 hover:bg-white/10'
+                      : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200'
                   }`}
                 >
                   {listening && (
@@ -379,7 +379,7 @@ export default function DrillPage() {
 
             <button
               onClick={() => { stopListening(); nextQuestion() }}
-              className="w-full text-sm text-gray-600 hover:text-gray-400 py-2 transition-colors"
+              className="w-full text-sm text-gray-400 hover:text-gray-600 py-2 transition-colors"
             >
               Skip this question →
             </button>
@@ -389,7 +389,7 @@ export default function DrillPage() {
         {/* ── SCORED ── */}
         {phase === 'scored' && currentResult && (
           <div className="space-y-4">
-            <div className="bg-[#111118] border border-white/[0.06] rounded-2xl p-6 space-y-5">
+            <div className="bg-white border border-gray-200 rounded-2xl p-6 space-y-5 shadow-sm">
               <p className="text-sm text-gray-500 italic">&ldquo;{currentResult.question.text}&rdquo;</p>
 
               {/* Score display */}
@@ -402,27 +402,27 @@ export default function DrillPage() {
                   <div className={`font-semibold text-lg ${scoreText(currentResult.score)}`}>
                     {SCORE_LABEL[currentResult.score]}
                   </div>
-                  <p className="text-sm text-gray-300 mt-0.5">{currentResult.one_line}</p>
+                  <p className="text-sm text-gray-700 mt-0.5">{currentResult.one_line}</p>
                 </div>
               </div>
 
               {/* Missing key point */}
               {currentResult.missing && (
-                <div className="bg-indigo-500/5 border border-indigo-500/20 rounded-xl p-4">
-                  <span className="text-xs font-semibold text-indigo-400 uppercase tracking-wide">Key point you missed</span>
-                  <p className="text-sm text-gray-300 mt-1.5 leading-relaxed">{currentResult.missing}</p>
+                <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
+                  <span className="text-xs font-semibold text-indigo-600 uppercase tracking-wide">Key point you missed</span>
+                  <p className="text-sm text-gray-700 mt-1.5 leading-relaxed">{currentResult.missing}</p>
                 </div>
               )}
 
               {/* Transcript */}
               {currentResult.transcript && (
                 <details className="group">
-                  <summary className="text-xs font-semibold text-gray-600 hover:text-gray-400 cursor-pointer transition-colors list-none flex items-center gap-1.5">
+                  <summary className="text-xs font-semibold text-gray-400 hover:text-gray-600 cursor-pointer transition-colors list-none flex items-center gap-1.5">
                     <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
                     Your answer
                   </summary>
-                  <div className="mt-2 bg-white/[0.03] border border-white/[0.06] rounded-xl p-3">
-                    <p className="text-sm text-gray-400 leading-relaxed">{currentResult.transcript}</p>
+                  <div className="mt-2 bg-slate-50 border border-gray-200 rounded-xl p-3">
+                    <p className="text-sm text-gray-600 leading-relaxed">{currentResult.transcript}</p>
                   </div>
                 </details>
               )}
@@ -440,24 +440,24 @@ export default function DrillPage() {
 
         {/* ── DONE ── */}
         {phase === 'done' && (
-          <div className="bg-[#111118] border border-white/[0.06] rounded-2xl p-8 text-center">
+          <div className="bg-white border border-gray-200 rounded-2xl p-8 text-center shadow-sm">
             {/* Average score ring */}
             <div className={`w-20 h-20 rounded-2xl flex flex-col items-center justify-center mx-auto mb-5 ${scoreBg(Math.round(avgScore))} ${scoreRing(Math.round(avgScore))}`}>
               <span className="text-3xl font-bold leading-none">{avgScore}</span>
               <span className="text-xs opacity-70">/5</span>
             </div>
-            <h2 className="text-2xl font-bold text-white mb-1">Drill Complete!</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-1">Drill Complete!</h2>
             <p className="text-gray-500 text-sm mb-7">Average score across {results.length} questions</p>
 
             {/* Per-question results */}
             <div className="space-y-3 mb-7 text-left">
               {results.map((r, i) => (
-                <div key={i} className="flex items-start gap-3 p-4 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                <div key={i} className="flex items-start gap-3 p-4 rounded-xl bg-slate-50 border border-gray-200">
                   <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0 ${scoreBg(r.score)}`}>
                     {r.score}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm text-white font-medium truncate">{r.question.text}</p>
+                    <p className="text-sm text-gray-900 font-medium truncate">{r.question.text}</p>
                     <p className="text-xs text-gray-500 mt-0.5">{r.one_line}</p>
                   </div>
                 </div>
@@ -466,9 +466,9 @@ export default function DrillPage() {
 
             {/* CTA for full interview */}
             {avgScore < 3.5 && (
-              <div className="bg-gradient-to-r from-indigo-600/15 to-violet-600/10 border border-indigo-500/30 rounded-2xl p-5 mb-5 text-left">
-                <p className="text-sm text-white font-semibold mb-1">Ready to go deeper?</p>
-                <p className="text-sm text-gray-400">A full 30-minute mock interview with voice feedback will pinpoint exactly where to improve.</p>
+              <div className="bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-300 rounded-2xl p-5 mb-5 text-left">
+                <p className="text-sm text-gray-900 font-semibold mb-1">Ready to go deeper?</p>
+                <p className="text-sm text-gray-600">A full 30-minute mock interview with voice feedback will pinpoint exactly where to improve.</p>
               </div>
             )}
 
@@ -481,7 +481,7 @@ export default function DrillPage() {
               </Link>
               <button
                 onClick={restart}
-                className="flex items-center justify-center gap-2 border border-white/[0.08] text-gray-400 hover:text-white hover:border-white/20 py-3 rounded-xl text-sm font-medium transition-colors"
+                className="flex items-center justify-center gap-2 border border-gray-200 text-gray-600 hover:text-gray-900 hover:border-gray-300 py-3 rounded-xl text-sm font-medium transition-colors"
               >
                 <RotateCcw className="w-4 h-4" /> Try different questions
               </button>
