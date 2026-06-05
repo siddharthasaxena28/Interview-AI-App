@@ -44,12 +44,21 @@ export function StaggerContainer({
 export function StaggerItem({
   children,
   className,
+  lift,
 }: {
   children: React.ReactNode
   className?: string
+  lift?: boolean
 }) {
   return (
-    <motion.div variants={itemVariants} className={className}>
+    <motion.div
+      variants={itemVariants}
+      className={className}
+      {...(lift && {
+        whileHover: { y: -4, transition: { duration: 0.2, ease: 'easeOut' } },
+        whileTap: { scale: 0.98 },
+      })}
+    >
       {children}
     </motion.div>
   )

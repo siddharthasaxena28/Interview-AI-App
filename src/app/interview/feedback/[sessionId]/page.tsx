@@ -61,14 +61,71 @@ export default async function FeedbackPage({
             </Link>
           </div>
         </nav>
-        <div className="flex items-center justify-center min-h-[80vh]">
-          <div className="text-center">
-            <div className="w-12 h-12 border-2 border-white/10 border-t-indigo-500 rounded-full animate-spin mx-auto mb-4" />
-            <p className="text-gray-900 font-semibold">Generating your feedback report…</p>
-            <p className="text-sm text-gray-500 mt-1">This takes about 30 seconds</p>
-            <FeedbackClient sessionId={sessionId} hasReport={false} />
+
+        {/* Skeleton hero band */}
+        <div className="bg-gradient-to-br from-indigo-50 via-slate-50 to-slate-50 px-6 pt-10 pb-20 border-b border-gray-100">
+          <div className="max-w-4xl mx-auto text-center">
+            <div className="h-4 w-48 bg-gray-200 rounded animate-pulse mx-auto mb-3" />
+            <div className="h-8 w-64 bg-gray-200 rounded animate-pulse mx-auto" />
           </div>
         </div>
+
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 pb-16 space-y-5 -mt-12 relative">
+          {/* Score rings skeleton */}
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-2xl p-6 sm:p-8">
+            <div className="grid grid-cols-3 gap-4 sm:gap-8 justify-items-center">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex flex-col items-center gap-3">
+                  <div className="w-[110px] h-[110px] sm:w-[130px] sm:h-[130px] rounded-full bg-gray-200 animate-pulse" />
+                  <div className="h-3 w-20 bg-gray-200 rounded animate-pulse" />
+                  <div className="h-2.5 w-14 bg-gray-100 rounded animate-pulse" />
+                </div>
+              ))}
+            </div>
+            <div className="mt-6 pt-5 border-t border-gray-200">
+              <div className="h-3 w-56 bg-gray-200 rounded animate-pulse mx-auto" />
+            </div>
+          </div>
+
+          {/* Assessment text skeleton */}
+          <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+            <div className="h-px bg-gradient-to-r from-indigo-500/60 to-purple-500/60" />
+            <div className="p-6 sm:p-7">
+              <div className="h-4 w-36 bg-gray-200 rounded animate-pulse mb-5" />
+              <div className="space-y-2.5">
+                {[100, 92, 97, 85, 78, 90, 60].map((w) => (
+                  <div key={w} className="h-3 bg-gray-100 rounded animate-pulse" style={{ width: `${w}%` }} />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Strengths + Focus areas skeleton */}
+          <div className="grid md:grid-cols-2 gap-5">
+            {['emerald', 'amber'].map((color) => (
+              <div key={color} className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+                <div className={`h-px bg-gradient-to-r from-${color}-500/60 to-${color}-400/40`} />
+                <div className="p-5">
+                  <div className="h-4 w-28 bg-gray-200 rounded animate-pulse mb-4" />
+                  <div className="space-y-3">
+                    {[0, 1, 2].map((j) => (
+                      <div key={j} className="h-16 bg-gray-100 rounded-xl animate-pulse" />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Status message */}
+          <div className="text-center py-4">
+            <div className="w-8 h-8 border-2 border-gray-200 border-t-indigo-500 rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-gray-900 font-semibold">Generating your feedback report…</p>
+            <p className="text-sm text-gray-500 mt-1">This takes about 30 seconds</p>
+          </div>
+        </div>
+
+        <FeedbackClient sessionId={sessionId} hasReport={false} />
       </div>
     )
   }

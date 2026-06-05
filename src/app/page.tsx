@@ -69,7 +69,7 @@ export default async function LandingPage() {
       )}
 
       {/* Hero */}
-      <section className="relative px-6 pt-28 pb-24 text-center overflow-hidden min-h-[85vh] flex items-center bg-gradient-to-b from-indigo-50 to-white">
+      <section className="relative px-6 pt-20 sm:pt-28 pb-16 sm:pb-24 text-center overflow-hidden min-h-[85vh] flex items-center bg-gradient-to-b from-indigo-50 to-white">
         {/* Radial glow */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_-10%,rgba(99,102,241,0.18),transparent)] pointer-events-none" />
         {/* Dot grid — fades out toward bottom */}
@@ -121,19 +121,19 @@ export default async function LandingPage() {
             )}
           </div>
           {/* Stats row */}
-          <div className="flex flex-wrap justify-center gap-4">
+          <div className="flex flex-wrap justify-center gap-3">
             {[
               { icon: Mic, value: displayCount, label: 'Mock interviews completed' },
               { icon: Zap, value: 'No subscription', label: 'Pay as you go, credits never expire' },
               { icon: Clock, value: '24 / 7', label: 'Practice any time, no scheduling' },
             ].map(({ icon: Icon, value, label }) => (
-              <div key={label} className="bg-white border border-gray-200 shadow-sm rounded-xl px-6 py-4 flex items-center gap-3">
-                <div className="w-9 h-9 bg-indigo-50 rounded-xl flex items-center justify-center flex-shrink-0">
-                  <Icon className="w-4 h-4 text-indigo-600" />
+              <div key={label} className="bg-white border border-gray-200 shadow-sm rounded-xl px-4 py-3 sm:px-6 sm:py-4 flex items-center gap-2.5 sm:gap-3 max-w-[calc(50%-6px)] sm:max-w-none">
+                <div className="w-8 h-8 sm:w-9 sm:h-9 bg-indigo-50 rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0">
+                  <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600" />
                 </div>
-                <div className="text-left">
-                  <div className="font-bold text-gray-900 text-sm">{value}</div>
-                  <div className="text-xs text-gray-500">{label}</div>
+                <div className="text-left min-w-0">
+                  <div className="font-bold text-gray-900 text-xs sm:text-sm truncate">{value}</div>
+                  <div className="text-[10px] sm:text-xs text-gray-500 leading-snug">{label}</div>
                 </div>
               </div>
             ))}
@@ -168,7 +168,7 @@ export default async function LandingPage() {
                 desc: 'Get a 7-section feedback report with overall score, selection probability %, top strengths, improvement gaps, and per-question breakdown.',
               },
             ].map(({ icon: Icon, title, desc }) => (
-              <StaggerItem key={title}>
+              <StaggerItem key={title} lift>
                 <div className="bg-white border border-gray-200 shadow-sm rounded-2xl p-6 hover:border-indigo-300 transition-all duration-300 h-full">
                   <div className="bg-indigo-50 rounded-xl p-3 w-fit mb-4">
                     <Icon className="w-5 h-5 text-indigo-600" />
@@ -224,7 +224,7 @@ export default async function LandingPage() {
               { name: 'Starter Pack', price: '₹999', per: '₹200/session', sessions: '5 sessions', saving: 'Save 20%', highlighted: true },
               { name: 'Serious Prep', price: '₹1,799', per: '₹180/session', sessions: '10 sessions', saving: 'Save 28%', highlighted: false },
             ].map(({ name, price, per, sessions, saving, highlighted }) => (
-              <StaggerItem key={name}>
+              <StaggerItem key={name} lift>
                 <div
                   className={`rounded-2xl p-8 border text-center transition-all duration-300 h-full ${
                     highlighted

@@ -207,7 +207,7 @@ export default async function DashboardPage() {
 
         {/* Stats row */}
         <StaggerContainer className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <StaggerItem>
+          <StaggerItem lift>
             <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-4 flex items-center gap-3 transition-all duration-200">
               <div className="w-10 h-10 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-center flex-shrink-0">
                 <Mic className="w-5 h-5 text-indigo-600" />
@@ -218,7 +218,7 @@ export default async function DashboardPage() {
               </div>
             </div>
           </StaggerItem>
-          <StaggerItem>
+          <StaggerItem lift>
             <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-4 flex items-center gap-3 transition-all duration-200">
               <div className="w-10 h-10 bg-violet-50 border border-violet-200 rounded-xl flex items-center justify-center flex-shrink-0">
                 <TrendingUp className="w-5 h-5 text-violet-600" />
@@ -242,7 +242,7 @@ export default async function DashboardPage() {
               </div>
             </div>
           </StaggerItem>
-          <StaggerItem>
+          <StaggerItem lift>
             <div className={`rounded-2xl border p-4 flex items-center gap-3 transition-all duration-200 ${currentStreak >= 3 ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-200 hover:border-gray-300'}`}>
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${currentStreak >= 3 ? 'bg-orange-100 border border-orange-200' : 'bg-gray-100 border border-gray-100'}`}>
                 <Flame className={`w-5 h-5 ${currentStreak >= 3 ? 'text-orange-600' : 'text-gray-400'}`} />
@@ -257,7 +257,7 @@ export default async function DashboardPage() {
               </div>
             </div>
           </StaggerItem>
-          <StaggerItem>
+          <StaggerItem lift>
             <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-4 flex items-center gap-3 transition-all duration-200">
               <div className="w-10 h-10 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-center flex-shrink-0">
                 <CreditCard className="w-5 h-5 text-emerald-600" />

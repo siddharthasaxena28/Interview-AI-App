@@ -175,7 +175,7 @@ export default function PricingPage() {
         {/* Pack cards */}
         <StaggerContainer className="grid md:grid-cols-3 gap-6 mb-12">
           {PACKS.map((pack) => (
-            <StaggerItem key={pack.key}>
+            <StaggerItem key={pack.key} lift>
             <div
               className={`rounded-2xl p-8 border relative transition-all h-full ${
                 pack.highlighted

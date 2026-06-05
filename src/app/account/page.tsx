@@ -51,8 +51,59 @@ export default function AccountPage() {
 
   if (loading) {
     return (
-      <div className="bg-slate-50 min-h-screen flex items-center justify-center">
-        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+      <div className="bg-slate-50 min-h-screen">
+        <nav className="border-b border-gray-200 px-6 py-4">
+          <div className="max-w-3xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center">
+                <Mic className="w-3.5 h-3.5 text-white" />
+              </div>
+              <span className="font-bold text-gray-900">InterviewAI</span>
+            </div>
+            <div className="h-4 w-20 bg-gray-200 rounded animate-pulse" />
+          </div>
+        </nav>
+        <main className="max-w-3xl mx-auto px-6 py-10 space-y-6">
+          <div className="h-8 w-48 bg-gray-200 rounded animate-pulse" />
+          {/* Credits card skeleton */}
+          <div className="bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-200 rounded-2xl p-6">
+            <div className="h-4 w-20 bg-indigo-200 rounded animate-pulse mb-5" />
+            <div className="flex items-start justify-between mb-6 gap-4">
+              <div className="space-y-2">
+                <div className="h-6 w-32 bg-indigo-200 rounded-full animate-pulse" />
+                <div className="h-3 w-44 bg-indigo-100 rounded animate-pulse" />
+              </div>
+              <div className="text-right space-y-1.5">
+                <div className="h-12 w-14 bg-indigo-200 rounded animate-pulse" />
+                <div className="h-3 w-16 bg-indigo-100 rounded animate-pulse ml-auto" />
+              </div>
+            </div>
+            <div className="h-10 w-full bg-indigo-200 rounded-xl animate-pulse" />
+          </div>
+          {/* Referral card skeleton */}
+          <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+            <div className="h-4 w-36 bg-gray-200 rounded animate-pulse mb-2" />
+            <div className="h-3 w-full bg-gray-100 rounded animate-pulse mb-4" />
+            <div className="flex gap-2">
+              <div className="flex-1 h-10 bg-gray-100 rounded-xl animate-pulse" />
+              <div className="h-10 w-24 bg-gray-200 rounded-xl animate-pulse" />
+            </div>
+          </div>
+          {/* Account details skeleton */}
+          <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+            <div className="h-4 w-28 bg-gray-200 rounded animate-pulse mb-4" />
+            <div className="space-y-3">
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <div className="h-3 w-12 bg-gray-200 rounded animate-pulse" />
+                <div className="h-3 w-28 bg-gray-200 rounded animate-pulse" />
+              </div>
+              <div className="flex justify-between items-center py-2">
+                <div className="h-3 w-10 bg-gray-200 rounded animate-pulse" />
+                <div className="h-3 w-36 bg-gray-200 rounded animate-pulse" />
+              </div>
+            </div>
+          </div>
+        </main>
       </div>
     )
   }
