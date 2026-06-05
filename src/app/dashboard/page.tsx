@@ -14,6 +14,8 @@ import OnboardingModal from './OnboardingModal'
 import UserMenu from './UserMenu'
 import StudyPlanWidget from './StudyPlanWidget'
 import FingerprintCapture from './FingerprintCapture'
+import FadeIn from '@/components/FadeIn'
+import { StaggerContainer, StaggerItem } from '@/components/Stagger'
 
 // Exact lookup — mirrors the controlled vocabulary enforced in generate-questions.
 const TOPIC_ROUND_MAP: Record<string, RoundType> = {
@@ -152,7 +154,7 @@ export default async function DashboardPage() {
 
       <main className="max-w-5xl mx-auto px-6 py-10">
         {/* Welcome + CTA */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 bg-gradient-to-r from-indigo-50 to-transparent border border-indigo-200 rounded-2xl p-6 animate-fadeIn" style={{ animationDelay: '0s' }}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 bg-gradient-to-r from-indigo-50 to-transparent border border-indigo-200 rounded-2xl p-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
               Welcome back, {authUser.user_metadata?.full_name?.split(' ')[0] ?? 'there'}
@@ -185,7 +187,7 @@ export default async function DashboardPage() {
         <InterviewCountdown />
 
         {/* Daily Drill CTA */}
-        <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-4 mb-8 flex items-center justify-between gap-4 transition-all duration-200 animate-fadeIn" style={{ animationDelay: '0.08s' }}>
+        <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-4 mb-8 flex items-center justify-between gap-4 transition-all duration-200">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-center flex-shrink-0">
               <Zap className="w-4 h-4 text-emerald-600" />
@@ -204,67 +206,76 @@ export default async function DashboardPage() {
         </div>
 
         {/* Stats row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 animate-fadeIn" style={{ animationDelay: '0.15s' }}>
-          <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-4 flex items-center gap-3 transition-all duration-200">
-            <div className="w-10 h-10 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-center flex-shrink-0">
-              <Mic className="w-5 h-5 text-indigo-600" />
+        <StaggerContainer className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <StaggerItem>
+            <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-4 flex items-center gap-3 transition-all duration-200">
+              <div className="w-10 h-10 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Mic className="w-5 h-5 text-indigo-600" />
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-gray-900">{sessions?.length ?? 0}</div>
+                <div className="text-xs text-gray-500">Sessions</div>
+              </div>
             </div>
-            <div>
-              <div className="text-2xl font-bold text-gray-900">{sessions?.length ?? 0}</div>
-              <div className="text-xs text-gray-500">Sessions</div>
-            </div>
-          </div>
-          <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-4 flex items-center gap-3 transition-all duration-200">
-            <div className="w-10 h-10 bg-violet-50 border border-violet-200 rounded-xl flex items-center justify-center flex-shrink-0">
-              <TrendingUp className="w-5 h-5 text-violet-600" />
-            </div>
-            <div>
-              <div className="flex items-end gap-1">
-                <div className="text-2xl font-bold text-gray-900">
-                  {reports && reports.length > 0
-                    ? Math.round((reports as Array<{overall_score: number}>).reduce((a, r) => a + r.overall_score, 0) / reports.length)
-                    : '—'}
-                </div>
-                {progressDelta !== null && progressDelta !== 0 && (
-                  <div className={`text-sm font-semibold mb-0.5 ${progressDelta > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {progressDelta > 0 ? `+${progressDelta}` : progressDelta}
+          </StaggerItem>
+          <StaggerItem>
+            <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-4 flex items-center gap-3 transition-all duration-200">
+              <div className="w-10 h-10 bg-violet-50 border border-violet-200 rounded-xl flex items-center justify-center flex-shrink-0">
+                <TrendingUp className="w-5 h-5 text-violet-600" />
+              </div>
+              <div>
+                <div className="flex items-end gap-1">
+                  <div className="text-2xl font-bold text-gray-900">
+                    {reports && reports.length > 0
+                      ? Math.round((reports as Array<{overall_score: number}>).reduce((a, r) => a + r.overall_score, 0) / reports.length)
+                      : '—'}
                   </div>
-                )}
-              </div>
-              <div className="text-xs text-gray-500">
-                Avg score{progressDelta !== null ? ' · trend' : ''}
-              </div>
-            </div>
-          </div>
-          <div className={`rounded-2xl border p-4 flex items-center gap-3 transition-all duration-200 ${currentStreak >= 3 ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-200 hover:border-gray-300'}`}>
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${currentStreak >= 3 ? 'bg-orange-100 border border-orange-200' : 'bg-gray-100 border border-gray-100'}`}>
-              <Flame className={`w-5 h-5 ${currentStreak >= 3 ? 'text-orange-600' : 'text-gray-400'}`} />
-            </div>
-            <div>
-              <div className={`text-2xl font-bold ${currentStreak >= 3 ? 'text-orange-600' : 'text-gray-900'}`}>
-                {currentStreak}
-              </div>
-              <div className="text-xs text-gray-500">
-                Day streak{longestStreak > currentStreak ? ` · best ${longestStreak}` : ''}
+                  {progressDelta !== null && progressDelta !== 0 && (
+                    <div className={`text-sm font-semibold mb-0.5 ${progressDelta > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {progressDelta > 0 ? `+${progressDelta}` : progressDelta}
+                    </div>
+                  )}
+                </div>
+                <div className="text-xs text-gray-500">
+                  Avg score{progressDelta !== null ? ' · trend' : ''}
+                </div>
               </div>
             </div>
-          </div>
-          <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-4 flex items-center gap-3 transition-all duration-200">
-            <div className="w-10 h-10 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-center flex-shrink-0">
-              <CreditCard className="w-5 h-5 text-emerald-600" />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-indigo-600">
-                {creditBalance}
+          </StaggerItem>
+          <StaggerItem>
+            <div className={`rounded-2xl border p-4 flex items-center gap-3 transition-all duration-200 ${currentStreak >= 3 ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-200 hover:border-gray-300'}`}>
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${currentStreak >= 3 ? 'bg-orange-100 border border-orange-200' : 'bg-gray-100 border border-gray-100'}`}>
+                <Flame className={`w-5 h-5 ${currentStreak >= 3 ? 'text-orange-600' : 'text-gray-400'}`} />
               </div>
-              <div className="text-xs text-gray-500">Credits left</div>
+              <div>
+                <div className={`text-2xl font-bold ${currentStreak >= 3 ? 'text-orange-600' : 'text-gray-900'}`}>
+                  {currentStreak}
+                </div>
+                <div className="text-xs text-gray-500">
+                  Day streak{longestStreak > currentStreak ? ` · best ${longestStreak}` : ''}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          </StaggerItem>
+          <StaggerItem>
+            <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-4 flex items-center gap-3 transition-all duration-200">
+              <div className="w-10 h-10 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-center flex-shrink-0">
+                <CreditCard className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-indigo-600">
+                  {creditBalance}
+                </div>
+                <div className="text-xs text-gray-500">Credits left</div>
+              </div>
+            </div>
+          </StaggerItem>
+        </StaggerContainer>
 
         {/* Score trend chart */}
         {chartData.length >= 2 && (
-          <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-6 mb-8 transition-all duration-200 animate-fadeIn" style={{ animationDelay: '0.22s' }}>
+          <FadeIn className="mb-8">
+          <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-6 transition-all duration-200">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-gray-900 flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-indigo-600" /> Score Trend
@@ -336,6 +347,7 @@ export default async function DashboardPage() {
               <span>{chartData[chartData.length - 1].label}</span>
             </div>
           </div>
+          </FadeIn>
         )}
 
         <StudyPlanWidget />

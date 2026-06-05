@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { CheckCircle, Mic, ArrowRight, Zap, Clock, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
 import { useAnalytics } from '@/hooks/useAnalytics'
+import { StaggerContainer, StaggerItem } from '@/components/Stagger'
 
 declare global {
   interface Window {
@@ -172,11 +173,11 @@ export default function PricingPage() {
         </div>
 
         {/* Pack cards */}
-        <div className="grid md:grid-cols-3 gap-6 mb-12">
+        <StaggerContainer className="grid md:grid-cols-3 gap-6 mb-12">
           {PACKS.map((pack) => (
+            <StaggerItem key={pack.key}>
             <div
-              key={pack.key}
-              className={`rounded-2xl p-8 border relative transition-all ${
+              className={`rounded-2xl p-8 border relative transition-all h-full ${
                 pack.highlighted
                   ? 'bg-gradient-to-b from-indigo-50 to-transparent border-indigo-300 shadow-lg shadow-indigo-500/10'
                   : 'bg-white border-gray-200 hover:border-gray-300 shadow-sm'
@@ -231,8 +232,9 @@ export default function PricingPage() {
                 )}
               </button>
             </div>
+            </StaggerItem>
           ))}
-        </div>
+        </StaggerContainer>
 
         {/* Free tier callout */}
         <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 mb-12 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">

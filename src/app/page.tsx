@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { Mic, Brain, BarChart3, CheckCircle, Star, ArrowRight, Zap, Users, Award, Clock } from 'lucide-react'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import FadeIn from '@/components/FadeIn'
+import { StaggerContainer, StaggerItem } from '@/components/Stagger'
 
 // Session count is read live from the DB on every request, so the page must
 // not be statically cached at build time.
@@ -148,7 +150,7 @@ export default async function LandingPage() {
           <p className="text-center text-gray-500 mb-14 max-w-2xl mx-auto">
             Not a quiz. Not a chatbot. A real telephonic interview simulation with AI.
           </p>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <StaggerContainer className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[
               {
                 icon: Brain,
@@ -166,15 +168,17 @@ export default async function LandingPage() {
                 desc: 'Get a 7-section feedback report with overall score, selection probability %, top strengths, improvement gaps, and per-question breakdown.',
               },
             ].map(({ icon: Icon, title, desc }) => (
-              <div key={title} className="bg-white border border-gray-200 shadow-sm rounded-2xl p-6 hover:border-indigo-300 transition-all duration-300">
-                <div className="bg-indigo-50 rounded-xl p-3 w-fit mb-4">
-                  <Icon className="w-5 h-5 text-indigo-600" />
+              <StaggerItem key={title}>
+                <div className="bg-white border border-gray-200 shadow-sm rounded-2xl p-6 hover:border-indigo-300 transition-all duration-300 h-full">
+                  <div className="bg-indigo-50 rounded-xl p-3 w-fit mb-4">
+                    <Icon className="w-5 h-5 text-indigo-600" />
+                  </div>
+                  <h3 className="font-semibold text-gray-900 mb-2 text-lg">{title}</h3>
+                  <p className="text-gray-500 text-sm leading-relaxed">{desc}</p>
                 </div>
-                <h3 className="font-semibold text-gray-900 mb-2 text-lg">{title}</h3>
-                <p className="text-gray-500 text-sm leading-relaxed">{desc}</p>
-              </div>
+              </StaggerItem>
             ))}
-          </div>
+          </StaggerContainer>
         </div>
       </section>
 
@@ -184,22 +188,24 @@ export default async function LandingPage() {
           <h2 className="text-3xl font-bold text-center text-gray-900 mb-14">
             How it works
           </h2>
-          <div className="grid md:grid-cols-4 gap-6">
+          <StaggerContainer className="grid md:grid-cols-4 gap-6">
             {[
               { step: '1', title: 'Paste your JD', desc: 'Share the job description and company name' },
               { step: '2', title: 'Pick a round', desc: 'Choose Technical, Managerial, or HR' },
               { step: '3', title: 'Speak your answers', desc: 'AI asks questions via voice, just like a real call' },
               { step: '4', title: 'Get your report', desc: 'Detailed feedback with selection probability' },
             ].map(({ step, title, desc }) => (
-              <div key={step} className="text-center">
-                <div className="w-10 h-10 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold mx-auto mb-3 shadow-[0_4px_12px_rgba(99,102,241,0.3)]">
-                  {step}
+              <StaggerItem key={step}>
+                <div className="text-center">
+                  <div className="w-10 h-10 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold mx-auto mb-3 shadow-[0_4px_12px_rgba(99,102,241,0.3)]">
+                    {step}
+                  </div>
+                  <h3 className="font-semibold text-gray-900 mb-1">{title}</h3>
+                  <p className="text-sm text-gray-500">{desc}</p>
                 </div>
-                <h3 className="font-semibold text-gray-900 mb-1">{title}</h3>
-                <p className="text-sm text-gray-500">{desc}</p>
-              </div>
+              </StaggerItem>
             ))}
-          </div>
+          </StaggerContainer>
         </div>
       </section>
 
@@ -212,44 +218,45 @@ export default async function LandingPage() {
           <p className="text-center text-gray-500 mb-12">
             No subscription. No monthly bills. Credits never expire.
           </p>
-          <div className="grid md:grid-cols-3 gap-5">
+          <StaggerContainer className="grid md:grid-cols-3 gap-5">
             {[
               { name: 'Single', price: '₹249', per: '₹249/session', sessions: '1 session', saving: null, highlighted: false },
               { name: 'Starter Pack', price: '₹999', per: '₹200/session', sessions: '5 sessions', saving: 'Save 20%', highlighted: true },
               { name: 'Serious Prep', price: '₹1,799', per: '₹180/session', sessions: '10 sessions', saving: 'Save 28%', highlighted: false },
             ].map(({ name, price, per, sessions, saving, highlighted }) => (
-              <div
-                key={name}
-                className={`rounded-2xl p-8 border text-center transition-all duration-300 ${
-                  highlighted
-                    ? 'bg-indigo-50 border-indigo-300 shadow-md scale-[1.03]'
-                    : 'bg-white border-gray-200 shadow-sm hover:border-indigo-200'
-                }`}
-              >
-                {saving && (
-                  <div className={`text-xs font-bold px-3 py-1 rounded-full w-fit mx-auto mb-4 ${
-                    highlighted ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' : 'bg-gray-100 text-gray-600 border border-gray-200'
-                  }`}>
-                    {saving}
-                  </div>
-                )}
-                <div className="font-bold text-lg mb-1 text-gray-900">{name}</div>
-                <div className="text-4xl font-bold mb-1 text-gray-900">{price}</div>
-                <div className={`text-sm mb-1 ${highlighted ? 'text-indigo-600' : 'text-gray-500'}`}>{per}</div>
-                <div className={`text-sm font-medium mb-6 ${highlighted ? 'text-indigo-700' : 'text-gray-600'}`}>{sessions}</div>
-                <Link
-                  href={pricingHref}
-                  className={`block py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+              <StaggerItem key={name}>
+                <div
+                  className={`rounded-2xl p-8 border text-center transition-all duration-300 h-full ${
                     highlighted
-                      ? 'bg-indigo-600 text-white hover:bg-indigo-500'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200'
+                      ? 'bg-indigo-50 border-indigo-300 shadow-md scale-[1.03]'
+                      : 'bg-white border-gray-200 shadow-sm hover:border-indigo-200'
                   }`}
                 >
-                  Buy now →
-                </Link>
-              </div>
+                  {saving && (
+                    <div className={`text-xs font-bold px-3 py-1 rounded-full w-fit mx-auto mb-4 ${
+                      highlighted ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' : 'bg-gray-100 text-gray-600 border border-gray-200'
+                    }`}>
+                      {saving}
+                    </div>
+                  )}
+                  <div className="font-bold text-lg mb-1 text-gray-900">{name}</div>
+                  <div className="text-4xl font-bold mb-1 text-gray-900">{price}</div>
+                  <div className={`text-sm mb-1 ${highlighted ? 'text-indigo-600' : 'text-gray-500'}`}>{per}</div>
+                  <div className={`text-sm font-medium mb-6 ${highlighted ? 'text-indigo-700' : 'text-gray-600'}`}>{sessions}</div>
+                  <Link
+                    href={pricingHref}
+                    className={`block py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+                      highlighted
+                        ? 'bg-indigo-600 text-white hover:bg-indigo-500'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200'
+                    }`}
+                  >
+                    Buy now →
+                  </Link>
+                </div>
+              </StaggerItem>
             ))}
-          </div>
+          </StaggerContainer>
           <p className="text-center text-sm text-gray-500 mt-8">
             New? Every account includes 1 free session — no payment needed.{' '}
             <Link href={isLoggedIn ? '/dashboard' : '/auth/login'} className="text-indigo-600 hover:text-indigo-700 transition-colors">Get started →</Link>
@@ -261,7 +268,7 @@ export default async function LandingPage() {
       <section className="px-6 py-24 relative overflow-hidden bg-white">
         <div className="absolute inset-0 bg-gradient-to-b from-indigo-50 to-transparent pointer-events-none" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_80%_at_50%_50%,rgba(99,102,241,0.06),transparent)] pointer-events-none" />
-        <div className="max-w-2xl mx-auto text-center relative z-10">
+        <FadeIn className="max-w-2xl mx-auto text-center relative z-10">
           <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
             Your interview is in 9 hours. Are you ready?
           </h2>
@@ -273,7 +280,7 @@ export default async function LandingPage() {
             {isLoggedIn ? 'Go to Dashboard' : 'Start your free interview'}
             <ArrowRight className="w-5 h-5" />
           </Link>
-        </div>
+        </FadeIn>
       </section>
 
       {/* Footer */}
