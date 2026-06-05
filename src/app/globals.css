@@ -4,24 +4,24 @@
 
 @layer base {
   :root {
-    --background: 240 10% 4%;
-    --foreground: 0 0% 100%;
-    --card: 240 10% 6%;
-    --card-foreground: 0 0% 100%;
-    --popover: 240 10% 6%;
-    --popover-foreground: 0 0% 100%;
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
     --primary: 239 84% 67%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 263 70% 65%;
-    --secondary-foreground: 0 0% 100%;
-    --muted: 240 6% 16%;
-    --muted-foreground: 220 9% 60%;
-    --accent: 240 6% 16%;
-    --accent-foreground: 0 0% 100%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
     --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 240 6% 12%;
-    --input: 240 6% 12%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
     --ring: 239 84% 67%;
     --radius: 0.5rem;
   }
@@ -37,25 +37,25 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
-    background-color: #0a0a0f;
+    background-color: #f8fafc;
   }
 
   body {
     @apply bg-background text-foreground;
-    background-color: #0a0a0f;
+    background-color: #f8fafc;
   }
 
   *:focus-visible {
-    @apply outline-none ring-2 ring-indigo-500 ring-offset-2 ring-offset-[#0a0a0f] rounded-sm;
+    @apply outline-none ring-2 ring-indigo-500 ring-offset-2 ring-offset-white rounded-sm;
   }
 
-  /* Dark scrollbar */
+  /* Light scrollbar */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
   ::-webkit-scrollbar-track {
-    background: #111118;
+    background: #f1f5f9;
   }
   ::-webkit-scrollbar-thumb {
     background: #6366f1;
@@ -111,7 +111,7 @@
     background: linear-gradient(
       90deg,
       transparent 0%,
-      rgba(255, 255, 255, 0.08) 50%,
+      rgba(0, 0, 0, 0.04) 50%,
       transparent 100%
     );
     background-size: 200% 100%;

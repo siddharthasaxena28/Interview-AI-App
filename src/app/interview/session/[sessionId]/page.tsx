@@ -769,8 +769,8 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   if (loadingSession) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
-        <div className="text-center text-white">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center text-gray-900">
           <div className="w-8 h-8 border-2 border-white/10 border-t-indigo-500 rounded-full animate-spin mx-auto mb-4" />
           <p className="text-gray-500 text-sm">Loading your interview...</p>
         </div>
@@ -782,9 +782,9 @@ function SessionPageInner({ params }: SessionPageProps) {
     const noCredits = error.toLowerCase().includes('credit')
     const isSpeechError = error.toLowerCase().includes('speech') || error.toLowerCase().includes('recognition')
     return (
-      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center px-4">
-        <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-8 max-w-md text-center">
-          <p className="text-red-400 mb-4 text-sm leading-relaxed">{error}</p>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-8 max-w-md text-center">
+          <p className="text-red-600 mb-4 text-sm leading-relaxed">{error}</p>
           {noCredits && (
             <p className="text-gray-500 text-sm mb-4">
               You need credits to start an interview. Pick up a plan on the pricing page.
@@ -809,7 +809,7 @@ function SessionPageInner({ params }: SessionPageProps) {
             )}
             <button
               onClick={() => router.push('/dashboard')}
-              className="bg-white/[0.06] text-gray-300 border border-white/[0.08] px-5 py-2 rounded-xl font-medium text-sm hover:bg-white/[0.10] transition-colors"
+              className="bg-gray-100 text-gray-700 border border-gray-200 px-5 py-2 rounded-xl font-medium text-sm hover:bg-gray-100 transition-colors"
             >
               Back to Dashboard
             </button>
@@ -821,16 +821,16 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   if (micPermission === 'denied') {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center px-4">
-        <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-8 max-w-md text-center">
-          <MicOff className="w-12 h-12 text-amber-400 mx-auto mb-4" />
-          <h2 className="text-white font-bold text-lg mb-2">Microphone Access Required</h2>
-          <p className="text-amber-300/70 text-sm mb-4">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 max-w-md text-center">
+          <MicOff className="w-12 h-12 text-amber-600 mx-auto mb-4" />
+          <h2 className="text-gray-900 font-bold text-lg mb-2">Microphone Access Required</h2>
+          <p className="text-amber-700 text-sm mb-4">
             Please allow microphone access in your browser settings and refresh the page.
           </p>
           <button
             onClick={() => window.location.reload()}
-            className="bg-amber-500/20 text-amber-400 border border-amber-500/30 px-6 py-2 rounded-xl font-medium text-sm hover:bg-amber-500/30 transition-colors"
+            className="bg-amber-100 text-amber-600 border border-amber-200 px-6 py-2 rounded-xl font-medium text-sm hover:bg-amber-100 transition-colors"
           >
             Refresh Page
           </button>
@@ -841,7 +841,7 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   if (ending) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
           <div className="relative w-20 h-20 mx-auto mb-6">
             <div className="absolute inset-0 rounded-full bg-emerald-500/20 animate-ping" style={{animationDuration:'2s'}} />
@@ -849,7 +849,7 @@ function SessionPageInner({ params }: SessionPageProps) {
               <Volume2 className="w-9 h-9 text-white" />
             </div>
           </div>
-          <h2 className="text-xl font-bold text-white mb-2">Interview Complete!</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Interview Complete!</h2>
           <p className="text-gray-500 text-sm mb-5">Generating your feedback report...</p>
           <div className="w-6 h-6 border-2 border-white/10 border-t-indigo-500 rounded-full animate-spin mx-auto" />
         </div>
@@ -859,7 +859,7 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   if (!started) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center px-4 py-12">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4 py-12">
         <div className="text-center max-w-md w-full">
           <div className="relative w-20 h-20 sm:w-24 sm:h-24 mx-auto mb-6">
             <div className="absolute inset-0 rounded-full bg-indigo-500/10 animate-ping" style={{animationDuration:'3s'}} />
@@ -867,10 +867,10 @@ function SessionPageInner({ params }: SessionPageProps) {
               <span className="text-white text-2xl sm:text-3xl font-bold">{personaName.charAt(0)}</span>
             </div>
           </div>
-          <h1 className="text-xl sm:text-2xl font-bold text-white mb-2">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
             {personaName} is ready
           </h1>
-          <p className="text-indigo-400 text-sm mb-2 font-medium">
+          <p className="text-indigo-600 text-sm mb-2 font-medium">
             {sessionData?.session.company} — {sessionData?.session.role}
           </p>
           <p className="text-gray-500 text-sm mb-8 leading-relaxed px-2">
@@ -879,21 +879,21 @@ function SessionPageInner({ params }: SessionPageProps) {
           </p>
           {/* Resume from previous session */}
           {resumeInfo && !resumeDismissed && (
-            <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-4 mb-5 text-left max-w-md w-full">
-              <p className="text-amber-300 text-sm font-medium mb-1.5">
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-5 text-left max-w-md w-full">
+              <p className="text-amber-700 text-sm font-medium mb-1.5">
                 You were on Question {resumeInfo.questionIndex + 1} when you left.
               </p>
-              <p className="text-amber-400/60 text-xs mb-3">Resume from where you left off, or start fresh from Q1.</p>
+              <p className="text-amber-600 text-xs mb-3">Resume from where you left off, or start fresh from Q1.</p>
               <div className="flex gap-2">
                 <button
                   onClick={() => { handleResume(); handleBegin() }}
-                  className="flex-1 bg-amber-500/20 text-amber-400 border border-amber-500/30 py-2 rounded-xl text-sm font-semibold hover:bg-amber-500/30 transition-colors"
+                  className="flex-1 bg-amber-100 text-amber-600 border border-amber-200 py-2 rounded-xl text-sm font-semibold hover:bg-amber-100 transition-colors"
                 >
                   Resume from Q{resumeInfo.questionIndex + 1}
                 </button>
                 <button
                   onClick={() => { setResumeDismissed(true); localStorage.removeItem(`iai_progress_${sessionId}`) }}
-                  className="flex-1 bg-white/[0.05] text-gray-400 border border-white/[0.08] py-2 rounded-xl text-sm hover:bg-white/[0.08] transition-colors"
+                  className="flex-1 bg-gray-100 text-gray-600 border border-gray-200 py-2 rounded-xl text-sm hover:bg-gray-100 transition-colors"
                 >
                   Start from Q1
                 </button>
