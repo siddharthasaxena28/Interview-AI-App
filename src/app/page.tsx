@@ -67,9 +67,9 @@ export default async function LandingPage() {
       )}
 
       {/* Hero */}
-      <section className="relative px-6 pt-28 pb-24 text-center overflow-hidden min-h-[85vh] flex items-center">
-        {/* Subtle radial gradient */}
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(99,102,241,0.08),transparent)] pointer-events-none" />
+      <section className="relative px-6 pt-28 pb-24 text-center overflow-hidden min-h-[85vh] flex items-center bg-gradient-to-b from-indigo-50 to-white">
+        {/* Radial glow overlay */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_-10%,rgba(99,102,241,0.12),transparent)] pointer-events-none" />
         <div className="max-w-4xl mx-auto relative z-10 w-full">
           <div className="inline-flex items-center gap-2 border border-indigo-200 bg-indigo-50 text-indigo-600 text-sm px-4 py-1.5 rounded-full mb-8">
             <Zap className="w-3 h-3" />

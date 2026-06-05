@@ -197,7 +197,7 @@ export default async function DashboardPage() {
           </div>
           <Link
             href="/drill"
-            className="flex-shrink-0 flex items-center gap-1.5 bg-gray-100 hover:bg-gray-100 border border-gray-200 text-gray-900 text-sm font-semibold px-4 py-2 rounded-xl transition-all duration-200 whitespace-nowrap"
+            className="flex-shrink-0 flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-900 text-sm font-semibold px-4 py-2 rounded-xl transition-all duration-200 whitespace-nowrap"
           >
             Start <ArrowRight className="w-3.5 h-3.5" />
           </Link>
@@ -236,12 +236,12 @@ export default async function DashboardPage() {
               </div>
             </div>
           </div>
-          <div className={`rounded-2xl border p-4 flex items-center gap-3 transition-all duration-200 ${currentStreak >= 3 ? 'bg-orange-500/5 border-orange-500/20' : 'bg-white border-gray-200 hover:border-gray-300'}`}>
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${currentStreak >= 3 ? 'bg-orange-500/10 border border-orange-500/20' : 'bg-gray-100 border border-gray-100'}`}>
-              <Flame className={`w-5 h-5 ${currentStreak >= 3 ? 'text-orange-400' : 'text-gray-400'}`} />
+          <div className={`rounded-2xl border p-4 flex items-center gap-3 transition-all duration-200 ${currentStreak >= 3 ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-200 hover:border-gray-300'}`}>
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${currentStreak >= 3 ? 'bg-orange-100 border border-orange-200' : 'bg-gray-100 border border-gray-100'}`}>
+              <Flame className={`w-5 h-5 ${currentStreak >= 3 ? 'text-orange-600' : 'text-gray-400'}`} />
             </div>
             <div>
-              <div className={`text-2xl font-bold ${currentStreak >= 3 ? 'text-orange-400' : 'text-gray-900'}`}>
+              <div className={`text-2xl font-bold ${currentStreak >= 3 ? 'text-orange-600' : 'text-gray-900'}`}>
                 {currentStreak}
               </div>
               <div className="text-xs text-gray-500">
@@ -298,7 +298,7 @@ export default async function DashboardPage() {
                 const y = ((100 - score) / 100) * 52 + 4
                 return (
                   <g key={score}>
-                    <line x1="0" y1={y} x2="290" y2={y} stroke="#1f2937" strokeWidth="1" />
+                    <line x1="0" y1={y} x2="290" y2={y} stroke="#e5e7eb" strokeWidth="1" />
                     <text x="295" y={y + 3} fontSize="7" fill="#374151" textAnchor="start">{score}</text>
                   </g>
                 )
@@ -422,7 +422,7 @@ export default async function DashboardPage() {
                 )}
                 <Link
                   href="/drill"
-                  className="inline-flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-100 border border-gray-200 text-gray-900 px-6 py-3 rounded-xl text-sm font-medium transition-all duration-200"
+                  className="inline-flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-900 px-6 py-3 rounded-xl text-sm font-medium transition-all duration-200"
                 >
                   Try free daily drill first
                 </Link>
