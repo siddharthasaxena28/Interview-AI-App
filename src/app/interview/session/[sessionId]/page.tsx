@@ -942,17 +942,17 @@ function SessionPageInner({ params }: SessionPageProps) {
   const timeWarning = elapsed >= sessionLimit - 300 && elapsed < sessionLimit
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white flex flex-col">
+    <div className="min-h-screen bg-slate-50 text-gray-900 flex flex-col">
       <audio ref={audioRef} className="hidden" />
 
       {/* Header */}
-      <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-white/[0.06] flex items-center justify-between gap-2 bg-[#0a0a0f]/80 backdrop-blur-sm">
+      <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex items-center justify-between gap-2 bg-white/80 backdrop-blur-sm">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-full flex items-center justify-center shrink-0 shadow-lg shadow-indigo-500/20">
             <span className="font-bold text-xs sm:text-sm">{personaName.charAt(0)}</span>
           </div>
           <div className="min-w-0">
-            <div className="font-semibold text-sm truncate text-white">{personaName}</div>
+            <div className="font-semibold text-sm truncate text-gray-900">{personaName}</div>
             <div className="text-xs text-gray-500 truncate">
               {sessionData?.session.company} — {sessionData?.session.role}
             </div>
@@ -960,27 +960,27 @@ function SessionPageInner({ params }: SessionPageProps) {
         </div>
         <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           {reconnecting && (
-            <div className="flex items-center gap-1 text-xs text-amber-400">
-              <div className="w-3 h-3 border border-amber-400 border-t-transparent rounded-full animate-spin" />
+            <div className="flex items-center gap-1 text-xs text-amber-600">
+              <div className="w-3 h-3 border border-amber-600 border-t-transparent rounded-full animate-spin" />
               <span className="hidden sm:inline">Reconnecting…</span>
             </div>
           )}
           {ttsFallback && (
-            <div className="flex items-center gap-1 text-xs text-amber-400" title="ElevenLabs TTS unavailable — using browser voice">
+            <div className="flex items-center gap-1 text-xs text-amber-600" title="ElevenLabs TTS unavailable — using browser voice">
               <span>⚠</span>
               <span className="hidden sm:inline">Browser voice (TTS error)</span>
             </div>
           )}
-          <div className={`text-xs sm:text-sm font-mono tabular-nums ${timeWarning ? 'text-amber-400' : 'text-gray-500'}`}>
+          <div className={`text-xs sm:text-sm font-mono tabular-nums ${timeWarning ? 'text-amber-600' : 'text-gray-500'}`}>
             {formatDuration(elapsed)}
             {timeWarning && <span className="ml-1 text-xs hidden sm:inline">⚠ wrapping up</span>}
           </div>
           {phase === 'interview' ? (
-            <div className="text-xs sm:text-sm text-gray-500 tabular-nums bg-white/[0.04] px-2.5 py-1 rounded-full">
+            <div className="text-xs sm:text-sm text-gray-500 tabular-nums bg-gray-100 px-2.5 py-1 rounded-full">
               Q{questionIndex + 1}/{totalQuestions}
             </div>
           ) : (
-            <div className="text-xs text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full font-medium">
+            <div className="text-xs text-indigo-600 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full font-medium">
               Intro
             </div>
           )}
@@ -989,11 +989,11 @@ function SessionPageInner({ params }: SessionPageProps) {
 
       {/* Non-fatal answer evaluation error banner */}
       {evalError && (
-        <div className="px-4 py-2 bg-red-500/10 border-b border-red-500/20 flex items-center justify-center gap-3">
-          <span className="text-red-400 text-xs">{evalError.msg}</span>
+        <div className="px-4 py-2 bg-red-50 border-b border-red-200 flex items-center justify-center gap-3">
+          <span className="text-red-600 text-xs">{evalError.msg}</span>
           <button
             onClick={evalError.retry}
-            className="text-xs bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 px-3 py-1 rounded-lg transition-colors"
+            className="text-xs bg-red-100 hover:bg-red-100 text-red-700 border border-red-200 px-3 py-1 rounded-lg transition-colors"
           >
             Retry
           </button>
@@ -1003,9 +1003,9 @@ function SessionPageInner({ params }: SessionPageProps) {
       {/* Main area */}
       <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-6 py-5 sm:py-8 gap-6 sm:gap-10 overflow-y-auto">
         {/* Status indicator */}
-        <div className="flex items-center gap-2 sm:gap-3 bg-white/[0.03] border border-white/[0.06] rounded-full px-4 py-2">
+        <div className="flex items-center gap-2 sm:gap-3 bg-slate-50 border border-gray-200 rounded-full px-4 py-2">
           <div className={`w-2 h-2 rounded-full ${stateColor[state]} ${state !== 'IDLE' ? 'animate-pulse' : ''}`} />
-          <span className="text-gray-400 text-xs sm:text-sm font-medium">{stateLabel[state]}</span>
+          <span className="text-gray-600 text-xs sm:text-sm font-medium">{stateLabel[state]}</span>
         </div>
 
         {/* AI speaking animation */}
@@ -1031,7 +1031,7 @@ function SessionPageInner({ params }: SessionPageProps) {
             <div className={`relative w-20 h-20 sm:w-24 sm:h-24 rounded-full flex items-center justify-center transition-all duration-300 ${
               state === 'USER_SPEAKING'
                 ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-2xl shadow-emerald-500/30'
-                : 'bg-white/[0.05] border border-white/[0.10]'
+                : 'bg-gray-100 border border-gray-200'
             }`}>
               {muted ? (
                 <MicOff className="w-8 h-8 sm:w-10 sm:h-10 text-gray-400" />
@@ -1044,18 +1044,18 @@ function SessionPageInner({ params }: SessionPageProps) {
 
         {/* Processing */}
         {state === 'PROCESSING' && (
-          <div className="w-20 h-20 sm:w-24 sm:h-24 bg-amber-500/10 border border-amber-500/30 rounded-full flex items-center justify-center">
+          <div className="w-20 h-20 sm:w-24 sm:h-24 bg-amber-50 border border-amber-200 rounded-full flex items-center justify-center">
             <div className="w-7 h-7 sm:w-8 sm:h-8 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
           </div>
         )}
 
         {/* Context card */}
         {phase === 'intro' ? (
-          <div className="bg-[#111118] border border-white/[0.06] rounded-2xl p-4 sm:p-6 max-w-2xl w-full text-center">
-            <div className="text-xs text-indigo-400 mb-3 uppercase tracking-widest font-medium">
+          <div className="bg-white border border-gray-200 rounded-2xl p-4 sm:p-6 max-w-2xl w-full text-center">
+            <div className="text-xs text-indigo-600 mb-3 uppercase tracking-widest font-medium">
               Introductory Conversation
             </div>
-            <p className="text-gray-300 text-sm sm:text-base leading-relaxed">
+            <p className="text-gray-700 text-sm sm:text-base leading-relaxed">
               {state === 'LISTENING' || state === 'USER_SPEAKING'
                 ? introStepRef.current === 1
                   ? 'How are you feeling today?'
@@ -1064,19 +1064,19 @@ function SessionPageInner({ params }: SessionPageProps) {
             </p>
           </div>
         ) : currentQuestion ? (
-          <div className="bg-[#111118] border border-white/[0.06] rounded-2xl p-4 sm:p-6 max-w-2xl w-full text-center">
-            <div className="text-xs text-gray-600 mb-3 uppercase tracking-widest capitalize">
+          <div className="bg-white border border-gray-200 rounded-2xl p-4 sm:p-6 max-w-2xl w-full text-center">
+            <div className="text-xs text-gray-400 mb-3 uppercase tracking-widest capitalize">
               Q{questionIndex + 1} · {currentQuestion.topic_tag.replace(/_/g, ' ')} · Difficulty {currentQuestion.difficulty}/5
             </div>
-            <p className="text-white text-sm sm:text-base lg:text-lg leading-relaxed font-medium">{currentQuestion.text}</p>
+            <p className="text-gray-900 text-sm sm:text-base lg:text-lg leading-relaxed font-medium">{currentQuestion.text}</p>
           </div>
         ) : null}
 
         {/* Live transcript */}
         {(liveTranscript || finalTranscript) && (
-          <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-3 sm:p-4 max-w-2xl w-full max-h-28 sm:max-h-none overflow-y-auto">
-            <div className="text-xs text-gray-600 mb-1.5 uppercase tracking-wider">Live transcript</div>
-            <p className="text-gray-300 text-xs sm:text-sm leading-relaxed">
+          <div className="bg-slate-50 border border-gray-200 rounded-xl p-3 sm:p-4 max-w-2xl w-full max-h-28 sm:max-h-none overflow-y-auto">
+            <div className="text-xs text-gray-400 mb-1.5 uppercase tracking-wider">Live transcript</div>
+            <p className="text-gray-700 text-xs sm:text-sm leading-relaxed">
               {finalTranscript}
               <span className="text-gray-500">{liveTranscript}</span>
             </p>
@@ -1085,13 +1085,13 @@ function SessionPageInner({ params }: SessionPageProps) {
       </div>
 
       {/* Controls */}
-      <div className="px-4 sm:px-6 py-4 sm:py-5 border-t border-white/[0.06] flex items-center justify-center gap-3 sm:gap-4">
+      <div className="px-4 sm:px-6 py-4 sm:py-5 border-t border-gray-200 flex items-center justify-center gap-3 sm:gap-4">
         <button
           onClick={() => setMuted((m) => { mutedRef.current = !m; return !m })}
           className={`flex flex-col items-center gap-1.5 px-5 py-3 rounded-2xl transition-all duration-200 ${
             muted
-              ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20'
-              : 'bg-white/[0.05] text-gray-400 hover:bg-white/[0.08] border border-white/[0.08] hover:text-white'
+              ? 'bg-red-50 text-red-600 hover:bg-red-100 border border-red-200'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-100 border border-gray-200 hover:text-gray-900'
           }`}
         >
           {muted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
@@ -1100,7 +1100,7 @@ function SessionPageInner({ params }: SessionPageProps) {
 
         <button
           onClick={() => endInterview(true)}
-          className="flex flex-col items-center gap-1.5 px-5 py-3 rounded-2xl bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 transition-all duration-200 hover:border-red-500/40"
+          className="flex flex-col items-center gap-1.5 px-5 py-3 rounded-2xl bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 transition-all duration-200 hover:border-red-300"
         >
           <PhoneOff className="w-5 h-5" />
           <span className="text-xs font-medium">End Interview</span>
@@ -1113,7 +1113,7 @@ function SessionPageInner({ params }: SessionPageProps) {
 export default function SessionPage({ params }: SessionPageProps) {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-white/10 border-t-indigo-500 rounded-full animate-spin" />
       </div>
     }>
