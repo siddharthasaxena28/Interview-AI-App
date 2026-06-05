@@ -152,7 +152,7 @@ export default async function DashboardPage() {
 
       <main className="max-w-5xl mx-auto px-6 py-10">
         {/* Welcome + CTA */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 bg-gradient-to-r from-indigo-50 to-transparent border border-indigo-200 rounded-2xl p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 bg-gradient-to-r from-indigo-50 to-transparent border border-indigo-200 rounded-2xl p-6 animate-fadeIn" style={{ animationDelay: '0s' }}>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
               Welcome back, {authUser.user_metadata?.full_name?.split(' ')[0] ?? 'there'}
@@ -185,7 +185,7 @@ export default async function DashboardPage() {
         <InterviewCountdown />
 
         {/* Daily Drill CTA */}
-        <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-4 mb-8 flex items-center justify-between gap-4 transition-all duration-200">
+        <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-4 mb-8 flex items-center justify-between gap-4 transition-all duration-200 animate-fadeIn" style={{ animationDelay: '0.08s' }}>
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-center flex-shrink-0">
               <Zap className="w-4 h-4 text-emerald-600" />
@@ -204,7 +204,7 @@ export default async function DashboardPage() {
         </div>
 
         {/* Stats row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 animate-fadeIn" style={{ animationDelay: '0.15s' }}>
           <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-4 flex items-center gap-3 transition-all duration-200">
             <div className="w-10 h-10 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-center flex-shrink-0">
               <Mic className="w-5 h-5 text-indigo-600" />
@@ -264,7 +264,7 @@ export default async function DashboardPage() {
 
         {/* Score trend chart */}
         {chartData.length >= 2 && (
-          <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-6 mb-8 transition-all duration-200">
+          <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-6 mb-8 transition-all duration-200 animate-fadeIn" style={{ animationDelay: '0.22s' }}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-gray-900 flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-indigo-600" /> Score Trend
