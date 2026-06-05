@@ -179,7 +179,7 @@ export default function PricingPage() {
               className={`rounded-2xl p-8 border relative transition-all ${
                 pack.highlighted
                   ? 'bg-gradient-to-b from-indigo-50 to-transparent border-indigo-300 shadow-lg shadow-indigo-500/10'
-                  : 'bg-white border-gray-200 hover:border-gray-200 shadow-sm'
+                  : 'bg-white border-gray-200 hover:border-gray-300 shadow-sm'
               }`}
             >
               {pack.badge && (

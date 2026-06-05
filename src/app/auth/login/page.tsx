@@ -102,7 +102,7 @@ export default function LoginPage() {
           <button
             onClick={signInWithGoogle}
             disabled={loading}
-            className="bg-gray-100 hover:bg-gray-100 border border-gray-200 text-gray-900 rounded-xl px-6 py-3 w-full flex items-center justify-center gap-3 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-900 rounded-xl px-6 py-3 w-full flex items-center justify-center gap-3 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? (
               <div className="w-4 h-4 border-2 border-gray-200 border-t-indigo-600 rounded-full animate-spin" />

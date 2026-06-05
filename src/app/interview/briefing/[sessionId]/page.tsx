@@ -65,7 +65,7 @@ export default async function BriefingPage({
       </nav>
 
       {/* Light hero with indigo radial glow */}
-      <div className="relative bg-gradient-to-b from-slate-50 to-slate-50 px-6 pt-12 pb-24 text-center overflow-hidden">
+      <div className="relative bg-gradient-to-b from-indigo-50/60 to-slate-50 px-6 pt-12 pb-24 text-center overflow-hidden">
         {/* Subtle indigo radial glow */}
         <div
           className="absolute inset-0 pointer-events-none"
