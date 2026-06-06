@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Mic, MicOff, PhoneOff, Volume2, CheckCircle2, SkipForward } from 'lucide-react'
+import { Mic, MicOff, PhoneOff, Volume2 } from 'lucide-react'
 import { useAudioStateMachine } from '@/hooks/useAudioStateMachine'
 import { useAnalytics } from '@/hooks/useAnalytics'
 import { formatDuration } from '@/lib/utils'
@@ -87,6 +87,9 @@ function SessionPageInner({ params }: SessionPageProps) {
   // Tracks how many times the interviewer has asked for clarification on the
   // current question so we don't loop forever on persistent audio issues.
   const clarificationAttemptsRef = useRef<Record<string, number>>({})
+  // Tracks encouragement prompts per question — capped at 1 so the AI doesn't
+  // keep saying "go on" indefinitely if the candidate is genuinely done.
+  const encourageAttemptsRef = useRef<Record<string, number>>({})
   // Auto-retry tracking for answer evaluation API failures
   const evalAutoRetriedRef = useRef(false)
   // Ensures TTS fallback announcement fires only once per session
@@ -284,7 +287,7 @@ function SessionPageInner({ params }: SessionPageProps) {
         const sampleRate = Math.round(audioContext.sampleRate)
 
         const ws = new WebSocket(
-          `wss://api.deepgram.com/v1/listen?model=nova-2-general&language=en-IN&punctuate=true&interim_results=true&vad_events=true&endpointing=2000&utterance_end_ms=2000&encoding=linear16&sample_rate=${sampleRate}&channels=1`,
+          `wss://api.deepgram.com/v1/listen?model=nova-2-general&language=en-IN&punctuate=true&interim_results=true&vad_events=true&endpointing=3500&utterance_end_ms=3500&encoding=linear16&sample_rate=${sampleRate}&channels=1`,
           ['token', key]
         )
 
@@ -722,6 +725,20 @@ function SessionPageInner({ params }: SessionPageProps) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Evaluation failed')
 
+      // Candidate trailed off mid-answer — play a brief encouragement and stay on
+      // the same question. Capped at 1 per question so the AI doesn't loop.
+      if (data.encourage_continuation) {
+        const qId = currentQuestion.id
+        const attempts = encourageAttemptsRef.current[qId] ?? 0
+        if (attempts < 1) {
+          encourageAttemptsRef.current[qId] = 1
+          const spoken: string = data.spoken_response ?? "Go on, I'm listening."
+          await speakText(spoken)
+          return
+        }
+        // Cap reached — fall through so the answer is evaluated and scored normally.
+      }
+
       // Interviewer couldn't hear/understand — ask the candidate to repeat.
       // Don't advance the question or save the answer. Cap at 2 attempts per
       // question so a persistent audio problem doesn't loop indefinitely.
@@ -741,7 +758,7 @@ function SessionPageInner({ params }: SessionPageProps) {
         // the rest of the branch logic runs normally.
         data.needs_clarification = false
         delete clarificationAttemptsRef.current[qId]
-      } else {
+      } else if (!data.encourage_continuation) {
         // Successful answer — clear any prior clarification count for this question.
         delete clarificationAttemptsRef.current[currentQuestion.id]
       }
@@ -1353,35 +1370,12 @@ function SessionPageInner({ params }: SessionPageProps) {
           <span className="text-[10px] sm:text-xs font-medium">{muted ? 'Unmute' : 'Mute'}</span>
         </button>
 
-        {/* Manual submit — lets users trigger answer submission without waiting for
-            Deepgram's VAD silence detection. Critical for accents and trailing-off speech. */}
-        {(state === 'LISTENING' || state === 'USER_SPEAKING') && phase === 'interview' && (
-          <button
-            onClick={() => {
-              if (isProcessingRef.current) return
-              const full = (finalTranscriptRef.current + ' ' + liveTranscriptRef.current).trim()
-              isProcessingRef.current = true
-              finalTranscriptRef.current = ''
-              liveTranscriptRef.current = ''
-              setFinalTranscript('')
-              setLiveTranscript('')
-              evalAutoRetriedRef.current = false
-              handleAnswerCompleteRef.current(full || '[skip]')
-            }}
-            className="flex flex-col items-center gap-1 sm:gap-1.5 px-3 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all duration-200 hover:border-emerald-500/40"
-          >
-            <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
-            <span className="text-[10px] sm:text-xs font-medium">Done</span>
-          </button>
-        )}
-
         {(state === 'LISTENING' || state === 'USER_SPEAKING') && phase === 'interview' && (
           <button
             onClick={handleSkip}
-            className="flex flex-col items-center gap-1 sm:gap-1.5 px-3 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-white/[0.06] text-gray-400 hover:bg-white/[0.10] border border-white/[0.08] hover:text-gray-200 transition-all duration-200"
+            className="text-xs text-gray-600 hover:text-gray-400 transition-colors underline underline-offset-2 px-2 py-1"
           >
-            <SkipForward className="w-4 h-4 sm:w-5 sm:h-5" />
-            <span className="text-[10px] sm:text-xs font-medium">Skip</span>
+            Pass on this question
           </button>
         )}
 
