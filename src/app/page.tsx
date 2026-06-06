@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Mic, Brain, BarChart3, CheckCircle, Star, ArrowRight, Zap, Users, Award, Clock } from 'lucide-react'
+import { Mic, Brain, BarChart3, CheckCircle, ArrowRight, Zap, Users, Award, Clock } from 'lucide-react'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import FadeIn from '@/components/FadeIn'
 import { StaggerContainer, StaggerItem } from '@/components/Stagger'
@@ -244,60 +244,6 @@ export default async function LandingPage() {
             </div>
           </FadeIn>
 
-          {/* Testimonials */}
-          <FadeIn>
-            <h2 className="text-3xl font-bold text-center text-gray-900 mb-3">
-              Real results, real stories
-            </h2>
-            <p className="text-center text-gray-500 mb-12">
-              Candidates who practised here before their interviews.
-            </p>
-          </FadeIn>
-          <StaggerContainer className="grid md:grid-cols-3 gap-6">
-            {[
-              {
-                name: 'Priya Sharma',
-                role: 'SDE-2',
-                company: 'Flipkart',
-                quote: 'I practised 3 Technical L2 rounds the week before my Flipkart interview. The feedback on system design gaps was spot-on. Got the offer.',
-                rating: 5,
-              },
-              {
-                name: 'Rahul Verma',
-                role: 'Backend Engineer',
-                company: 'Swiggy',
-                quote: 'The AI interviewer caught my habit of trailing off mid-answer. After two sessions of drill practice, my answers became crisp and structured.',
-                rating: 5,
-              },
-              {
-                name: 'Ananya Nair',
-                role: 'Associate Consultant',
-                company: 'Accenture',
-                quote: 'HR rounds are the hardest to prep for alone. InterviewAI simulates the awkward silences, unexpected follow-ups — everything. Felt 100% ready.',
-                rating: 5,
-              },
-            ].map(({ name, role, company, quote, rating }) => (
-              <StaggerItem key={name} lift>
-                <div className="bg-white border border-gray-200 shadow-sm rounded-2xl p-6 h-full flex flex-col">
-                  <div className="flex gap-0.5 mb-4">
-                    {Array.from({ length: rating }).map((_, i) => (
-                      <Star key={i} className="w-4 h-4 fill-amber-400 text-amber-400" />
-                    ))}
-                  </div>
-                  <p className="text-gray-700 text-sm leading-relaxed flex-1 mb-5">&ldquo;{quote}&rdquo;</p>
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
-                      <span className="text-indigo-600 font-bold text-sm">{name.charAt(0)}</span>
-                    </div>
-                    <div>
-                      <div className="font-semibold text-sm text-gray-900">{name}</div>
-                      <div className="text-xs text-gray-500">{role} · {company}</div>
-                    </div>
-                  </div>
-                </div>
-              </StaggerItem>
-            ))}
-          </StaggerContainer>
         </div>
       </section>
 
