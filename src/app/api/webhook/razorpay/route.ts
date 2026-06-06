@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
       const userId = payment.notes?.user_id
       // notes.credits is set by create-order and copied to the payment by Razorpay.
       // Falls back to 1 for any legacy PAYG orders predating the pack system.
-      const credits = Math.max(1, parseInt(payment.notes?.credits ?? '1', 10))
+      const credits = Math.max(1, parseInt(payment.notes?.credits ?? '1', 10) || 1)
 
       if (userId) {
         // Idempotent credit keyed on payment id. /api/verify-payment may have already

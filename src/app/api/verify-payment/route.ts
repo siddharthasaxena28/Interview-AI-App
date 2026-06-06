@@ -51,14 +51,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Ownership check: the order's notes carry the user_id set at create-order time.
-    // Reject if it doesn't match the caller, so a leaked/observed payment triple can't
-    // be used to credit a different account.
+    // Reject if missing or mismatched — a leaked/observed payment triple must not
+    // be redeemable by a different account.
     const orderUserId = order.notes?.user_id
-    if (orderUserId && orderUserId !== user.id) {
+    if (!orderUserId || orderUserId !== user.id) {
       return NextResponse.json({ error: 'Order does not belong to this user' }, { status: 403 })
     }
 
-    const credits = Math.max(1, parseInt(order.notes?.credits ?? '1', 10))
+    const credits = Math.max(1, parseInt(order.notes?.credits ?? '1', 10) || 1)
 
     // Credit grants run on the service client: per-user RLS blocks clients from
     // writing their own credit_balance/plan, so all balance mutations are server-only.

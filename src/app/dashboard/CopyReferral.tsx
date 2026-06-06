@@ -6,10 +6,9 @@ export function CopyReferral({ link }: { link: string }) {
   const [copied, setCopied] = useState(false)
 
   function handleCopy() {
-    navigator.clipboard.writeText(link).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
+    navigator.clipboard.writeText(link)
+      .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
+      .catch(() => { /* silent — user can copy from the input field */ })
   }
 
   return (

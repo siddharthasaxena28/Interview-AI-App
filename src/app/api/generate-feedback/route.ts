@@ -229,7 +229,12 @@ Generate a comprehensive feedback report for this candidate.`
         .eq('id', session_id),
     ])
 
-    if (reportError) console.error('Report save error:', reportError)
+    if (reportError) {
+      console.error('Report save error:', reportError)
+      // Do not charge credits when the report failed to save — the user would
+      // lose a credit without getting a readable report.
+      return NextResponse.json({ error: 'Failed to save report' }, { status: 500 })
+    }
 
     // Credit deduction is fast (~300 ms) and must be reliable — keep it before response.
     if (charge === true) {
@@ -401,7 +406,7 @@ async function sendFeedbackEmail(
   if (!userData?.email) return
 
   const resend = new Resend(process.env.RESEND_API_KEY)
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://interviewai.in'
 
   await resend.emails.send({
     from: process.env.RESEND_FROM_EMAIL ?? 'InterviewAI <noreply@interviewai.in>',

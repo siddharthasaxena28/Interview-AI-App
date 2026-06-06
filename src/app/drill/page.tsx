@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mic, MicOff, ChevronRight, CheckCircle, RotateCcw, Zap, Clock, ArrowRight, Sparkles } from 'lucide-react'
@@ -61,7 +61,8 @@ const FILTER_OPTIONS: { value: DrillRoundFilter; label: string }[] = [
 ]
 
 export default function DrillPage() {
-  const today = new Date().toISOString().split('T')[0]
+  // Compute once on mount so midnight doesn't replace questions mid-session
+  const today = useMemo(() => new Date().toISOString().split('T')[0], [])
   const [filter, setFilter] = useState<DrillRoundFilter>('mixed')
   const [questions, setQuestions] = useState<DrillQuestion[]>([])
   const [loadingQuestions, setLoadingQuestions] = useState(true)
@@ -148,7 +149,10 @@ export default function DrillPage() {
       }
     }
     rec.onerror = () => stopListening()
-    rec.onend = () => setListening(false)
+    // Only update listening state if this instance is still the active one —
+    // prevents a stale onend from a replaced instance setting listening=false
+    // while a new recognition is already running.
+    rec.onend = () => { if (recognitionRef.current === rec) setListening(false) }
     rec.start()
     recognitionRef.current = rec
     setListening(true)
@@ -163,7 +167,10 @@ export default function DrillPage() {
     if (submitting) return
     stopListening()
     const q = questions[qIndex]
-    const answer = transcript.trim()
+    // Include any in-flight interim transcript that speech recognition captured
+    // but hadn't yet finalized when the user hit Submit.
+    const answer = (transcript + ' ' + interimRef.current).trim()
+    interimRef.current = ''
     setSubmitting(true)
     try {
       const res = await fetch('/api/drill-evaluate', {
@@ -177,6 +184,7 @@ export default function DrillPage() {
         }),
       })
       const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Evaluation failed')
       setResults(prev => [...prev, { question: q, transcript: answer, score: data.score, one_line: data.one_line, missing: data.missing }])
       setPhase('scored')
     } catch {

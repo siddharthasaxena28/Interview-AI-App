@@ -65,8 +65,9 @@ export async function POST(request: NextRequest) {
       supabase.from('interview_sessions').select('role, company, experience_years, round_type').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
     ])
 
-    const daysUntil = interview_date
-      ? Math.max(1, Math.ceil((new Date(interview_date).getTime() - Date.now()) / 86400000))
+    const parsedDate = interview_date ? new Date(interview_date) : null
+    const daysUntil = parsedDate && !isNaN(parsedDate.getTime())
+      ? Math.max(1, Math.ceil((parsedDate.getTime() - Date.now()) / 86400000))
       : 7
     const planDays = Math.min(daysUntil, 7)
 

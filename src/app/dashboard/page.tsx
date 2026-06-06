@@ -227,7 +227,12 @@ export default async function DashboardPage() {
                 <div className="flex items-end gap-1">
                   <div className="text-2xl font-bold text-gray-900">
                     {reports && reports.length > 0
-                      ? Math.round((reports as Array<{overall_score: number}>).reduce((a, r) => a + r.overall_score, 0) / reports.length)
+                      ? (() => {
+                          const valid = (reports as Array<{overall_score: number | null}>).filter(r => r.overall_score !== null)
+                          return valid.length > 0
+                            ? Math.round(valid.reduce((a, r) => a + (r.overall_score as number), 0) / valid.length)
+                            : '—'
+                        })()
                       : '—'}
                   </div>
                   {progressDelta !== null && progressDelta !== 0 && (

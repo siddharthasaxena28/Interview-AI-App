@@ -108,6 +108,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
+    // Cap transcript to ~3 min of speech — prevents prompt injection and token overuse
+    const cappedTranscript = transcript.slice(0, 3000)
+
     // Verify session belongs to this user
     const { data: session } = await supabase
       .from('interview_sessions')
@@ -157,7 +160,7 @@ Question (difficulty ${q.difficulty}/5, topic: ${q.topic_tag}):
 "${q.text}"
 
 Candidate's answer:
-"${transcript || '[No answer — candidate was silent]'}"`,
+"${cappedTranscript || '[No answer — candidate was silent]'}"`,
         },
       ],
     })
@@ -187,7 +190,7 @@ Candidate's answer:
       supabase.from('answers').insert({
         session_id,
         question_id,
-        transcript_text: transcript,
+        transcript_text: cappedTranscript,
         duration_seconds: durationSeconds,
         score,
       }),

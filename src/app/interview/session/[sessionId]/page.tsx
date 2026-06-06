@@ -182,9 +182,9 @@ function SessionPageInner({ params }: SessionPageProps) {
     loadSession()
 
     return () => {
-      isMountedRef.current = false
       // Stop the mic if the user navigates away without ending the interview —
       // otherwise the captured stream stays live until garbage collection.
+      // isMountedRef is managed by its own dedicated effect above — don't touch it here.
       mediaStreamRef.current?.getTracks().forEach((t) => t.stop())
     }
   }, [sessionId])
@@ -341,6 +341,7 @@ function SessionPageInner({ params }: SessionPageProps) {
                   })()
                 }
               } else {
+                evalAutoRetriedRef.current = false
                 handleAnswerCompleteRef.current(full)
               }
             }
@@ -478,6 +479,10 @@ function SessionPageInner({ params }: SessionPageProps) {
     cancelSpeakRef.current?.()
     cancelSpeakRef.current = null
     if (audioRef.current) {
+      // Clear handlers BEFORE nulling src so setting src='' doesn't trigger onerror,
+      // which would fire browser TTS fallback after the interview has already ended.
+      audioRef.current.onended = null
+      audioRef.current.onerror = null
       audioRef.current.pause()
       audioRef.current.src = ''
     }
@@ -616,7 +621,6 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   const handleAnswerComplete = useCallback(async (transcript: string) => {
     if (!currentQuestion || !sessionData) return
-    evalAutoRetriedRef.current = false
     setEvalError(null)
     setProcessing()
     setFinalTranscript('')
@@ -635,6 +639,7 @@ function SessionPageInner({ params }: SessionPageProps) {
       })
 
       const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Evaluation failed')
 
       if (data.next_question && data.questions_remaining > 0) {
         setCurrentQuestion(data.next_question)

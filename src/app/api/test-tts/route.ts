@@ -1,9 +1,12 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
-// No auth — developer diagnostic. Visit /api/test-tts to verify ElevenLabs setup.
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const secret = process.env.DEV_TOOLS_SECRET
+  if (!secret || request.headers.get('Authorization') !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
   const apiKey = process.env.ELEVENLABS_API_KEY
 
   if (!apiKey) {

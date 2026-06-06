@@ -5,7 +5,7 @@ import { sendPushToUser } from '@/lib/push-server'
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('Authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
       .eq('user_id', u.id)
       .order('avg_score', { ascending: true })
       .limit(1)
-      .single()
+      .maybeSingle()
 
     const weakTopic = topWeak
       ? topWeak.topic_tag.replace(/_/g, ' ')

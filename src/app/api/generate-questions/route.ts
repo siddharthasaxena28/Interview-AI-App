@@ -99,6 +99,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
+    // Input length caps — server-side guards match client-side validation
+    const VALID_ROUND_TYPES = ['tech_l1', 'tech_l2', 'managerial', 'hr', 'full_loop']
+    if (!VALID_ROUND_TYPES.includes(round_type)) {
+      return NextResponse.json({ error: 'Invalid round_type' }, { status: 400 })
+    }
+    if (typeof experience_years !== 'number' || isNaN(experience_years) || experience_years < 0 || experience_years > 50) {
+      return NextResponse.json({ error: 'Invalid experience_years' }, { status: 400 })
+    }
+    if (jd_text.length > 6000) {
+      return NextResponse.json({ error: 'Job description too long (max 6000 characters)' }, { status: 400 })
+    }
+    if (company.length > 200) {
+      return NextResponse.json({ error: 'Company name too long' }, { status: 400 })
+    }
+    if (role.length > 200) {
+      return NextResponse.json({ error: 'Role too long' }, { status: 400 })
+    }
+
     // Gate the paid generation: a user with no credits can't run the interview anyway,
     // so don't pay for an LLM call they can't use. Also cap creation rate to stop a
     // runaway loop from racking up Claude spend (credits are the real abuse guard).

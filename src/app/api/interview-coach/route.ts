@@ -36,6 +36,16 @@ export async function POST(request: NextRequest) {
     if (!session_id || !message) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
+    if (message.length > 1000) {
+      return NextResponse.json({ error: 'Message too long (max 1000 characters)' }, { status: 400 })
+    }
+
+    // Sanitize history — reject any item with an invalid role to prevent prompt injection
+    const safeHistory = (Array.isArray(history) ? history : [])
+      .filter((m): m is { role: 'user' | 'assistant'; content: string } =>
+        (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string'
+      )
+      .slice(-6)
 
     // Load session context — verify ownership
     const [
@@ -79,7 +89,7 @@ ${transcript}`
     const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
       { role: 'user', content: contextBlock },
       { role: 'assistant', content: 'Got it — I\'ve reviewed the interview. What would you like to explore?' },
-      ...(Array.isArray(history) ? history : []).slice(-6),
+      ...safeHistory,
       { role: 'user', content: message },
     ]
 
