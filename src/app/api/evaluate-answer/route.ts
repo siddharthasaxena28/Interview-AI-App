@@ -51,7 +51,34 @@ When candidate_wants_to_skip is true:
 
     IMPORTANT: Do NOT always default to "No worries at all" — vary naturally based on what was said.
 
---- CLARIFICATION (check AFTER skip detection, BEFORE probing) ---
+--- ENCOURAGE CONTINUATION (check AFTER skip detection, BEFORE clarification) ---
+Set "encourage_continuation": true when the candidate clearly started answering but trailed off before finishing — they have begun but the response is obviously incomplete and they are not signaling a skip.
+
+Set encourage_continuation: true when:
+  - Transcript has real content (> 5 words) but reads as unfinished or trailing off mid-thought
+  - Candidate used filler-heavy openers with no follow-through ("So basically...", "I mean, it's like...", "Yeah, it stores...")
+  - The answer started coherently but stopped abruptly mid-explanation
+  - A one-sentence answer to a deep technical question where more is clearly expected
+
+Do NOT set encourage_continuation if:
+  - candidate_wants_to_skip is true (skip always takes priority)
+  - needs_clarification is true (clarification takes priority over encouragement)
+  - The answer is short but genuinely complete ("REST is stateless", "O of N log N", "it prevents SQL injection")
+  - The answer is complete but shallow — use probe for that, not encouragement
+
+When encourage_continuation is true:
+  - Set score: 0 (will not be saved — placeholder only)
+  - Set probe: false, probe_question: "", candidate_wants_to_skip: false, needs_clarification: false
+  - "spoken_response" must be a single warm, brief prompt (< 8 words). Vary naturally:
+    "Go on, I'm listening."
+    "Tell me more about that."
+    "Continue — I'd like to hear more."
+    "Keep going."
+    "What else can you add?"
+    "Say more about that."
+    "I'm following — go ahead."
+
+--- CLARIFICATION (check AFTER skip and encouragement detection, BEFORE probing) ---
 Set "needs_clarification": true when the transcript appears incomplete or garbled — meaning you genuinely could not hear or understand the candidate, NOT when they chose not to answer.
 
 Set needs_clarification: true when:
@@ -112,7 +139,8 @@ Return ONLY a JSON object with this exact structure:
   "probe": <true|false>,
   "probe_question": "<specific follow-up question phrased conversationally, or empty string>",
   "candidate_wants_to_skip": <true|false>,
-  "needs_clarification": <true|false>
+  "needs_clarification": <true|false>,
+  "encourage_continuation": <true|false>
 }`
 
 export async function POST(request: NextRequest) {
@@ -195,7 +223,7 @@ Candidate's answer:
     const content = message.content[0]
     if (content.type !== 'text') throw new Error('Unexpected response type')
 
-    let evaluation: { score: number; spoken_response: string; probe: boolean; probe_question: string; candidate_wants_to_skip: boolean; needs_clarification: boolean }
+    let evaluation: { score: number; spoken_response: string; probe: boolean; probe_question: string; candidate_wants_to_skip: boolean; needs_clarification: boolean; encourage_continuation: boolean }
     try {
       const jsonMatch = content.text.match(/\{[\s\S]*\}/)
       evaluation = JSON.parse(jsonMatch ? jsonMatch[0] : content.text)
@@ -204,19 +232,40 @@ Candidate's answer:
       return NextResponse.json({ error: 'Failed to parse evaluation response' }, { status: 502 })
     }
 
-    // Safety nets: mutual exclusivity between the three decision branches.
-    // skip takes priority, then clarification, then probe.
+    // Safety nets: mutual exclusivity — skip > encourage > clarification > probe.
     if (evaluation.candidate_wants_to_skip) {
       evaluation.probe = false
       evaluation.probe_question = ''
+      evaluation.needs_clarification = false
+      evaluation.encourage_continuation = false
+    } else if (evaluation.encourage_continuation) {
+      evaluation.probe = false
+      evaluation.probe_question = ''
+      evaluation.candidate_wants_to_skip = false
       evaluation.needs_clarification = false
     } else if (evaluation.needs_clarification) {
       evaluation.probe = false
       evaluation.probe_question = ''
       evaluation.candidate_wants_to_skip = false
+      evaluation.encourage_continuation = false
     }
 
     const score = Math.min(5, Math.max(1, evaluation.score ?? 3))
+
+    // Candidate trailed off mid-answer — play a brief encouragement and stay on the
+    // same question. No DB write, no question advancement. Client caps this at 1 per question.
+    if (evaluation.encourage_continuation) {
+      return NextResponse.json({
+        score: null,
+        spoken_response: evaluation.spoken_response ?? "Go on, I'm listening.",
+        next_question: q,
+        is_probe: false,
+        candidate_wants_to_skip: false,
+        needs_clarification: false,
+        encourage_continuation: true,
+        questions_remaining: -1,
+      })
+    }
 
     // When the interviewer needs clarification the answer was not received — don't
     // save it to the DB and don't mark the question as asked so the candidate gets
@@ -229,6 +278,7 @@ Candidate's answer:
         is_probe: false,
         candidate_wants_to_skip: false,
         needs_clarification: true,
+        encourage_continuation: false,
         questions_remaining: -1, // signal: don't use this to end the interview
       })
     }
@@ -328,6 +378,7 @@ Candidate's answer:
       is_probe: isProbe,
       candidate_wants_to_skip: evaluation.candidate_wants_to_skip ?? false,
       needs_clarification: false,
+      encourage_continuation: false,
       // Count the freshly-inserted probe so the client doesn't end the interview
       // prematurely when the candidate is probed on the last scripted question.
       questions_remaining: questionsRemaining,
