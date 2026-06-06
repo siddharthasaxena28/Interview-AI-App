@@ -6,6 +6,7 @@ import { getRoundLabel } from '@/lib/personas'
 import { CheckCircle, AlertCircle, Share2, RotateCcw, Mic, TrendingUp, ArrowLeft } from 'lucide-react'
 import type { FeedbackReport, InterviewSession, StrengthItem, GapItem, PerQuestionFeedback, CommunicationFeedback, RoundType } from '@/types'
 import FeedbackClient from './FeedbackClient'
+import GeneratingBanner from './GeneratingBanner'
 import ScoreCard from './ScoreCard'
 import ScoreRing from './ScoreRing'
 import FeedbackPerQuestion from './FeedbackPerQuestion'
@@ -63,13 +64,7 @@ export default async function FeedbackPage({
           </div>
         </nav>
 
-        {/* Always-visible generating banner — sticky so it stays in view while skeleton loads below */}
-        <div className="sticky top-[57px] z-10 bg-indigo-600 px-4 py-3 text-center">
-          <div className="flex items-center justify-center gap-2.5">
-            <div className="w-4 h-4 border-2 border-indigo-300 border-t-white rounded-full animate-spin shrink-0" />
-            <span className="text-sm font-medium text-white">Generating your feedback report — this takes about 30 seconds</span>
-          </div>
-        </div>
+        <GeneratingBanner />
 
         {/* Skeleton hero band */}
         <div className="bg-gradient-to-br from-indigo-50 via-slate-50 to-slate-50 px-6 pt-10 pb-20 border-b border-gray-100">

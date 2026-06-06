@@ -56,6 +56,9 @@ function SessionPageInner({ params }: SessionPageProps) {
   const [evalError, setEvalError] = useState<{ msg: string; retry: () => void } | null>(null)
   const [showEndConfirm, setShowEndConfirm] = useState(false)
   const [ttsNotice, setTtsNotice] = useState(false)
+  const [isProbe, setIsProbe] = useState(false)
+  const [questionElapsed, setQuestionElapsed] = useState(0)
+  const [answerLengthHint, setAnswerLengthHint] = useState<{ text: string; type: 'green' | 'amber' } | null>(null)
 
   const wsRef = useRef<WebSocket | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -100,6 +103,8 @@ function SessionPageInner({ params }: SessionPageProps) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const recordedChunksRef = useRef<Blob[]>([])
   const recordingQuestionIdRef = useRef<string | null>(null)
+  // Per-question elapsed time — set when listening begins for each new question
+  const questionStartTimeRef = useRef(0)
   // Waveform visualizer — AnalyserNode taps the mic source in parallel; bars
   // are updated via direct DOM manipulation to avoid 60fps React re-renders.
   const analyserRef = useRef<AnalyserNode | null>(null)
@@ -212,10 +217,13 @@ function SessionPageInner({ params }: SessionPageProps) {
     }
   }, [sessionId])
 
-  // Timer
+  // Timer — ticks every second for session elapsed + per-question elapsed
   useEffect(() => {
     timerRef.current = setInterval(() => {
       setElapsed((e) => e + 1)
+      if (questionStartTimeRef.current > 0) {
+        setQuestionElapsed(Math.round((Date.now() - questionStartTimeRef.current) / 1000))
+      }
     }, 1000)
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
@@ -685,6 +693,8 @@ function SessionPageInner({ params }: SessionPageProps) {
     if (startListening) {
       setListening()
       answerStartRef.current = Date.now()
+      questionStartTimeRef.current = Date.now()
+      setQuestionElapsed(0)
       startAnswerRecording()
     }
   }
@@ -737,6 +747,10 @@ function SessionPageInner({ params }: SessionPageProps) {
       }
 
       if (data.next_question && data.questions_remaining > 0) {
+        // Capture answer duration before answerStartRef is reset by speakText
+        const answerDurationSecs = Math.round((Date.now() - answerStartRef.current) / 1000)
+
+        setIsProbe(data.is_probe ?? false)
         setCurrentQuestion(data.next_question)
         // A probe stays on the same logical question — don't advance the counter.
         if (!data.is_probe) setQuestionIndex((i) => i + 1)
@@ -745,20 +759,28 @@ function SessionPageInner({ params }: SessionPageProps) {
         let ackText: string
 
         if (data.is_probe) {
-          // Interviewer pushing back — spoken_response leads directly into the probe.
-          // No "..." pause: the probe is a tight follow-up, not a new question.
           ackText = spoken
             ? `${spoken} ${data.next_question.text}`
             : data.next_question.text
         } else {
-          // Normal next question or skip: spoken_response reacts to this answer,
-          // then "..." creates a natural breath before the next question begins.
           ackText = spoken
             ? `${spoken}... ${data.next_question.text}`
             : data.next_question.text
         }
 
         await speakText(ackText)
+
+        // Show pacing hint briefly after acknowledgment (non-probe, non-skip only)
+        if (!data.is_probe && !data.candidate_wants_to_skip) {
+          let hint: { text: string; type: 'green' | 'amber' } | null = null
+          if (answerDurationSecs < 20) hint = { text: 'Try to expand your answer a bit more next time', type: 'amber' }
+          else if (answerDurationSecs <= 180) hint = { text: 'Good answer length', type: 'green' }
+          else if (answerDurationSecs > 300) hint = { text: 'Try to be a bit more concise next time', type: 'amber' }
+          if (hint) {
+            setAnswerLengthHint(hint)
+            setTimeout(() => setAnswerLengthHint(null), 3000)
+          }
+        }
       } else {
         // Speak a closing line before navigating away so the interview doesn't
         // cut off mid-conversation. startListening=false — no mic needed after this.
@@ -1222,17 +1244,44 @@ function SessionPageInner({ params }: SessionPageProps) {
           </div>
         ) : currentQuestion ? (
           <div className="bg-[#111118] border border-white/[0.06] rounded-2xl p-4 sm:p-6 max-w-2xl w-full text-center">
-            <div className="flex items-center justify-center gap-2 flex-wrap mb-3">
-              <span className="text-xs text-gray-500 uppercase tracking-widest capitalize">
-                Q{questionIndex + 1} · {currentQuestion.topic_tag.replace(/_/g, ' ')} · Difficulty {currentQuestion.difficulty}/5
-              </span>
-              {currentQuestion.expected_keywords?.includes('__resume') && (
-                <span className="text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded-full normal-case tracking-normal">
-                  From your résumé
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2 flex-wrap justify-center flex-1">
+                {isProbe ? (
+                  <span className="text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2.5 py-0.5 rounded-full">
+                    ↩ Follow-up — the interviewer wants to dig deeper
+                  </span>
+                ) : (
+                  <>
+                    <span className="text-xs text-gray-500 uppercase tracking-widest capitalize">
+                      Q{questionIndex + 1} · {currentQuestion.topic_tag.replace(/_/g, ' ')} · Difficulty {currentQuestion.difficulty}/5
+                    </span>
+                    {currentQuestion.expected_keywords?.includes('__resume') && (
+                      <span className="text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded-full normal-case tracking-normal">
+                        From your résumé
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+              {/* Per-question timer — shows only while candidate is answering */}
+              {(state === 'LISTENING' || state === 'USER_SPEAKING') && questionElapsed > 0 && (
+                <span className={`text-xs font-mono tabular-nums shrink-0 ${
+                  questionElapsed > 300 ? 'text-red-400' : questionElapsed > 180 ? 'text-amber-400' : 'text-gray-600'
+                }`}>
+                  {formatDuration(questionElapsed)}
                 </span>
               )}
             </div>
             <p className="text-white text-sm sm:text-base lg:text-lg leading-relaxed font-medium">{currentQuestion.text}</p>
+            {/* Replay — re-reads the question aloud via TTS */}
+            {(state === 'LISTENING' || state === 'USER_SPEAKING') && (
+              <button
+                onClick={() => { if (!isProcessingRef.current) speakText(currentQuestion.text, true) }}
+                className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-gray-400 transition-colors mx-auto mt-3"
+              >
+                <Volume2 className="w-3 h-3" /> Replay question
+              </button>
+            )}
           </div>
         ) : null}
 
@@ -1261,6 +1310,19 @@ function SessionPageInner({ params }: SessionPageProps) {
           </div>
         )}
       </div>
+
+      {/* Answer length pacing hint — fades in after each non-skip answer */}
+      {answerLengthHint && (
+        <div className={`px-4 py-2 text-center border-t transition-all duration-300 ${
+          answerLengthHint.type === 'green'
+            ? 'bg-emerald-500/10 border-emerald-500/20'
+            : 'bg-amber-500/10 border-amber-500/20'
+        }`}>
+          <span className={`text-xs font-medium ${answerLengthHint.type === 'green' ? 'text-emerald-400' : 'text-amber-400'}`}>
+            {answerLengthHint.text}
+          </span>
+        </div>
+      )}
 
       {/* Controls */}
       <div className="px-4 sm:px-6 py-4 sm:py-5 border-t border-white/[0.06] flex items-center justify-center gap-2 sm:gap-4">
@@ -1325,9 +1387,20 @@ function SessionPageInner({ params }: SessionPageProps) {
               <PhoneOff className="w-5 h-5 text-red-400" />
             </div>
             <h3 className="text-white font-semibold text-center mb-2">End Interview?</h3>
-            <p className="text-gray-400 text-sm text-center mb-6 leading-relaxed">
-              Your progress will be saved and a feedback report will be generated. This cannot be undone.
+            <p className="text-gray-400 text-sm text-center mb-4 leading-relaxed">
+              Your progress will be saved and a feedback report will be generated.
             </p>
+            <div className="flex items-center justify-center gap-6 mb-5 py-3 bg-white/[0.04] rounded-xl border border-white/[0.06]">
+              <div className="text-center">
+                <div className="text-white font-semibold text-lg">{questionIndex}<span className="text-gray-500 text-sm font-normal">/{totalQuestions}</span></div>
+                <div className="text-gray-500 text-xs mt-0.5">Questions answered</div>
+              </div>
+              <div className="w-px h-8 bg-white/10" />
+              <div className="text-center">
+                <div className="text-white font-semibold text-lg">{formatDuration(elapsed)}</div>
+                <div className="text-gray-500 text-xs mt-0.5">Time elapsed</div>
+              </div>
+            </div>
             <div className="flex gap-3">
               <button
                 onClick={() => setShowEndConfirm(false)}
