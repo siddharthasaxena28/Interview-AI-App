@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Mic, MicOff, PhoneOff, Volume2 } from 'lucide-react'
+import { Mic, MicOff, PhoneOff, Volume2, CheckCircle2 } from 'lucide-react'
 import { useAudioStateMachine } from '@/hooks/useAudioStateMachine'
 import { useAnalytics } from '@/hooks/useAnalytics'
 import { formatDuration } from '@/lib/utils'
@@ -1070,8 +1070,15 @@ function SessionPageInner({ params }: SessionPageProps) {
           </div>
         ) : currentQuestion ? (
           <div className="bg-[#111118] border border-white/[0.06] rounded-2xl p-4 sm:p-6 max-w-2xl w-full text-center">
-            <div className="text-xs text-gray-500 mb-3 uppercase tracking-widest capitalize">
-              Q{questionIndex + 1} · {currentQuestion.topic_tag.replace(/_/g, ' ')} · Difficulty {currentQuestion.difficulty}/5
+            <div className="flex items-center justify-center gap-2 flex-wrap mb-3">
+              <span className="text-xs text-gray-500 uppercase tracking-widest capitalize">
+                Q{questionIndex + 1} · {currentQuestion.topic_tag.replace(/_/g, ' ')} · Difficulty {currentQuestion.difficulty}/5
+              </span>
+              {currentQuestion.expected_keywords?.includes('__resume') && (
+                <span className="text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded-full normal-case tracking-normal">
+                  From your résumé
+                </span>
+              )}
             </div>
             <p className="text-white text-sm sm:text-base lg:text-lg leading-relaxed font-medium">{currentQuestion.text}</p>
           </div>
@@ -1102,6 +1109,28 @@ function SessionPageInner({ params }: SessionPageProps) {
           {muted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
           <span className="text-xs font-medium">{muted ? 'Unmute' : 'Mute'}</span>
         </button>
+
+        {/* Manual submit — lets users trigger answer submission without waiting for
+            Deepgram's VAD silence detection. Critical for accents and trailing-off speech. */}
+        {(state === 'LISTENING' || state === 'USER_SPEAKING') && phase === 'interview' && (
+          <button
+            onClick={() => {
+              if (isProcessingRef.current) return
+              const full = (finalTranscriptRef.current + ' ' + liveTranscriptRef.current).trim()
+              isProcessingRef.current = true
+              finalTranscriptRef.current = ''
+              liveTranscriptRef.current = ''
+              setFinalTranscript('')
+              setLiveTranscript('')
+              evalAutoRetriedRef.current = false
+              handleAnswerCompleteRef.current(full || '[No answer provided]')
+            }}
+            className="flex flex-col items-center gap-1.5 px-5 py-3 rounded-2xl bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all duration-200 hover:border-emerald-500/40"
+          >
+            <CheckCircle2 className="w-5 h-5" />
+            <span className="text-xs font-medium">Done</span>
+          </button>
+        )}
 
         <button
           onClick={() => endInterview(true)}

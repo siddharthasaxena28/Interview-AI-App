@@ -39,6 +39,7 @@ interface QuestionRow {
   text: string
   difficulty: number
   topic_tag: string
+  expected_keywords?: string[]
 }
 
 interface AnswerRow {
@@ -207,6 +208,11 @@ export default function FeedbackPerQuestion({ perQuestion, questions, answers, s
                       {q?.topic_tag?.replace(/_/g, ' ') ?? 'general'}
                     </span>
                     <span className="text-xs text-gray-400">Diff {q?.difficulty ?? '?'}/5</span>
+                    {q?.expected_keywords?.includes('__resume') && (
+                      <span className="text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-0.5 rounded-full font-medium">
+                        From résumé
+                      </span>
+                    )}
                     <span className={`text-xs font-semibold ${scoreTextColor(pq.score)}`}>
                       {SCORE_LABEL[pq.score] ?? ''}
                     </span>

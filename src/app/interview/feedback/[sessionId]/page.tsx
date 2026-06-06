@@ -11,6 +11,7 @@ import ScoreRing from './ScoreRing'
 import FeedbackPerQuestion from './FeedbackPerQuestion'
 import AppFeedbackWidget from './AppFeedbackWidget'
 import CoachChat from './CoachChat'
+import FullTranscript from './FullTranscript'
 
 export default async function FeedbackPage({
   params,
@@ -38,7 +39,7 @@ export default async function FeedbackPage({
     { data: answers },
   ] = await Promise.all([
     supabase.from('feedback_reports').select('*').eq('session_id', sessionId).single(),
-    supabase.from('questions').select('id, text, difficulty, topic_tag').eq('session_id', sessionId).eq('asked', true).order('order_index'),
+    supabase.from('questions').select('id, text, difficulty, topic_tag, expected_keywords').eq('session_id', sessionId).eq('asked', true).order('order_index'),
     supabase.from('answers').select('question_id, transcript_text, duration_seconds').eq('session_id', sessionId),
   ])
 
@@ -135,7 +136,7 @@ export default async function FeedbackPage({
   const perQuestion: PerQuestionFeedback[] = (r.per_question_json as PerQuestionFeedback[]) ?? []
   const commJson: CommunicationFeedback | null = (r.communication_json as CommunicationFeedback | null) ?? null
 
-  const questionList = (questions ?? []) as Array<{ id: string; text: string; difficulty: number; topic_tag: string }>
+  const questionList = (questions ?? []) as Array<{ id: string; text: string; difficulty: number; topic_tag: string; expected_keywords?: string[] }>
   const answerList = (answers ?? []) as Array<{ question_id: string; transcript_text: string; duration_seconds: number }>
 
   const topicMap = new Map(questionList.map(q => [q.id, q]))
@@ -428,6 +429,13 @@ export default async function FeedbackPage({
             </div>
           </div>
         )}
+
+        {/* Full interview transcript */}
+        <FullTranscript
+          questions={questionList}
+          answers={answerList}
+          perQuestion={perQuestion.map(pq => ({ question_id: pq.question_id, score: pq.score }))}
+        />
 
         {/* Actions */}
         <div className="flex flex-col sm:flex-row gap-3">

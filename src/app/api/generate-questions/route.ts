@@ -48,9 +48,12 @@ Return format:
     "text": "Question text here",
     "difficulty": 2,
     "topic_tag": "fundamentals",
-    "expected_keywords": ["keyword1", "keyword2"]
+    "expected_keywords": ["keyword1", "keyword2"],
+    "is_resume_based": false
   }
-]`
+]
+
+is_resume_based: Set to true ONLY when the question directly references content from the candidate's résumé — their specific projects, companies, technologies, or roles they mentioned. Set to false for all JD-only or general questions.`
 
 // Valid tag sets per round — used server-side to normalise any tag the model invents.
 const VALID_TAGS: Record<string, string[]> = {
@@ -180,6 +183,7 @@ Generate 15 interview questions for this ${round_type} round at ${company}.${res
       difficulty: number
       topic_tag: string
       expected_keywords?: string[]
+      is_resume_based?: boolean
     }>
 
     try {
@@ -214,15 +218,22 @@ Generate 15 interview questions for this ${round_type} round at ${company}.${res
     }
 
     // Save questions to Supabase
-    const questionsToInsert = questions.slice(0, 15).map((q, index) => ({
-      session_id: session.id,
-      text: q.text,
-      round_type,
-      difficulty: Math.min(5, Math.max(1, q.difficulty ?? 2)),
-      topic_tag: normalizeTag(q.topic_tag ?? '', round_type),
-      order_index: index,
-      asked: false,
-    }))
+    const questionsToInsert = questions.slice(0, 15).map((q, index) => {
+      const keywords = Array.isArray(q.expected_keywords) ? q.expected_keywords : []
+      // Tag resume-based questions with a special marker stored in expected_keywords.
+      // The session UI and feedback UI read this to show "From your résumé" badges.
+      if (q.is_resume_based) keywords.push('__resume')
+      return {
+        session_id: session.id,
+        text: q.text,
+        round_type,
+        difficulty: Math.min(5, Math.max(1, q.difficulty ?? 2)),
+        topic_tag: normalizeTag(q.topic_tag ?? '', round_type),
+        expected_keywords: keywords,
+        order_index: index,
+        asked: false,
+      }
+    })
 
     const { error: questionsError } = await supabase
       .from('questions')
