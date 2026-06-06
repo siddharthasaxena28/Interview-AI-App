@@ -113,6 +113,30 @@ Do NOT probe more than once per topic.
 
 When you probe, "probe_question" is a single specific follow-up — phrased conversationally, as you'd say it aloud.
 
+--- DYNAMIC QUESTION SUGGESTION ---
+After evaluating the answer, you may suggest a different question to ask next — one that's more targeted to what this specific candidate revealed.
+
+Set "suggested_next_question" to a non-empty string ONLY when ALL of the following are true:
+- You have at least one prior exchange in conversation history OR the intro mentioned something specific
+- Score is 3–5 (candidate is engaged and giving substantive answers worth pursuing)
+- The answer mentioned a specific technology, system, failure, project, or experience by name that the generic question plan almost certainly doesn't cover
+- A targeted follow-up on that specific thing would clearly yield more signal than continuing with whatever comes next
+- probe, candidate_wants_to_skip, needs_clarification, and encourage_continuation are all false
+
+Do NOT suggest when:
+- Score is 1–2 (candidate is struggling — don't add new pressure with novel directions)
+- The answer was vague without any nameable specifics
+- You'd just be rephrasing the same question differently
+- There's nothing in the conversation to build on yet
+
+Specificity is mandatory. Reference something the candidate actually said by name or detail:
+  BAD: "Tell me more about your distributed systems experience."
+  GOOD: "You mentioned your Kafka consumers hit 2-minute lag under peak — how did you root-cause that?"
+  BAD: "Can you talk about a time you improved performance?"
+  GOOD: "You said the Redis cluster migration cut your p99 from 400ms to 40ms — what was the biggest technical risk during that cutover?"
+
+If no compelling specific insight warrants a pivot: return "suggested_next_question": ""
+
 --- CONVERSATION HISTORY ---
 You will receive the recent conversation history (last few Q&A exchanges) and the candidate's self-introduction. Use this to:
 - Make transitions feel natural and connected ("You mentioned X earlier — that actually leads into my next question...")
@@ -158,7 +182,8 @@ Return ONLY a JSON object with this exact structure:
   "probe_question": "<specific follow-up question phrased conversationally, or empty string>",
   "candidate_wants_to_skip": <true|false>,
   "needs_clarification": <true|false>,
-  "encourage_continuation": <true|false>
+  "encourage_continuation": <true|false>,
+  "suggested_next_question": "<specific contextual question referencing what the candidate said, e.g. 'You mentioned X — walk me through Y', or empty string if no specific insight warrants a pivot>"
 }`
 
 export async function POST(request: NextRequest) {
@@ -252,7 +277,7 @@ export async function POST(request: NextRequest) {
     const content = message.content[0]
     if (content.type !== 'text') throw new Error('Unexpected response type')
 
-    let evaluation: { score: number; spoken_response: string; probe: boolean; probe_question: string; candidate_wants_to_skip: boolean; needs_clarification: boolean; encourage_continuation: boolean }
+    let evaluation: { score: number; spoken_response: string; probe: boolean; probe_question: string; candidate_wants_to_skip: boolean; needs_clarification: boolean; encourage_continuation: boolean; suggested_next_question: string }
     try {
       const jsonMatch = content.text.match(/\{[\s\S]*\}/)
       evaluation = JSON.parse(jsonMatch ? jsonMatch[0] : content.text)
@@ -268,22 +293,28 @@ export async function POST(request: NextRequest) {
     }
 
     // Safety nets: mutual exclusivity — skip > encourage > clarification > probe.
+    // Dynamic question is disabled on any special branch (no pivot when candidate struggles).
     if (evaluation.candidate_wants_to_skip) {
       evaluation.probe = false
       evaluation.probe_question = ''
       evaluation.needs_clarification = false
       evaluation.encourage_continuation = false
+      evaluation.suggested_next_question = ''
     } else if (evaluation.encourage_continuation) {
       evaluation.probe = false
       evaluation.probe_question = ''
       evaluation.candidate_wants_to_skip = false
       evaluation.needs_clarification = false
+      evaluation.suggested_next_question = ''
     } else if (evaluation.needs_clarification) {
       evaluation.probe = false
       evaluation.probe_question = ''
       evaluation.candidate_wants_to_skip = false
       evaluation.encourage_continuation = false
+      evaluation.suggested_next_question = ''
     }
+    // Also suppress dynamic question when probing (probe already handles the follow-up)
+    if (evaluation.probe) evaluation.suggested_next_question = ''
 
     const score = Math.min(5, Math.max(1, evaluation.score ?? 3))
 
@@ -387,6 +418,34 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Dynamic question: Claude spotted a specific insight from the conversation worth
+    // exploring that the pre-planned queue wouldn't cover. Insert it as the immediate
+    // next question (order_index -1 = before all existing planned questions). The
+    // planned questions remain in the queue so the interview doesn't shorten.
+    let isDynamic = false
+    const dynText = (evaluation.suggested_next_question ?? '').trim()
+    if (
+      dynText &&
+      !isProbe &&
+      !is_already_probe &&
+      nextQuestion &&
+      remainingQuestions && remainingQuestions.length > 0
+    ) {
+      const { data: dynQ } = await supabase.from('questions').insert({
+        session_id,
+        text: dynText,
+        round_type: session.round_type,
+        topic_tag: q.topic_tag,
+        difficulty: q.difficulty,
+        order_index: -1,
+        asked: false,
+      }).select().single()
+      if (dynQ) {
+        nextQuestion = dynQ as Question
+        isDynamic = true
+      }
+    }
+
     const questionsRemaining = (remainingQuestions?.length ?? 0) + (isProbe ? 1 : 0)
 
     // When the last question has been answered, kick off feedback generation in the
@@ -411,11 +470,10 @@ export async function POST(request: NextRequest) {
       spoken_response: evaluation.spoken_response ?? '',
       next_question: nextQuestion,
       is_probe: isProbe,
+      is_dynamic: isDynamic,
       candidate_wants_to_skip: evaluation.candidate_wants_to_skip ?? false,
       needs_clarification: false,
       encourage_continuation: false,
-      // Count the freshly-inserted probe so the client doesn't end the interview
-      // prematurely when the candidate is probed on the last scripted question.
       questions_remaining: questionsRemaining,
     })
   } catch (error) {
