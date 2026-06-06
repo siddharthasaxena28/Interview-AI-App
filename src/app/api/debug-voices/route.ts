@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,7 +9,12 @@ const MODELS_TO_TEST = [
   'eleven_monolingual_v1',
 ]
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const secret = process.env.DEV_TOOLS_SECRET
+  if (!secret || request.headers.get('Authorization') !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   const apiKey = process.env.ELEVENLABS_API_KEY
   if (!apiKey) return NextResponse.json({ error: 'ELEVENLABS_API_KEY not set' }, { status: 503 })
 

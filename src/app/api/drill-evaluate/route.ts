@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { normalizeTopic } from '@/lib/utils'
 
 const client = new Anthropic()
 
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    if (!checkRateLimit(`drill-eval:${user.id}`, 30, 3_600_000)) {
+    if (!await checkRateLimit(`drill-eval:${user.id}`, 30, 3_600_000)) {
       return NextResponse.json({ error: 'Rate limit exceeded. Try again later.' }, { status: 429 })
     }
 
@@ -70,7 +71,7 @@ Candidate's answer:
     const score = Math.min(5, Math.max(1, result.score ?? 3))
 
     // Feed drill scores into weak_areas so personalization improves over time
-    const normalizedTag = (topic_tag ?? '').toLowerCase().replace(/[\s-]+/g, '_')
+    const normalizedTag = normalizeTopic(topic_tag ?? '')
     if (normalizedTag) {
       const { data: existing } = await supabase
         .from('weak_areas')

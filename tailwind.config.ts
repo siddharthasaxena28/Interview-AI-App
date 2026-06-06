@@ -53,14 +53,14 @@ const config: Config = {
           foreground: "hsl(var(--card-foreground))",
         },
         // Design-system surface colours
-        surface: "#111118",
-        "surface-2": "#13131f",
-        "surface-3": "#1a1a2e",
+        surface: "#ffffff",
+        "surface-2": "#f8fafc",
+        "surface-3": "#f1f5f9",
         // Accent palette
         "indigo-accent": "#6366f1",
         "violet-accent": "#8b5cf6",
         // Subtle border
-        "border-subtle": "rgba(255,255,255,0.06)",
+        "border-subtle": "rgba(0,0,0,0.08)",
       },
       borderRadius: {
         lg: "var(--radius)",

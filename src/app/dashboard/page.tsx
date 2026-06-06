@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { normalizeTopic } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 import { Mic, Plus, Clock, TrendingUp, CreditCard, Flame, Target, Gift, ArrowRight, Zap } from 'lucide-react'
@@ -13,6 +14,8 @@ import OnboardingModal from './OnboardingModal'
 import UserMenu from './UserMenu'
 import StudyPlanWidget from './StudyPlanWidget'
 import FingerprintCapture from './FingerprintCapture'
+import FadeIn from '@/components/FadeIn'
+import { StaggerContainer, StaggerItem } from '@/components/Stagger'
 
 // Exact lookup — mirrors the controlled vocabulary enforced in generate-questions.
 const TOPIC_ROUND_MAP: Record<string, RoundType> = {
@@ -35,7 +38,7 @@ const TOPIC_ROUND_MAP: Record<string, RoundType> = {
 }
 
 function topicToRoundType(topic: string): RoundType {
-  const key = topic.toLowerCase().replace(/[\s-]+/g, '_')
+  const key = normalizeTopic(topic)
   return TOPIC_ROUND_MAP[key] ?? 'tech_l1'
 }
 
@@ -95,7 +98,7 @@ export default async function DashboardPage() {
   const chartData = sessionsWithReports
     .slice(-8)
     .map((s: InterviewSession) => ({
-      score: (reportMap.get(s.id) as { overall_score: number }).overall_score,
+      score: (reportMap.get(s.id) as { overall_score: number | null })?.overall_score ?? 0,
       label: s.ended_at
         ? new Date(s.ended_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
         : '',
@@ -103,7 +106,7 @@ export default async function DashboardPage() {
 
   // Progress comparison: earliest-3 avg vs latest-3 avg.
   // Requires >= 6 reports so the two windows never overlap.
-  const scoreOf = (s: InterviewSession) => (reportMap.get(s.id) as { overall_score: number }).overall_score
+  const scoreOf = (s: InterviewSession) => (reportMap.get(s.id) as { overall_score: number | null })?.overall_score ?? 0
   let progressDelta: number | null = null
   if (sessionsWithReports.length >= 6) {
     const first3 = sessionsWithReports.slice(0, 3)
@@ -122,7 +125,7 @@ export default async function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f]">
+    <div className="min-h-screen bg-slate-50">
       <FingerprintCapture />
       <OnboardingModal
         show={!sessions?.length}
@@ -131,32 +134,46 @@ export default async function DashboardPage() {
       />
 
       {/* Top nav */}
-      <nav className="sticky top-0 z-50 bg-[#0a0a0f]/80 backdrop-blur-xl border-b border-white/[0.06] px-6 py-4">
+      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-200 px-6 py-4">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center">
               <div className="w-2 h-2 bg-white rounded-full" />
             </div>
-            <span className="font-bold text-white tracking-tight">InterviewAI</span>
+            <span className="font-bold text-gray-900 tracking-tight">InterviewAI</span>
           </div>
-          <UserMenu
-            name={authUser.user_metadata?.full_name ?? ''}
-            email={authUser.email ?? ''}
-            avatarUrl={authUser.user_metadata?.avatar_url}
-            creditBalance={creditBalance}
-            plan={user?.plan ?? 'free'}
-          />
+          <div className="flex items-center gap-3">
+            <Link
+              href="/pricing"
+              className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                creditBalance > 0
+                  ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
+                  : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+              }`}
+            >
+              <CreditCard className="w-3 h-3" />
+              {creditBalance} {creditBalance === 1 ? 'credit' : 'credits'}
+              {creditBalance === 0 && ' · Top up →'}
+            </Link>
+            <UserMenu
+              name={authUser.user_metadata?.full_name ?? ''}
+              email={authUser.email ?? ''}
+              avatarUrl={authUser.user_metadata?.avatar_url}
+              creditBalance={creditBalance}
+              plan={user?.plan ?? 'free'}
+            />
+          </div>
         </div>
       </nav>
 
       <main className="max-w-5xl mx-auto px-6 py-10">
         {/* Welcome + CTA */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 bg-gradient-to-r from-indigo-600/10 to-transparent border border-indigo-500/20 rounded-2xl p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 bg-gradient-to-r from-indigo-50 to-transparent border border-indigo-200 rounded-2xl p-6">
           <div>
-            <h1 className="text-2xl font-bold text-white">
+            <h1 className="text-2xl font-bold text-gray-900">
               Welcome back, {authUser.user_metadata?.full_name?.split(' ')[0] ?? 'there'}
             </h1>
-            <p className="text-gray-400 text-sm mt-1">Ready for your next practice interview?</p>
+            <p className="text-gray-600 text-sm mt-1">Ready for your next practice interview?</p>
             <div className="mt-3">
               <EnableReminders />
             </div>
@@ -215,97 +232,111 @@ export default async function DashboardPage() {
         )}
 
         {/* Daily Drill CTA */}
-        <div className="bg-[#111118] border border-white/[0.06] hover:border-white/[0.12] rounded-2xl p-4 mb-8 flex items-center justify-between gap-4 transition-all duration-200">
+        <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-4 mb-8 flex items-center justify-between gap-4 transition-all duration-200">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center justify-center flex-shrink-0">
-              <Zap className="w-4 h-4 text-emerald-400" />
+            <div className="w-9 h-9 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-center flex-shrink-0">
+              <Zap className="w-4 h-4 text-emerald-600" />
             </div>
             <div>
-              <div className="font-semibold text-white text-sm">Daily Drill</div>
+              <div className="font-semibold text-gray-900 text-sm">Daily Drill</div>
               <div className="text-xs text-gray-500">3 questions · 5 min · completely free · no credits needed</div>
             </div>
           </div>
           <Link
             href="/drill"
-            className="flex-shrink-0 flex items-center gap-1.5 bg-white/[0.05] hover:bg-white/[0.08] border border-white/[0.08] text-white text-sm font-semibold px-4 py-2 rounded-xl transition-all duration-200 whitespace-nowrap"
+            className="flex-shrink-0 flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-900 text-sm font-semibold px-4 py-2 rounded-xl transition-all duration-200 whitespace-nowrap"
           >
             Start <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
 
         {/* Stats row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-[#111118] border border-white/[0.06] hover:border-white/[0.12] rounded-2xl p-4 flex items-center gap-3 transition-all duration-200">
-            <div className="w-10 h-10 bg-indigo-500/10 border border-indigo-500/20 rounded-xl flex items-center justify-center flex-shrink-0">
-              <Mic className="w-5 h-5 text-indigo-400" />
+        <StaggerContainer className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <StaggerItem lift>
+            <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-4 flex items-center gap-3 transition-all duration-200">
+              <div className="w-10 h-10 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Mic className="w-5 h-5 text-indigo-600" />
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-gray-900">{sessions?.length ?? 0}</div>
+                <div className="text-xs text-gray-500">Sessions</div>
+              </div>
             </div>
-            <div>
-              <div className="text-2xl font-bold text-white">{sessions?.length ?? 0}</div>
-              <div className="text-xs text-gray-500">Sessions</div>
-            </div>
-          </div>
-          <div className="bg-[#111118] border border-white/[0.06] hover:border-white/[0.12] rounded-2xl p-4 flex items-center gap-3 transition-all duration-200">
-            <div className="w-10 h-10 bg-violet-500/10 border border-violet-500/20 rounded-xl flex items-center justify-center flex-shrink-0">
-              <TrendingUp className="w-5 h-5 text-violet-400" />
-            </div>
-            <div>
-              <div className="flex items-end gap-1">
-                <div className="text-2xl font-bold text-white">
-                  {reports && reports.length > 0
-                    ? Math.round((reports as Array<{overall_score: number}>).reduce((a, r) => a + r.overall_score, 0) / reports.length)
-                    : '—'}
-                </div>
-                {progressDelta !== null && progressDelta !== 0 && (
-                  <div className={`text-sm font-semibold mb-0.5 ${progressDelta > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {progressDelta > 0 ? `+${progressDelta}` : progressDelta}
+          </StaggerItem>
+          <StaggerItem lift>
+            <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-4 flex items-center gap-3 transition-all duration-200">
+              <div className="w-10 h-10 bg-violet-50 border border-violet-200 rounded-xl flex items-center justify-center flex-shrink-0">
+                <TrendingUp className="w-5 h-5 text-violet-600" />
+              </div>
+              <div>
+                <div className="flex items-end gap-1">
+                  <div className="text-2xl font-bold text-gray-900">
+                    {reports && reports.length > 0
+                      ? (() => {
+                          const valid = (reports as Array<{overall_score: number | null}>).filter(r => r.overall_score !== null)
+                          return valid.length > 0
+                            ? Math.round(valid.reduce((a, r) => a + (r.overall_score as number), 0) / valid.length)
+                            : '—'
+                        })()
+                      : '—'}
                   </div>
-                )}
-              </div>
-              <div className="text-xs text-gray-500">
-                Avg score{progressDelta !== null ? ' · trend' : ''}
-              </div>
-            </div>
-          </div>
-          <div className={`rounded-2xl border p-4 flex items-center gap-3 transition-all duration-200 ${currentStreak >= 3 ? 'bg-orange-500/5 border-orange-500/20' : 'bg-[#111118] border-white/[0.06] hover:border-white/[0.12]'}`}>
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${currentStreak >= 3 ? 'bg-orange-500/10 border border-orange-500/20' : 'bg-white/[0.04] border border-white/[0.06]'}`}>
-              <Flame className={`w-5 h-5 ${currentStreak >= 3 ? 'text-orange-400' : 'text-gray-600'}`} />
-            </div>
-            <div>
-              <div className={`text-2xl font-bold ${currentStreak >= 3 ? 'text-orange-400' : 'text-white'}`}>
-                {currentStreak}
-              </div>
-              <div className="text-xs text-gray-500">
-                Day streak{longestStreak > currentStreak ? ` · best ${longestStreak}` : ''}
+                  {progressDelta !== null && progressDelta !== 0 && (
+                    <div className={`text-sm font-semibold mb-0.5 ${progressDelta > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {progressDelta > 0 ? `+${progressDelta}` : progressDelta}
+                    </div>
+                  )}
+                </div>
+                <div className="text-xs text-gray-500">
+                  Avg score{progressDelta !== null ? ' · trend' : ''}
+                </div>
               </div>
             </div>
-          </div>
-          <div className="bg-[#111118] border border-white/[0.06] hover:border-white/[0.12] rounded-2xl p-4 flex items-center gap-3 transition-all duration-200">
-            <div className="w-10 h-10 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center justify-center flex-shrink-0">
-              <CreditCard className="w-5 h-5 text-emerald-400" />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-indigo-400">
-                {creditBalance}
+          </StaggerItem>
+          <StaggerItem lift>
+            <div className={`rounded-2xl border p-4 flex items-center gap-3 transition-all duration-200 ${currentStreak >= 3 ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-200 hover:border-gray-300'}`}>
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${currentStreak >= 3 ? 'bg-orange-100 border border-orange-200' : 'bg-gray-100 border border-gray-100'}`}>
+                <Flame className={`w-5 h-5 ${currentStreak >= 3 ? 'text-orange-600' : 'text-gray-400'}`} />
               </div>
-              <div className="text-xs text-gray-500">Credits left</div>
+              <div>
+                <div className={`text-2xl font-bold ${currentStreak >= 3 ? 'text-orange-600' : 'text-gray-900'}`}>
+                  {currentStreak}
+                </div>
+                <div className="text-xs text-gray-500">
+                  Day streak{longestStreak > currentStreak ? ` · best ${longestStreak}` : ''}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          </StaggerItem>
+          <StaggerItem lift>
+            <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-4 flex items-center gap-3 transition-all duration-200">
+              <div className="w-10 h-10 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-center flex-shrink-0">
+                <CreditCard className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-indigo-600">
+                  {creditBalance}
+                </div>
+                <div className="text-xs text-gray-500">Credits left</div>
+              </div>
+            </div>
+          </StaggerItem>
+        </StaggerContainer>
 
         {/* Score trend chart */}
         {chartData.length >= 2 && (
-          <div className="bg-[#111118] border border-white/[0.06] hover:border-white/[0.12] rounded-2xl p-6 mb-8 transition-all duration-200">
+          <FadeIn className="mb-8">
+          <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-6 transition-all duration-200">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-white flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-indigo-400" /> Score Trend
+              <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-indigo-600" /> Score Trend
               </h2>
               {progressDelta !== null && (
                 <span className={`text-sm font-semibold px-2.5 py-1 rounded-full ${
                   progressDelta > 0
-                    ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
+                    ? 'text-emerald-600 bg-emerald-50 border border-emerald-200'
                     : progressDelta < 0
-                      ? 'text-red-400 bg-red-500/10 border border-red-500/20'
-                      : 'text-gray-400 bg-white/[0.04] border border-white/[0.06]'
+                      ? 'text-red-600 bg-red-50 border border-red-200'
+                      : 'text-gray-600 bg-gray-100 border border-gray-100'
                 }`}>
                   {progressDelta > 0 ? `↑ +${progressDelta} pts improved` : progressDelta < 0 ? `↓ ${progressDelta} pts` : 'Holding steady'}
                 </span>
@@ -328,7 +359,7 @@ export default async function DashboardPage() {
                 const y = ((100 - score) / 100) * 52 + 4
                 return (
                   <g key={score}>
-                    <line x1="0" y1={y} x2="290" y2={y} stroke="#1f2937" strokeWidth="1" />
+                    <line x1="0" y1={y} x2="290" y2={y} stroke="#e5e7eb" strokeWidth="1" />
                     <text x="295" y={y + 3} fontSize="7" fill="#374151" textAnchor="start">{score}</text>
                   </g>
                 )
@@ -361,31 +392,32 @@ export default async function DashboardPage() {
                 return <circle key={i} cx={x} cy={y} r="3" fill="#6366f1" />
               })}
             </svg>
-            <div className="flex justify-between text-xs text-gray-600 mt-1">
+            <div className="flex justify-between text-xs text-gray-400 mt-1">
               <span>{chartData[0].label}</span>
               <span>{chartData[chartData.length - 1].label}</span>
             </div>
           </div>
+          </FadeIn>
         )}
 
         <StudyPlanWidget />
 
         {/* Weak areas / focus topics — with "Practice This" links */}
         {weakAreas && weakAreas.length > 0 && (
-          <div className="bg-[#111118] border border-white/[0.06] hover:border-white/[0.12] rounded-2xl overflow-hidden mb-8 transition-all duration-200">
-            <div className="px-6 py-4 border-b border-white/[0.06] flex items-center gap-2">
-              <Target className="w-4 h-4 text-amber-400" />
-              <h2 className="font-semibold text-white">Focus Areas</h2>
-              <span className="text-xs text-gray-600 ml-1">topics to practice more</span>
+          <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl overflow-hidden mb-8 transition-all duration-200">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-2">
+              <Target className="w-4 h-4 text-amber-600" />
+              <h2 className="font-semibold text-gray-900">Focus Areas</h2>
+              <span className="text-xs text-gray-400 ml-1">topics to practice more</span>
             </div>
             <div className="px-6 py-4 flex flex-wrap gap-3">
               {(weakAreas as Array<{topic_tag: string; avg_score: number; session_count: number}>).map((wa) => {
                 const pct = Math.round((wa.avg_score / 5) * 100)
                 const color = pct >= 60
-                  ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                  ? 'text-emerald-600 bg-emerald-50 border-emerald-200'
                   : pct >= 40
-                    ? 'text-amber-400 bg-amber-500/10 border-amber-500/20'
-                    : 'text-red-400 bg-red-500/10 border-red-500/20'
+                    ? 'text-amber-600 bg-amber-50 border-amber-200'
+                    : 'text-red-600 bg-red-50 border-red-200'
                 const roundType = topicToRoundType(wa.topic_tag)
                 return (
                   <div key={wa.topic_tag} className={`border rounded-xl px-4 py-3 flex items-center gap-4 ${color}`}>
@@ -395,7 +427,7 @@ export default async function DashboardPage() {
                     </div>
                     <Link
                       href={`/interview/setup?round_type=${roundType}`}
-                      className="flex items-center gap-1 text-xs font-semibold bg-white/[0.06] border border-current rounded-lg px-2.5 py-1.5 hover:bg-white/[0.12] transition-colors whitespace-nowrap"
+                      className="flex items-center gap-1 text-xs font-semibold bg-gray-100 border border-current rounded-lg px-2.5 py-1.5 hover:bg-gray-200 transition-colors whitespace-nowrap"
                     >
                       Practice <ArrowRight className="w-3 h-3" />
                     </Link>
@@ -408,11 +440,11 @@ export default async function DashboardPage() {
 
         {/* Referral programme */}
         {referralLink && (
-          <div className="bg-[#111118] border border-indigo-500/20 hover:border-indigo-500/30 rounded-2xl p-6 mb-8 transition-all duration-200">
-            <h2 className="font-semibold text-white mb-1 flex items-center gap-2">
-              <Gift className="w-4 h-4 text-indigo-400" /> Refer a Friend
+          <div className="bg-white border border-indigo-200 hover:border-indigo-300 rounded-2xl p-6 mb-8 transition-all duration-200">
+            <h2 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
+              <Gift className="w-4 h-4 text-indigo-600" /> Refer a Friend
             </h2>
-            <p className="text-sm text-gray-400 mb-4">
+            <p className="text-sm text-gray-600 mb-4">
               Share your link. When a friend signs up and completes their first interview, you both get 1 free session.
             </p>
             <CopyReferral link={referralLink} />
@@ -420,16 +452,16 @@ export default async function DashboardPage() {
         )}
 
         {/* Interview history */}
-        <div className="bg-[#111118] border border-white/[0.06] rounded-2xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-white/[0.06]">
-            <h2 className="font-semibold text-white">Interview History</h2>
+        <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h2 className="font-semibold text-gray-900">Interview History</h2>
           </div>
           {!sessions || sessions.length === 0 ? (
             <div className="px-6 py-12 text-center">
-              <div className="w-16 h-16 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <Mic className="w-8 h-8 text-indigo-400" />
+              <div className="w-16 h-16 bg-indigo-50 border border-indigo-200 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <Mic className="w-8 h-8 text-indigo-600" />
               </div>
-              <p className="text-white font-semibold text-lg">Start your first mock interview</p>
+              <p className="text-gray-900 font-semibold text-lg">Start your first mock interview</p>
               <p className="text-sm text-gray-500 mt-1 mb-6 max-w-sm mx-auto">
                 Paste a job description, pick a round type, and get a realistic 30-minute voice interview
                 with instant AI feedback.
@@ -452,27 +484,27 @@ export default async function DashboardPage() {
                 )}
                 <Link
                   href="/drill"
-                  className="inline-flex items-center justify-center gap-2 bg-white/[0.05] hover:bg-white/[0.08] border border-white/[0.08] text-white px-6 py-3 rounded-xl text-sm font-medium transition-all duration-200"
+                  className="inline-flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-900 px-6 py-3 rounded-xl text-sm font-medium transition-all duration-200"
                 >
                   Try free daily drill first
                 </Link>
               </div>
             </div>
           ) : (
-            <div className="divide-y divide-white/[0.04]">
+            <div className="divide-y divide-gray-100">
               {(sessions as InterviewSession[]).slice(0, 10).map((session) => {
                 const report = reportMap.get(session.id)
                 return (
-                  <div key={session.id} className="px-6 py-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
+                  <div key={session.id} className="px-6 py-4 flex items-center justify-between hover:bg-indigo-50/30 transition-colors">
                     <div>
-                      <div className="font-medium text-white text-sm">
+                      <div className="font-medium text-gray-900 text-sm">
                         {session.company} — {session.role}
                       </div>
                       <div className="flex items-center gap-3 mt-0.5">
                         <span className="text-xs text-gray-500">
                           {roundLabels[session.round_type] ?? session.round_type}
                         </span>
-                        <span className="text-xs text-gray-700">•</span>
+                        <span className="text-xs text-gray-400">•</span>
                         <span className="text-xs text-gray-500 flex items-center gap-1">
                           <Clock className="w-3 h-3" />
                           {session.ended_at
@@ -489,17 +521,17 @@ export default async function DashboardPage() {
                       {report && (
                         <div className="text-right">
                           <div className={`text-lg font-bold ${
-                            (report as {overall_score: number}).overall_score >= 75 ? 'text-emerald-400' :
-                            (report as {overall_score: number}).overall_score >= 55 ? 'text-amber-400' : 'text-red-400'
+                            (report as {overall_score: number}).overall_score >= 75 ? 'text-emerald-600' :
+                            (report as {overall_score: number}).overall_score >= 55 ? 'text-amber-600' : 'text-red-600'
                           }`}>
                             {(report as {overall_score: number}).overall_score}
                           </div>
-                          <div className="text-xs text-gray-600">score</div>
+                          <div className="text-xs text-gray-400">score</div>
                         </div>
                       )}
                       <Link
                         href={`/interview/feedback/${session.id}`}
-                        className="text-sm text-indigo-400 font-medium hover:text-indigo-300 transition-colors"
+                        className="text-sm text-indigo-600 font-medium hover:text-indigo-700 transition-colors"
                       >
                         View report →
                       </Link>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { ChevronDown, ChevronUp, MessageSquare, Lightbulb, Copy, Check, Play, Square, Mic, RotateCcw } from 'lucide-react'
+import { ChevronDown, ChevronUp, MessageSquare, Lightbulb, Copy, Check, Play, Square, Mic, RotateCcw, Zap } from 'lucide-react'
 import type { PerQuestionFeedback } from '@/types'
 import { getAnswerAudio } from '@/lib/audio-storage'
 
@@ -39,6 +39,7 @@ interface QuestionRow {
   text: string
   difficulty: number
   topic_tag: string
+  expected_keywords?: string[]
 }
 
 interface AnswerRow {
@@ -55,8 +56,8 @@ interface Props {
 }
 
 const SCORE_LABEL = ['', 'Needs Work', 'Below Par', 'Developing', 'Good', 'Excellent'] as const
-const scoreBadgeBg = (s: number) => s >= 4 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : s === 3 ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'
-const scoreTextColor = (s: number) => s >= 4 ? 'text-emerald-400' : s === 3 ? 'text-amber-400' : 'text-red-400'
+const scoreBadgeBg = (s: number) => s >= 4 ? 'bg-emerald-100 text-emerald-600 border border-emerald-200' : s === 3 ? 'bg-amber-100 text-amber-600 border border-amber-200' : 'bg-red-100 text-red-600 border border-red-200'
+const scoreTextColor = (s: number) => s >= 4 ? 'text-emerald-600' : s === 3 ? 'text-amber-600' : 'text-red-600'
 
 // Speech metrics
 const FILLER_WORDS = ['um', 'uh', 'hmm', 'err', 'you know', 'i mean', 'kind of', 'sort of', 'basically']
@@ -79,9 +80,9 @@ function calcSpeechMetrics(transcript: string, durationSeconds: number) {
 }
 
 function wpmColor(wpm: number) {
-  if (wpm < 80) return 'text-red-400'
-  if (wpm > 180) return 'text-amber-400'
-  return 'text-emerald-400'
+  if (wpm < 80) return 'text-red-600'
+  if (wpm > 180) return 'text-amber-600'
+  return 'text-emerald-600'
 }
 
 function wpmLabel(wpm: number) {
@@ -132,7 +133,7 @@ function AnswerAudio({ sessionId, questionId }: { sessionId: string; questionId:
     <button
       onClick={toggle}
       title={playing ? 'Stop playback' : 'Play your recorded answer'}
-      className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 border border-indigo-500/30 hover:border-indigo-500/50 bg-indigo-500/5 rounded-lg px-2.5 py-1 transition-colors"
+      className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-700 border border-indigo-300 hover:border-indigo-400 bg-indigo-50 rounded-lg px-2.5 py-1 transition-colors"
     >
       {playing
         ? <><Square className="w-3 h-3 fill-current" /> Stop</>
@@ -172,10 +173,10 @@ export default function FeedbackPerQuestion({ perQuestion, questions, answers, s
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-white">Per-Question Breakdown</h2>
+        <h2 className="text-lg font-semibold text-gray-900">Per-Question Breakdown</h2>
         <button
           onClick={toggleAll}
-          className="text-sm text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
+          className="text-sm text-indigo-600 hover:text-indigo-700 font-medium transition-colors"
         >
           {allOpen ? 'Collapse all' : 'Expand all'}
         </button>
@@ -189,10 +190,10 @@ export default function FeedbackPerQuestion({ perQuestion, questions, answers, s
           const metrics = a?.transcript_text ? calcSpeechMetrics(a.transcript_text, a.duration_seconds) : null
 
           return (
-            <div key={i} className="rounded-xl border border-white/[0.06] bg-[#0d0d14] overflow-hidden">
+            <div key={i} className="rounded-xl border border-gray-200 bg-slate-50 overflow-hidden">
               {/* Header row */}
               <button
-                className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-white/[0.03] transition-colors"
+                className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-gray-100 transition-colors"
                 onClick={() => toggle(i)}
               >
                 <div className={`flex-shrink-0 w-11 h-11 rounded-xl flex flex-col items-center justify-center ${scoreBadgeBg(pq.score)}`}>
@@ -203,37 +204,42 @@ export default function FeedbackPerQuestion({ perQuestion, questions, answers, s
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-1.5 mb-1">
                     <span className="text-xs text-gray-500 font-medium">Q{i + 1}</span>
-                    <span className="text-xs bg-white/[0.05] text-gray-400 px-2 py-0.5 rounded-full capitalize border border-white/[0.06]">
+                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full capitalize border border-gray-200">
                       {q?.topic_tag?.replace(/_/g, ' ') ?? 'general'}
                     </span>
-                    <span className="text-xs text-gray-600">Diff {q?.difficulty ?? '?'}/5</span>
+                    <span className="text-xs text-gray-400">Diff {q?.difficulty ?? '?'}/5</span>
+                    {q?.expected_keywords?.includes('__resume') && (
+                      <span className="text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-0.5 rounded-full font-medium">
+                        From résumé
+                      </span>
+                    )}
                     <span className={`text-xs font-semibold ${scoreTextColor(pq.score)}`}>
                       {SCORE_LABEL[pq.score] ?? ''}
                     </span>
                   </div>
-                  <p className="text-sm text-gray-200 font-medium truncate">{q?.text ?? 'Question'}</p>
+                  <p className="text-sm text-gray-900 font-medium truncate">{q?.text ?? 'Question'}</p>
                 </div>
 
-                <div className="flex-shrink-0 text-gray-600">
+                <div className="flex-shrink-0 text-gray-400">
                   {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                 </div>
               </button>
 
               {/* Expanded detail */}
               {open && (
-                <div className="border-t border-white/[0.06] px-4 pb-4 pt-3 space-y-3">
-                  <p className="text-sm text-gray-400 italic leading-relaxed">
+                <div className="border-t border-gray-200 px-4 pb-4 pt-3 space-y-3">
+                  <p className="text-sm text-gray-600 italic leading-relaxed">
                     &ldquo;{q?.text ?? 'Question'}&rdquo;
                   </p>
 
                   {/* Answer transcript */}
-                  <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-3">
+                  <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-1.5">
-                        <MessageSquare className="w-3.5 h-3.5 text-indigo-400" />
-                        <span className="text-xs font-semibold text-indigo-300">Your answer</span>
+                        <MessageSquare className="w-3.5 h-3.5 text-indigo-600" />
+                        <span className="text-xs font-semibold text-indigo-700">Your answer</span>
                         {a && a.duration_seconds > 0 && (
-                          <span className="text-xs text-indigo-500">· {Math.round(a.duration_seconds)}s</span>
+                          <span className="text-xs text-indigo-600">{Math.round(a.duration_seconds)}s</span>
                         )}
                       </div>
                       <div className="flex items-center gap-2">
@@ -241,29 +247,29 @@ export default function FeedbackPerQuestion({ perQuestion, questions, answers, s
                         {a?.transcript_text && (
                           <button
                             onClick={() => copyText(a.transcript_text, `ans-${i}`)}
-                            className="text-indigo-500 hover:text-indigo-300 transition-colors"
+                            className="text-indigo-600 hover:text-indigo-700 transition-colors"
                             title="Copy answer"
                           >
                             {copied === `ans-${i}`
-                              ? <Check className="w-3.5 h-3.5 text-emerald-400" />
+                              ? <Check className="w-3.5 h-3.5 text-emerald-600" />
                               : <Copy className="w-3.5 h-3.5" />}
                           </button>
                         )}
                       </div>
                     </div>
                     {a?.transcript_text ? (
-                      <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap break-words">{a.transcript_text}</p>
+                      <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap break-words">{a.transcript_text}</p>
                     ) : (
-                      <p className="text-sm text-indigo-500 italic">No answer recorded for this question.</p>
+                      <p className="text-sm text-indigo-600 italic">No answer recorded for this question.</p>
                     )}
                   </div>
 
                   {/* Speech metrics */}
                   {metrics && (metrics.wpm !== null || metrics.fillerCount > 0) && (
-                    <div className="rounded-lg border border-white/[0.06] bg-white/[0.03] p-3">
+                    <div className="rounded-lg border border-gray-200 bg-gray-100 p-3">
                       <div className="flex items-center gap-1.5 mb-2">
                         <Mic className="w-3.5 h-3.5 text-gray-500" />
-                        <span className="text-xs font-semibold text-gray-400">Speech metrics</span>
+                        <span className="text-xs font-semibold text-gray-600">Speech metrics</span>
                       </div>
                       <div className="flex flex-wrap gap-4 text-xs">
                         {metrics.wpm !== null && (
@@ -272,12 +278,12 @@ export default function FeedbackPerQuestion({ perQuestion, questions, answers, s
                             <span className={`font-semibold ${wpmColor(metrics.wpm)}`}>
                               {metrics.wpm} WPM
                             </span>
-                            <span className="text-gray-600 ml-1">· {wpmLabel(metrics.wpm)} (ideal 100–160)</span>
+                            <span className="text-gray-400 ml-1">· {wpmLabel(metrics.wpm)} (ideal 100–160)</span>
                           </div>
                         )}
                         <div>
                           <span className="text-gray-500">Words: </span>
-                          <span className="font-semibold text-gray-300">{metrics.wordCount}</span>
+                          <span className="font-semibold text-gray-700">{metrics.wordCount}</span>
                         </div>
                         {(() => {
                           if (!q?.topic_tag) return null
@@ -289,10 +295,10 @@ export default function FeedbackPerQuestion({ perQuestion, questions, answers, s
                             return (
                               <div>
                                 <span className="text-gray-500">Ideal length: </span>
-                                <span className={`font-semibold ${tooShort ? 'text-red-400' : tooLong ? 'text-amber-400' : 'text-gray-300'}`}>
+                                <span className={`font-semibold ${tooShort ? 'text-red-600' : tooLong ? 'text-amber-600' : 'text-gray-700'}`}>
                                   {min}–{max} words
                                 </span>
-                                <span className={`ml-1 ${tooShort ? 'text-red-500' : 'text-amber-500'}`}>
+                                <span className={`ml-1 ${tooShort ? 'text-red-600' : 'text-amber-600'}`}>
                                   ({tooShort ? `too short — expand by ${min - wc}+ words` : `consider trimming to ${max} words`})
                                 </span>
                               </div>
@@ -303,10 +309,10 @@ export default function FeedbackPerQuestion({ perQuestion, questions, answers, s
                         {metrics.fillerCount > 0 && (
                           <div>
                             <span className="text-gray-500">Filler words: </span>
-                            <span className={`font-semibold ${metrics.fillerCount > 3 ? 'text-amber-400' : 'text-gray-300'}`}>
+                            <span className={`font-semibold ${metrics.fillerCount > 3 ? 'text-amber-600' : 'text-gray-700'}`}>
                               {metrics.fillerCount}
                             </span>
-                            <span className="text-gray-600 ml-1">({metrics.fillerDetails.slice(0, 3).join(', ')})</span>
+                            <span className="text-gray-400 ml-1">({metrics.fillerDetails.slice(0, 3).join(', ')})</span>
                           </div>
                         )}
                       </div>
@@ -314,19 +320,19 @@ export default function FeedbackPerQuestion({ perQuestion, questions, answers, s
                   )}
 
                   {/* Coach feedback */}
-                  <div className="rounded-lg border border-white/[0.06] bg-white/[0.03] p-3">
-                    <span className="text-xs font-semibold text-gray-400 block mb-1.5">Coach Feedback</span>
-                    <p className="text-sm text-gray-300 leading-relaxed">{pq.feedback}</p>
+                  <div className="rounded-lg border border-gray-200 bg-gray-100 p-3">
+                    <span className="text-xs font-semibold text-gray-600 block mb-1.5">Coach Feedback</span>
+                    <p className="text-sm text-gray-700 leading-relaxed">{pq.feedback}</p>
                   </div>
 
                   {/* Ideal answer hint */}
                   {pq.ideal_answer_hint && (
-                    <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-3">
+                    <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
                       <div className="flex items-center gap-1.5 mb-1.5">
-                        <Lightbulb className="w-3.5 h-3.5 text-indigo-400" />
-                        <span className="text-xs font-semibold text-indigo-300">What a strong answer covers</span>
+                        <Lightbulb className="w-3.5 h-3.5 text-indigo-600" />
+                        <span className="text-xs font-semibold text-indigo-700">What a strong answer covers</span>
                       </div>
-                      <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-line">
+                      <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
                         {pq.ideal_answer_hint}
                       </p>
                     </div>
@@ -334,13 +340,22 @@ export default function FeedbackPerQuestion({ perQuestion, questions, answers, s
 
                   {/* Retry This Topic CTA */}
                   {pq.score <= 3 && q?.topic_tag && (
-                    <a
-                      href={`/interview/setup?round_type=${TOPIC_ROUND[q.topic_tag] ?? 'tech_l1'}`}
-                      className="flex items-center gap-2 text-xs text-indigo-400 hover:text-indigo-300 font-medium pt-1 transition-colors"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      Practice {q.topic_tag.replace(/_/g, ' ')} questions in a full interview →
-                    </a>
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <a
+                        href={`/drill?filter=${TOPIC_ROUND[q.topic_tag] ?? 'tech_l1'}`}
+                        className="flex items-center gap-1.5 text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 px-3 py-1.5 rounded-lg font-medium transition-colors"
+                      >
+                        <Zap className="w-3 h-3" />
+                        Drill {q.topic_tag.replace(/_/g, ' ')} — free
+                      </a>
+                      <a
+                        href={`/interview/setup?round_type=${TOPIC_ROUND[q.topic_tag] ?? 'tech_l1'}`}
+                        className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-indigo-600 font-medium transition-colors"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Full interview →
+                      </a>
+                    </div>
                   )}
                 </div>
               )}

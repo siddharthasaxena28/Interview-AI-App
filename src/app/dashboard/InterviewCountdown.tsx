@@ -51,10 +51,10 @@ export default function InterviewCountdown() {
 
   if (!interviewDate || editing) {
     return (
-      <div className="bg-[#111118] border border-white/[0.06] rounded-2xl p-4 mb-8">
+      <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-8 shadow-sm">
         <div className="flex items-center gap-2 mb-3">
-          <Calendar className="w-4 h-4 text-indigo-400" />
-          <span className="text-sm font-medium text-white">When is your real interview?</span>
+          <Calendar className="w-4 h-4 text-indigo-600" />
+          <span className="text-sm font-medium text-gray-900">When is your real interview?</span>
         </div>
         <div className="flex gap-2">
           <input
@@ -62,7 +62,7 @@ export default function InterviewCountdown() {
             value={inputDate}
             min={todayStr}
             onChange={(e) => setInputDate(e.target.value)}
-            className="flex-1 bg-[#0a0a0f] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 focus:border-indigo-500/50"
+            className="flex-1 bg-slate-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-500/50"
           />
           <button
             onClick={save}
@@ -72,12 +72,12 @@ export default function InterviewCountdown() {
             Set date
           </button>
           {editing && (
-            <button onClick={() => setEditing(false)} className="text-gray-600 hover:text-gray-400 px-2 transition-colors">
+            <button onClick={() => setEditing(false)} className="text-gray-400 hover:text-gray-600 px-2 transition-colors">
               Cancel
             </button>
           )}
         </div>
-        <p className="text-xs text-gray-600 mt-2">
+        <p className="text-xs text-gray-400 mt-2">
           We&apos;ll show a countdown so you can track how many days you have left to practise.
         </p>
       </div>
@@ -91,12 +91,12 @@ export default function InterviewCountdown() {
 
   if (daysLeft < 0) {
     return (
-      <div className="bg-[#111118] border border-white/[0.06] rounded-2xl p-4 mb-8 flex items-center justify-between">
+      <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-8 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-2 text-gray-500 text-sm">
           <Calendar className="w-4 h-4" />
           <span>Your interview on {formattedDate} has passed. Did it go well?</span>
         </div>
-        <button onClick={clear} className="text-gray-600 hover:text-gray-400 transition-colors">
+        <button onClick={clear} className="text-gray-400 hover:text-gray-600 transition-colors">
           <X className="w-4 h-4" />
         </button>
       </div>
@@ -104,14 +104,14 @@ export default function InterviewCountdown() {
   }
 
   const urgencyBg = daysLeft <= 3
-    ? 'bg-red-500/5 border-red-500/20'
+    ? 'bg-red-50 border-red-200'
     : daysLeft <= 7
-      ? 'bg-amber-500/5 border-amber-500/20'
-      : 'bg-indigo-500/5 border-indigo-500/20'
+      ? 'bg-amber-50 border-amber-200'
+      : 'bg-indigo-50 border-indigo-200'
 
-  const textColor = daysLeft <= 3 ? 'text-red-400' : daysLeft <= 7 ? 'text-amber-400' : 'text-indigo-400'
+  const textColor = daysLeft <= 3 ? 'text-red-600' : daysLeft <= 7 ? 'text-amber-600' : 'text-indigo-600'
   const subTextColor = daysLeft <= 3 ? 'text-red-500/70' : daysLeft <= 7 ? 'text-amber-500/70' : 'text-indigo-500/70'
-  const digitColor = daysLeft <= 3 ? 'text-red-400' : daysLeft <= 7 ? 'text-amber-400' : 'text-white'
+  const digitColor = daysLeft <= 3 ? 'text-red-600' : daysLeft <= 7 ? 'text-amber-600' : 'text-gray-900'
 
   return (
     <div className={`border rounded-2xl p-4 mb-8 flex items-center justify-between ${urgencyBg}`}>
@@ -135,7 +135,7 @@ export default function InterviewCountdown() {
         >
           Change
         </button>
-        <button onClick={clear} className="text-gray-600 hover:text-gray-400 transition-colors">
+        <button onClick={clear} className="text-gray-400 hover:text-gray-600 transition-colors">
           <X className="w-4 h-4" />
         </button>
       </div>

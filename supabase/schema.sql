@@ -87,7 +87,8 @@ CREATE TABLE IF NOT EXISTS public.questions (
   difficulty integer NOT NULL CHECK (difficulty BETWEEN 1 AND 5),
   topic_tag text NOT NULL DEFAULT '',
   order_index integer NOT NULL DEFAULT 0,
-  asked boolean NOT NULL DEFAULT false
+  asked boolean NOT NULL DEFAULT false,
+  expected_keywords text[] NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS public.answers (
