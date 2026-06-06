@@ -376,7 +376,25 @@ function SessionPageInner({ params }: SessionPageProps) {
           try {
             const msg = JSON.parse(event.data)
 
-            if (systemMutedRef.current) return
+            if (systemMutedRef.current) {
+              // While AI is speaking, a SpeechStarted from Deepgram means the
+              // candidate is talking — stop the AI and let them take the floor.
+              // Restricted to interview phases so the opening greeting can play
+              // uninterrupted. AEC (echoCancellation: true on the MediaStream)
+              // filters out the AI's own audio, so false positives are rare.
+              if (
+                msg.type === 'SpeechStarted' &&
+                !endingRef.current &&
+                (phaseRef.current === 'interview' || phaseRef.current === 'candidate_questions')
+              ) {
+                stopAllAudio()               // resolves speakText/speakInterruption promise
+                systemMutedRef.current = false
+                isProcessingRef.current = false
+                interruptionActiveRef.current = false
+                // speakText cleanup will call setListening(); next SpeechStarted → USER_SPEAKING
+              }
+              return
+            }
 
             if (msg.type === 'SpeechStarted') {
               setUserSpeaking()
@@ -737,11 +755,13 @@ function SessionPageInner({ params }: SessionPageProps) {
       el.pause()
       el.src = url
       await new Promise<void>(resolve => {
+        cancelSpeakRef.current = resolve
         el.onended = () => resolve()
         el.onerror = () => resolve()
         el.play().catch(() => resolve())
         setTimeout(resolve, 8000)
       })
+      cancelSpeakRef.current = null
       URL.revokeObjectURL(url)
     } catch { /* silent fail — candidate keeps going uninterrupted */ } finally {
       // Restore accumulated transcript so the answer submission still gets full text
