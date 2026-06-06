@@ -105,6 +105,11 @@ function SessionPageInner({ params }: SessionPageProps) {
   const candidateQuestionsCountRef = useRef(0)
   // Mirror of handleCandidateQuestion so the ws.onmessage closure gets the latest.
   const handleCandidateQuestionRef = useRef<(t: string) => Promise<void>>(async () => {})
+  // Mid-answer interruption — one interruption max per question; guards prevent
+  // concurrent checks; interruptionActive ensures we don't submit during playback.
+  const hasInterruptedRef = useRef<Record<string, boolean>>({})
+  const midAnswerCheckScheduledRef = useRef(false)
+  const interruptionActiveRef = useRef(false)
   // Auto-retry tracking for answer evaluation API failures
   const evalAutoRetriedRef = useRef(false)
   // Ensures TTS fallback announcement fires only once per session
@@ -156,7 +161,19 @@ function SessionPageInner({ params }: SessionPageProps) {
   // instantly from cache (hiding the 2–5 s evaluate-answer API latency).
   useEffect(() => {
     if (phase !== 'interview' || !sessionData || fillerQueueRef.current.length > 0) return
-    const phrases = ["Mm-hmm.", "Let me think about that.", "I see.", "Interesting.", "Right, okay."]
+    // Order matters — selectContextualFiller() returns an index into this array.
+    // 0: default/medium  1: long/technical  2: short (<15w)  3: long/behavioral
+    // 4: medium alt      5: very long (>150w)  6: medium alt2  7: acknowledgment-seeking
+    const phrases = [
+      "Mm-hmm.",
+      "Let me think about that.",
+      "I see.",
+      "I appreciate you sharing that.",
+      "Right, okay.",
+      "That's quite thorough.",
+      "Interesting.",
+      "Yes, go on.",
+    ]
     Promise.all(phrases.map(async (text) => {
       try {
         const res = await fetch('/api/tts', {
@@ -373,6 +390,23 @@ function SessionPageInner({ params }: SessionPageProps) {
                   liveTranscriptRef.current = ''
                   setFinalTranscript(finalTranscriptRef.current)
                   setLiveTranscript('')
+
+                  // Schedule a mid-answer interruption check once the candidate has
+                  // spoken enough to warrant a clarifying question. The 500ms delay
+                  // lets the final token settle and avoids firing on a stutter.
+                  if (
+                    phaseRef.current === 'interview' &&
+                    !isProcessingRef.current &&
+                    !interruptionActiveRef.current &&
+                    currentQuestionRef.current &&
+                    !hasInterruptedRef.current[currentQuestionRef.current.id]
+                  ) {
+                    const wc = finalTranscriptRef.current.trim().split(/\s+/).filter(Boolean).length
+                    if (wc >= 40 && !midAnswerCheckScheduledRef.current) {
+                      midAnswerCheckScheduledRef.current = true
+                      setTimeout(checkMidAnswerInterruption, 500)
+                    }
+                  }
                 } else {
                   liveTranscriptRef.current = transcript
                   setLiveTranscript(transcript)
@@ -591,11 +625,11 @@ function SessionPageInner({ params }: SessionPageProps) {
   // speaking until speakText() sets a new src on audioRef — creating continuous audio
   // coverage across the full evaluate-answer API round-trip. speakText naturally
   // interrupts the chain by overwriting audioRef.current.src.
-  async function playFillerChain() {
+  async function playFillerChain(startIndex?: number) {
     const urls = fillerQueueRef.current
     if (!urls.length || !audioRef.current) return
     fillerChainActiveRef.current = true
-    let i = fillerIndexRef.current
+    let i = startIndex !== undefined ? startIndex : fillerIndexRef.current
     while (fillerChainActiveRef.current) {
       const el = audioRef.current
       if (!el) break
@@ -618,6 +652,35 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   function stopFillerChain() {
     fillerChainActiveRef.current = false
+  }
+
+  // Picks the most contextually appropriate filler clip index based on answer
+  // length, round type, and whether the candidate is seeking acknowledgment.
+  function selectContextualFiller(transcript: string, roundType: RoundType): number {
+    const words = transcript.trim().split(/\s+/).filter(Boolean)
+    const wc = words.length
+    const lower = transcript.toLowerCase()
+
+    // Candidate is seeking acknowledgment — respond directly
+    if (/does that make sense|is that right|am i on the right track|right\?$|make sense\?/.test(lower)) return 7
+
+    const isBehavioral = roundType === 'hr' || roundType === 'managerial'
+
+    // Very long answer (> 150 words) — acknowledge thoroughness
+    if (wc > 150) {
+      return isBehavioral ? 3 : 5
+    }
+
+    // Short answer (< 15 words) — neutral acknowledgment
+    if (wc < 15) return 2
+
+    // Long answer (60–150 words) — round-specific
+    if (wc >= 60) {
+      return isBehavioral ? 3 : 1
+    }
+
+    // Medium answer (15–59 words) — rotate between neutral alternatives
+    return fillerIndexRef.current % 2 === 0 ? 4 : 6
   }
 
   // Proxy for prosodic confidence — counts filler words as a fraction of total words.
@@ -647,6 +710,45 @@ function SessionPageInner({ params }: SessionPageProps) {
     }
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel()
+    }
+  }
+
+  // Plays a brief mid-answer interruption WITHOUT clearing the accumulated transcript.
+  // Mutes Deepgram while speaking so the AI's own audio doesn't get transcribed,
+  // then unmutes and returns to LISTENING so the candidate can continue answering.
+  async function speakInterruption(text: string): Promise<void> {
+    if (!audioRef.current || !sessionData) return
+    interruptionActiveRef.current = true
+    const savedTranscript = finalTranscriptRef.current
+    systemMutedRef.current = true
+
+    try {
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, round_type: sessionData.session.round_type, gender: genderParam }),
+      })
+      if (!res.ok) return
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const el = audioRef.current
+      el.onended = null
+      el.onerror = null
+      el.pause()
+      el.src = url
+      await new Promise<void>(resolve => {
+        el.onended = () => resolve()
+        el.onerror = () => resolve()
+        el.play().catch(() => resolve())
+        setTimeout(resolve, 8000)
+      })
+      URL.revokeObjectURL(url)
+    } catch { /* silent fail — candidate keeps going uninterrupted */ } finally {
+      // Restore accumulated transcript so the answer submission still gets full text
+      finalTranscriptRef.current = savedTranscript
+      systemMutedRef.current = false
+      interruptionActiveRef.current = false
+      setListening()
     }
   }
 
@@ -787,16 +889,53 @@ function SessionPageInner({ params }: SessionPageProps) {
     }
   }
 
+  // Called ~500ms after the candidate has spoken 40+ words. Asks Claude if a
+  // brief clarifying interruption would help. Fires at most once per question.
+  async function checkMidAnswerInterruption() {
+    midAnswerCheckScheduledRef.current = false
+    const q = currentQuestionRef.current
+    if (!q || !sessionData) return
+    if (isProcessingRef.current) return
+    if (interruptionActiveRef.current) return
+    if (hasInterruptedRef.current[q.id]) return
+
+    const partial = finalTranscriptRef.current.trim()
+    const wordCount = partial.split(/\s+/).filter(Boolean).length
+    if (wordCount < 40) return
+
+    try {
+      const res = await fetch('/api/mid-answer-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          partial_transcript: partial,
+          question: q.text,
+          session_id: sessionId,
+        }),
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      if (data.should_interrupt && data.interruption) {
+        // Re-check guards — answer submission may have fired while we awaited
+        if (isProcessingRef.current || interruptionActiveRef.current || hasInterruptedRef.current[q.id]) return
+        hasInterruptedRef.current[q.id] = true
+        await speakInterruption(data.interruption)
+      }
+    } catch { /* silent — never disrupt interview on error */ }
+  }
+
   const handleAnswerComplete = useCallback(async (transcript: string) => {
     if (!currentQuestion || !sessionData) return
     evalAutoRetriedRef.current = false
+    midAnswerCheckScheduledRef.current = false
     setEvalError(null)
     setProcessing()
     setFinalTranscript('')
     stopAnswerRecording(currentQuestion.id)
 
-    // Loop filler clips continuously until speakText() takes over audioRef.
-    void playFillerChain()
+    // Loop filler clips — start from the clip that best matches this answer's
+    // length/type so the first sound the candidate hears feels contextual.
+    void playFillerChain(selectContextualFiller(transcript, sessionData.session.round_type))
 
     const answerConfidence = analyzeAnswerConfidence(transcript)
 
