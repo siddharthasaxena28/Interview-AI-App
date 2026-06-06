@@ -63,6 +63,14 @@ export default async function FeedbackPage({
           </div>
         </nav>
 
+        {/* Always-visible generating banner — sticky so it stays in view while skeleton loads below */}
+        <div className="sticky top-[57px] z-10 bg-indigo-600 px-4 py-3 text-center">
+          <div className="flex items-center justify-center gap-2.5">
+            <div className="w-4 h-4 border-2 border-indigo-300 border-t-white rounded-full animate-spin shrink-0" />
+            <span className="text-sm font-medium text-white">Generating your feedback report — this takes about 30 seconds</span>
+          </div>
+        </div>
+
         {/* Skeleton hero band */}
         <div className="bg-gradient-to-br from-indigo-50 via-slate-50 to-slate-50 px-6 pt-10 pb-20 border-b border-gray-100">
           <div className="max-w-4xl mx-auto text-center">
@@ -118,12 +126,6 @@ export default async function FeedbackPage({
             ))}
           </div>
 
-          {/* Status message */}
-          <div className="text-center py-4">
-            <div className="w-8 h-8 border-2 border-gray-200 border-t-indigo-500 rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-gray-900 font-semibold">Generating your feedback report…</p>
-            <p className="text-sm text-gray-500 mt-1">This takes about 30 seconds</p>
-          </div>
         </div>
 
         <FeedbackClient sessionId={sessionId} hasReport={false} />
