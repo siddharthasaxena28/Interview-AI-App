@@ -48,13 +48,11 @@ export const metadata: Metadata = {
     type: 'website',
     url: APP_URL,
     siteName: 'InterviewAI',
-    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'InterviewAI — AI Mock Interview Platform' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'InterviewAI — Practice like it\'s real.',
     description: 'AI voice mock interviews for the Indian job market. JD-specific questions, real-time feedback, selection probability score.',
-    images: ['/og-image.png'],
   },
   alternates: {
     canonical: APP_URL,
@@ -92,11 +90,6 @@ const jsonLd = {
         price: '0',
         priceCurrency: 'INR',
         description: '1 free mock interview session included',
-      },
-      aggregateRating: {
-        '@type': 'AggregateRating',
-        ratingValue: '4.8',
-        reviewCount: '240',
       },
     },
   ],
