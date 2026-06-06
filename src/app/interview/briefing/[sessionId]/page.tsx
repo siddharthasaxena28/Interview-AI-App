@@ -5,6 +5,7 @@ import { PERSONAS, getRoundLabel, getRoundDuration } from '@/lib/personas'
 import { Mic, Clock, Shield, ArrowLeft, Users } from 'lucide-react'
 import type { InterviewSession, Question, RoundType } from '@/types'
 import MicCheckGate from './MicCheckGate'
+import FadeIn from '@/components/FadeIn'
 
 export default async function BriefingPage({
   params,
@@ -73,7 +74,7 @@ export default async function BriefingPage({
             background: 'radial-gradient(ellipse 60% 40% at 50% 0%, rgba(99,102,241,0.12) 0%, transparent 70%)',
           }}
         />
-        <div className="relative z-10 max-w-2xl mx-auto">
+        <FadeIn className="relative z-10 max-w-2xl mx-auto">
           {/* Session info chips */}
           <div className="flex items-center justify-center gap-2 flex-wrap mb-5">
             <span className="inline-flex items-center bg-indigo-50 text-indigo-600 text-xs font-semibold px-3 py-1 rounded-full border border-indigo-200">
@@ -92,11 +93,12 @@ export default async function BriefingPage({
           <p className="text-gray-500 text-sm">
             {questions?.length ?? 15} questions · Adaptive difficulty
           </p>
-        </div>
+        </FadeIn>
       </div>
 
       {/* Main card — overlaps hero */}
       <div className="max-w-lg mx-auto px-4 -mt-12 pb-16 relative">
+        <FadeIn delay={0.12}>
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
 
           {/* Interviewer section */}
@@ -198,6 +200,7 @@ export default async function BriefingPage({
             <MicCheckGate sessionUrl={sessionUrl} />
           </div>
         </div>
+        </FadeIn>
       </div>
     </div>
   )

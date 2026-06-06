@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { motion } from 'framer-motion'
 import { Mic, CheckCircle } from 'lucide-react'
 
 export default function LoginPage() {
@@ -90,8 +91,14 @@ export default function LoginPage() {
             <span className="font-bold text-gray-900 text-lg">InterviewAI</span>
           </div>
 
-          <h1 className="text-2xl font-bold text-gray-900 mb-1.5">Sign in to InterviewAI</h1>
-          <p className="text-gray-600 text-sm mb-8">1 free interview session included on signup.</p>
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35, ease: 'easeOut' }}
+          >
+            <h1 className="text-2xl font-bold text-gray-900 mb-1.5">Sign in to InterviewAI</h1>
+            <p className="text-gray-600 text-sm mb-8">1 free interview session included on signup.</p>
+          </motion.div>
 
           {deleted && (
             <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs rounded-xl px-4 py-3 mb-6 text-left">
@@ -99,10 +106,15 @@ export default function LoginPage() {
             </div>
           )}
 
-          <button
+          <motion.button
             onClick={signInWithGoogle}
             disabled={loading}
-            className="bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-900 rounded-xl px-6 py-3 w-full flex items-center justify-center gap-3 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35, delay: 0.1, ease: 'easeOut' }}
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.97 }}
+            className="bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-900 rounded-xl px-6 py-3 w-full flex items-center justify-center gap-3 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? (
               <div className="w-4 h-4 border-2 border-gray-200 border-t-indigo-600 rounded-full animate-spin" />
@@ -115,24 +127,30 @@ export default function LoginPage() {
               </svg>
             )}
             <span className="text-sm font-medium">{loading ? 'Redirecting...' : 'Continue with Google'}</span>
-          </button>
+          </motion.button>
 
           {error && (
             <p className="text-xs text-red-600 mt-4 text-center">{error}</p>
           )}
 
-          <div className="mt-6 flex justify-center">
-            <div className="bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-full px-4 py-2 text-sm">
-              1 free session included — no card needed
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35, delay: 0.2, ease: 'easeOut' }}
+          >
+            <div className="mt-6 flex justify-center">
+              <div className="bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-full px-4 py-2 text-sm">
+                1 free session included — no card needed
+              </div>
             </div>
-          </div>
 
-          <p className="text-xs text-gray-400 mt-8 text-center leading-relaxed">
-            By signing in, you agree to our{' '}
-            <a href="/terms" className="underline underline-offset-2 hover:text-gray-600 transition-colors">Terms of Service</a>
-            {' '}and{' '}
-            <a href="/privacy" className="underline underline-offset-2 hover:text-gray-600 transition-colors">Privacy Policy</a>.
-          </p>
+            <p className="text-xs text-gray-400 mt-8 text-center leading-relaxed">
+              By signing in, you agree to our{' '}
+              <a href="/terms" className="underline underline-offset-2 hover:text-gray-600 transition-colors">Terms of Service</a>
+              {' '}and{' '}
+              <a href="/privacy" className="underline underline-offset-2 hover:text-gray-600 transition-colors">Privacy Policy</a>.
+            </p>
+          </motion.div>
         </div>
       </div>
     </div>

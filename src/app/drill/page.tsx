@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Mic, MicOff, ChevronRight, CheckCircle, RotateCcw, Zap, Clock, ArrowRight, Sparkles } from 'lucide-react'
 import { getDailyDrillQuestions, type DrillQuestion, type DrillRoundFilter } from '@/lib/drill-questions'
 
@@ -230,10 +231,18 @@ export default function DrillPage() {
       </nav>
 
       <main className="max-w-2xl mx-auto px-4 py-8">
+        <AnimatePresence mode="wait">
 
         {/* ── INTRO ── */}
         {phase === 'intro' && (
-          <div className="bg-white border border-gray-200 rounded-2xl p-8 text-center shadow-sm">
+          <motion.div
+            key="intro"
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="bg-white border border-gray-200 rounded-2xl p-8 text-center shadow-sm"
+          >
             <div className="w-16 h-16 bg-indigo-100 border border-indigo-300 rounded-2xl flex items-center justify-center mx-auto mb-5">
               <Zap className="w-8 h-8 text-indigo-600" />
             </div>
@@ -295,18 +304,25 @@ export default function DrillPage() {
             <button
               onClick={() => setPhase('answering')}
               disabled={loadingQuestions}
-              className="flex items-center justify-center gap-2 w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white py-4 rounded-xl font-semibold transition-colors"
+              className="flex items-center justify-center gap-2 w-full bg-indigo-600 hover:bg-indigo-500 active:scale-[0.97] disabled:opacity-50 text-white py-4 rounded-xl font-semibold transition-all"
             >
               {loadingQuestions
                 ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Loading questions…</>
                 : <>Start Drill <ChevronRight className="w-4 h-4" /></>}
             </button>
-          </div>
+          </motion.div>
         )}
 
         {/* ── ANSWERING ── */}
         {phase === 'answering' && currentQ && (
-          <div className="space-y-4">
+          <motion.div
+            key={`answering-${qIndex}`}
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="space-y-4"
+          >
             {/* Top progress bar */}
             <div className="w-full bg-gray-200 rounded-full h-1">
               <div
@@ -368,7 +384,7 @@ export default function DrillPage() {
                 <button
                   onClick={submit}
                   disabled={submitting || (!transcript.trim())}
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.97] disabled:opacity-40 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-all"
                 >
                   {submitting
                     ? <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
@@ -383,12 +399,19 @@ export default function DrillPage() {
             >
               Skip this question →
             </button>
-          </div>
+          </motion.div>
         )}
 
         {/* ── SCORED ── */}
         {phase === 'scored' && currentResult && (
-          <div className="space-y-4">
+          <motion.div
+            key={`scored-${qIndex}`}
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="space-y-4"
+          >
             <div className="bg-white border border-gray-200 rounded-2xl p-6 space-y-5 shadow-sm">
               <p className="text-sm text-gray-500 italic">&ldquo;{currentResult.question.text}&rdquo;</p>
 
@@ -430,17 +453,24 @@ export default function DrillPage() {
 
             <button
               onClick={nextQuestion}
-              className="flex items-center justify-center gap-2 w-full bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-xl font-semibold transition-colors"
+              className="flex items-center justify-center gap-2 w-full bg-indigo-600 hover:bg-indigo-500 active:scale-[0.97] text-white py-4 rounded-xl font-semibold transition-all"
             >
               {qIndex + 1 >= questions.length ? 'See Results' : `Next Question (${qIndex + 2}/${questions.length})`}
               <ChevronRight className="w-4 h-4" />
             </button>
-          </div>
+          </motion.div>
         )}
 
         {/* ── DONE ── */}
         {phase === 'done' && (
-          <div className="bg-white border border-gray-200 rounded-2xl p-8 text-center shadow-sm">
+          <motion.div
+            key="done"
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="bg-white border border-gray-200 rounded-2xl p-8 text-center shadow-sm"
+          >
             {/* Average score ring */}
             <div className={`w-20 h-20 rounded-2xl flex flex-col items-center justify-center mx-auto mb-5 ${scoreBg(Math.round(avgScore))} ${scoreRing(Math.round(avgScore))}`}>
               <span className="text-3xl font-bold leading-none">{avgScore}</span>
@@ -475,7 +505,7 @@ export default function DrillPage() {
             <div className="flex flex-col gap-3">
               <Link
                 href="/interview/setup"
-                className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 rounded-xl font-semibold text-sm transition-colors"
+                className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.97] text-white py-3.5 rounded-xl font-semibold text-sm transition-all"
               >
                 Start Full Interview <ArrowRight className="w-4 h-4" />
               </Link>
@@ -486,8 +516,10 @@ export default function DrillPage() {
                 <RotateCcw className="w-4 h-4" /> Try different questions
               </button>
             </div>
-          </div>
+          </motion.div>
         )}
+
+        </AnimatePresence>
       </main>
     </div>
   )
