@@ -47,7 +47,7 @@ function SessionPageInner({ params }: SessionPageProps) {
   const [deepgramRetry, setDeepgramRetry] = useState(0)
   const [micPermission, setMicPermission] = useState<'pending' | 'granted' | 'denied'>('pending')
   const [loadingSession, setLoadingSession] = useState(true)
-  const [phase, setPhase] = useState<'intro' | 'interview'>('intro')
+  const [phase, setPhase] = useState<'intro' | 'interview' | 'candidate_questions'>('intro')
   const [started, setStarted] = useState(false)
   const [reconnecting, setReconnecting] = useState(false)
   const [resumeInfo, setResumeInfo] = useState<{ questionIndex: number; currentQuestionId: string } | null>(null)
@@ -76,7 +76,7 @@ function SessionPageInner({ params }: SessionPageProps) {
   const systemMutedRef = useRef(false)
   const isProcessingRef = useRef(false)
   const handleAnswerCompleteRef = useRef<(t: string) => Promise<void>>(async () => {})
-  const phaseRef = useRef<'intro' | 'interview'>('intro')
+  const phaseRef = useRef<'intro' | 'interview' | 'candidate_questions'>('intro')
   const introStepRef = useRef(1)
   // Reconnect state
   const endingRef = useRef(false)
@@ -90,6 +90,19 @@ function SessionPageInner({ params }: SessionPageProps) {
   // Tracks encouragement prompts per question — capped at 1 so the AI doesn't
   // keep saying "go on" indefinitely if the candidate is genuinely done.
   const encourageAttemptsRef = useRef<Record<string, number>>({})
+  // Pre-fetched short filler audio clips played immediately on answer submission to
+  // hide the evaluate-answer API latency. Populated when the interview phase begins.
+  const fillerQueueRef = useRef<string[]>([])
+  const fillerIndexRef = useRef(0)
+  // Rolling log of the last 4 Q&A exchanges passed to Claude for cross-answer memory.
+  const conversationHistoryRef = useRef<{ question: string; answer: string; score: number }[]>([])
+  // Self-introduction transcript — passed to evaluate-answer so Claude can reference
+  // specific projects or skills the candidate mentioned upfront.
+  const introTranscriptRef = useRef<string>('')
+  // Count of candidate questions asked in the post-interview Q&A phase.
+  const candidateQuestionsCountRef = useRef(0)
+  // Mirror of handleCandidateQuestion so the ws.onmessage closure gets the latest.
+  const handleCandidateQuestionRef = useRef<(t: string) => Promise<void>>(async () => {})
   // Auto-retry tracking for answer evaluation API failures
   const evalAutoRetriedRef = useRef(false)
   // Ensures TTS fallback announcement fires only once per session
@@ -128,7 +141,7 @@ function SessionPageInner({ params }: SessionPageProps) {
   useEffect(() => { audioStateRef.current = state }, [state])
 
   useEffect(() => {
-    if ((state === 'LISTENING' || state === 'USER_SPEAKING') && phase === 'interview') {
+    if ((state === 'LISTENING' || state === 'USER_SPEAKING') && (phase === 'interview' || phase === 'candidate_questions')) {
       startWaveform()
     } else {
       stopWaveform()
@@ -137,9 +150,31 @@ function SessionPageInner({ params }: SessionPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, phase])
 
+  // Pre-fetch short filler audio clips when the interview phase begins so they play
+  // instantly from cache (hiding the 2–5 s evaluate-answer API latency).
+  useEffect(() => {
+    if (phase !== 'interview' || !sessionData || fillerQueueRef.current.length > 0) return
+    const phrases = ["Mm-hmm.", "I see.", "Got it.", "Sure.", "Alright."]
+    Promise.all(phrases.map(async (text) => {
+      try {
+        const res = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, round_type: sessionData.session.round_type, gender: genderParam }),
+        })
+        if (!res.ok) return null
+        const blob = await res.blob()
+        return URL.createObjectURL(blob)
+      } catch { return null }
+    })).then(urls => {
+      fillerQueueRef.current = urls.filter(Boolean) as string[]
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, sessionData])
+
   // Persist progress so the user can resume if they accidentally navigate away
   useEffect(() => {
-    if (phase !== 'interview' || !currentQuestion || ending) return
+    if ((phase !== 'interview' && phase !== 'candidate_questions') || !currentQuestion || ending) return
     try {
       localStorage.setItem(`iai_progress_${sessionId}`, JSON.stringify({
         questionIndex,
@@ -153,7 +188,7 @@ function SessionPageInner({ params }: SessionPageProps) {
   // question, the interviewer gently acknowledges it. Mirrors what a real interviewer
   // would do: they don't just stare in silence.
   useEffect(() => {
-    if (state !== 'LISTENING' || phase !== 'interview' || ending) return
+    if (state !== 'LISTENING' || (phase !== 'interview' && phase !== 'candidate_questions') || ending) return
     const PROMPTS = [
       'Take your time, there\'s no rush.',
       'No hurry at all — whenever you\'re ready.',
@@ -364,6 +399,7 @@ function SessionPageInner({ params }: SessionPageProps) {
                     await speakText(spoken)
                   })()
                 } else if (step === 3) {
+                  introTranscriptRef.current = full // save for cross-question context
                   phaseRef.current = 'interview'
                   setPhase('interview')
                   setProcessing()
@@ -374,6 +410,8 @@ function SessionPageInner({ params }: SessionPageProps) {
                     await speakText(q ? `${spoken}... ${q.text}` : spoken)
                   })()
                 }
+              } else if (phaseRef.current === 'candidate_questions') {
+                handleCandidateQuestionRef.current(full)
               } else {
                 evalAutoRetriedRef.current = false
                 handleAnswerCompleteRef.current(full)
@@ -547,6 +585,30 @@ function SessionPageInner({ params }: SessionPageProps) {
     })
   }
 
+  // Play a pre-fetched filler clip immediately from cache — hides the evaluate-answer
+  // API latency. Does NOT set state or mute the mic; speakText will override when ready.
+  function playFiller() {
+    const urls = fillerQueueRef.current
+    if (!urls.length || !audioRef.current) return
+    const url = urls[fillerIndexRef.current % urls.length]
+    fillerIndexRef.current++
+    audioRef.current.onended = null
+    audioRef.current.onerror = null
+    audioRef.current.pause()
+    audioRef.current.src = url
+    audioRef.current.play().catch(() => {})
+  }
+
+  // Proxy for prosodic confidence — counts filler words as a fraction of total words.
+  // High filler density → hesitant; low → confident. Used to warm/cool Claude's tone.
+  function analyzeAnswerConfidence(transcript: string): 'confident' | 'hesitant' {
+    const words = transcript.toLowerCase().split(/\s+/).filter(Boolean)
+    if (words.length < 10) return 'confident' // too short to judge
+    const fillers = new Set(['um', 'uh', 'uhm', 'hmm', 'er', 'err', 'like', 'basically', 'right'])
+    const count = words.filter(w => fillers.has(w)).length
+    return count / words.length > 0.12 ? 'hesitant' : 'confident'
+  }
+
   // Immediately silences the AI: stops the <audio> element, cancels browser
   // speech synthesis, and resolves the pending speakText promise so callers
   // awaiting it unblock right away.
@@ -710,6 +772,12 @@ function SessionPageInner({ params }: SessionPageProps) {
     setFinalTranscript('')
     stopAnswerRecording(currentQuestion.id)
 
+    // Play a cached filler clip instantly to bridge the evaluate-answer API latency.
+    // speakText() will pause this automatically when the real audio is ready.
+    playFiller()
+
+    const answerConfidence = analyzeAnswerConfidence(transcript)
+
     try {
       const res = await fetch('/api/evaluate-answer', {
         method: 'POST',
@@ -719,6 +787,10 @@ function SessionPageInner({ params }: SessionPageProps) {
           question_id: currentQuestion.id,
           session_id: sessionId,
           start_time: answerStartRef.current,
+          conversation_history: conversationHistoryRef.current,
+          intro_transcript: introTranscriptRef.current || undefined,
+          answer_confidence: answerConfidence,
+          is_already_probe: isProbe,
         }),
       })
 
@@ -763,6 +835,14 @@ function SessionPageInner({ params }: SessionPageProps) {
         delete clarificationAttemptsRef.current[currentQuestion.id]
       }
 
+      // Record this exchange in rolling history for cross-answer memory (last 4 turns).
+      if (data.score && !data.encourage_continuation && !data.needs_clarification && !data.candidate_wants_to_skip) {
+        conversationHistoryRef.current = [
+          ...conversationHistoryRef.current,
+          { question: currentQuestion.text, answer: transcript.slice(0, 400), score: data.score },
+        ].slice(-4)
+      }
+
       if (data.next_question && data.questions_remaining > 0) {
         // Capture answer duration before answerStartRef is reset by speakText
         const answerDurationSecs = Math.round((Date.now() - answerStartRef.current) / 1000)
@@ -799,13 +879,15 @@ function SessionPageInner({ params }: SessionPageProps) {
           }
         }
       } else {
-        // Speak a closing line before navigating away so the interview doesn't
-        // cut off mid-conversation. startListening=false — no mic needed after this.
-        const closing = data.spoken_response
-          ? `${data.spoken_response}... That wraps up our interview. Thank you for your time — your feedback report will be ready in just a moment.`
-          : `That wraps up our interview. Thank you for your time — your feedback report will be ready in just a moment.`
-        await speakText(closing, false)
-        await endInterview()
+        // All scripted questions answered — transition to candidate Q&A phase so the
+        // interview ends like a real one ("Any questions for me?") rather than cutting off.
+        const bridge = data.spoken_response
+          ? `${data.spoken_response}... That wraps up my questions. Do you have any questions for me about the role or the team?`
+          : `That wraps up my questions. Do you have any questions for me about the role or the team?`
+        candidateQuestionsCountRef.current = 0
+        phaseRef.current = 'candidate_questions'
+        setPhase('candidate_questions')
+        await speakText(bridge)
       }
     } catch {
       if (!evalAutoRetriedRef.current) {
@@ -831,6 +913,58 @@ function SessionPageInner({ params }: SessionPageProps) {
   }, [currentQuestion, sessionData, sessionId])
 
   useEffect(() => { handleAnswerCompleteRef.current = handleAnswerComplete }, [handleAnswerComplete])
+
+  const handleCandidateQuestion = useCallback(async (transcript: string) => {
+    if (!sessionData || endingRef.current) return
+    setProcessing()
+    playFiller()
+
+    candidateQuestionsCountRef.current++
+    const count = candidateQuestionsCountRef.current
+
+    // Detect "no questions" signals — end the interview gracefully.
+    const lower = transcript.toLowerCase()
+    const noSignals = ['no ', 'nope', 'not really', 'no thank', "i'm good", "that's all", 'nothing', "i don't", 'all good', 'no questions']
+    const wantsToEnd = noSignals.some(s => lower.includes(s)) || lower.trim().split(/\s+/).length < 4
+
+    if (wantsToEnd || count > 2) {
+      const closing = wantsToEnd
+        ? "Great — thank you so much for your time today. It was a real pleasure speaking with you. We'll be in touch soon!"
+        : "Those were excellent questions! Thank you so much for your time — it was a pleasure. We'll be in touch about next steps."
+      await speakText(closing, false)
+      await endInterview()
+      return
+    }
+
+    try {
+      const res = await fetch('/api/answer-candidate-question', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: transcript,
+          session_id: sessionId,
+          round_type: sessionData.session.round_type,
+          company: sessionData.session.company,
+          role: sessionData.session.role,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Failed to answer question')
+
+      const isLast = count >= 2
+      const followUp = isLast
+        ? " Is there anything else before we wrap up?"
+        : " Do you have any other questions?"
+
+      await speakText(`${data.answer}${followUp}`)
+    } catch {
+      isProcessingRef.current = false
+      setListening()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, sessionData])
+
+  useEffect(() => { handleCandidateQuestionRef.current = handleCandidateQuestion }, [handleCandidateQuestion])
 
   async function handleSkip() {
     if (isProcessingRef.current || !currentQuestion || !sessionData || ending) return
@@ -1113,9 +1247,9 @@ function SessionPageInner({ params }: SessionPageProps) {
   const stateLabel: Record<string, string> = {
     IDLE: 'Connecting...',
     AI_SPEAKING: `${personaName} is speaking`,
-    LISTENING: 'Your turn — speak now',
+    LISTENING: phase === 'candidate_questions' ? 'Ask your question — or say "no thanks" to wrap up' : 'Your turn — speak now',
     USER_SPEAKING: 'Listening...',
-    PROCESSING: 'Processing your answer...',
+    PROCESSING: phase === 'candidate_questions' ? 'Thinking...' : 'Processing your answer...',
   }
 
   const stateColor: Record<string, string> = {
@@ -1167,6 +1301,10 @@ function SessionPageInner({ params }: SessionPageProps) {
           {phase === 'interview' ? (
             <div className="text-xs sm:text-sm text-gray-400 tabular-nums bg-white/[0.06] px-2.5 py-1 rounded-full">
               Q{questionIndex + 1}/{totalQuestions}
+            </div>
+          ) : phase === 'candidate_questions' ? (
+            <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full font-medium">
+              Your Questions
             </div>
           ) : (
             <div className="text-xs text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full font-medium">
@@ -1259,6 +1397,19 @@ function SessionPageInner({ params }: SessionPageProps) {
                 : 'Getting to know you before the interview begins...'}
             </p>
           </div>
+        ) : phase === 'candidate_questions' ? (
+          <div className="bg-[#111118] border border-white/[0.06] rounded-2xl p-4 sm:p-6 max-w-2xl w-full text-center">
+            <div className="text-xs text-emerald-400 mb-3 uppercase tracking-widest font-medium">
+              Your Turn to Ask
+            </div>
+            <p className="text-gray-300 text-sm sm:text-base leading-relaxed">
+              {state === 'LISTENING' || state === 'USER_SPEAKING'
+                ? 'Ask anything about the role, team, or company — or say "no thanks" to wrap up.'
+                : state === 'AI_SPEAKING'
+                  ? `${personaName} is answering your question...`
+                  : 'Preparing for your questions...'}
+            </p>
+          </div>
         ) : currentQuestion ? (
           <div className="bg-[#111118] border border-white/[0.06] rounded-2xl p-4 sm:p-6 max-w-2xl w-full text-center">
             <div className="flex items-center justify-between gap-2 mb-3">
@@ -1318,7 +1469,7 @@ function SessionPageInner({ params }: SessionPageProps) {
         ) : null}
 
         {/* Waveform visualizer */}
-        {(state === 'LISTENING' || state === 'USER_SPEAKING') && phase === 'interview' && (
+        {(state === 'LISTENING' || state === 'USER_SPEAKING') && (phase === 'interview' || phase === 'candidate_questions') && (
           <div ref={waveformRef} className="flex items-end gap-[2px] h-10 max-w-xs w-full">
             {Array.from({ length: 24 }).map((_, i) => (
               <div
@@ -1376,6 +1527,23 @@ function SessionPageInner({ params }: SessionPageProps) {
             className="text-xs text-gray-600 hover:text-gray-400 transition-colors underline underline-offset-2 px-2 py-1"
           >
             Pass on this question
+          </button>
+        )}
+
+        {(state === 'LISTENING' || state === 'USER_SPEAKING') && phase === 'candidate_questions' && (
+          <button
+            onClick={async () => {
+              if (isProcessingRef.current || endingRef.current) return
+              isProcessingRef.current = true
+              finalTranscriptRef.current = ''
+              liveTranscriptRef.current = ''
+              setFinalTranscript('')
+              setLiveTranscript('')
+              await handleCandidateQuestion('[no questions — wrap up]')
+            }}
+            className="text-xs text-gray-600 hover:text-gray-400 transition-colors underline underline-offset-2 px-2 py-1"
+          >
+            No questions — wrap up
           </button>
         )}
 
