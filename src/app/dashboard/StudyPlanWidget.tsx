@@ -42,14 +42,11 @@ export default function StudyPlanWidget() {
         const parsed: StoredPlan = JSON.parse(stored)
         // Only use cached plan if less than 48 hours old
         const age = Date.now() - new Date(parsed.generated_at).getTime()
-        if (age < 48 * 3600 * 1000) setPlan(parsed)
+        if (!isNaN(age) && age < 48 * 3600 * 1000) setPlan(parsed)
       }
       // Try to read interview date from InterviewCountdown's localStorage key
-      const countdown = localStorage.getItem('interview-countdown')
-      if (countdown) {
-        const { date } = JSON.parse(countdown) as { date?: string }
-        if (date) setInterviewDate(date)
-      }
+      const countdown = localStorage.getItem('interviewai_next_interview_date')
+      if (countdown) setInterviewDate(countdown)
     } catch { /* ignore */ }
   }, [])
 

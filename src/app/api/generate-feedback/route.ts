@@ -223,7 +223,7 @@ Generate a comprehensive feedback report for this candidate.`
         communication_json: feedback.communication,
         report_text: feedback.summary,
         share_token: shareToken,
-      }).select().single(),
+      }, { onConflict: 'session_id' }).select().single(),
       supabase.from('interview_sessions')
         .update({ status: 'completed', ended_at: new Date().toISOString() })
         .eq('id', session_id),

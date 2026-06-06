@@ -762,13 +762,18 @@ function SessionPageInner({ params }: SessionPageProps) {
     stopAnswerRecording(currentQuestion.id)
 
     const nextIndex = questionIndex + 1
-    if (nextIndex < sessionData.questions.length) {
-      const nextQ = sessionData.questions[nextIndex]
-      setCurrentQuestion(nextQ)
-      setQuestionIndex(nextIndex)
-      await speakText(`No worries, let's move on. ${nextQ.text}`)
-    } else {
-      await endInterview()
+    try {
+      if (nextIndex < sessionData.questions.length) {
+        const nextQ = sessionData.questions[nextIndex]
+        setCurrentQuestion(nextQ)
+        setQuestionIndex(nextIndex)
+        await speakText(`No worries, let's move on. ${nextQ.text}`)
+      } else {
+        await endInterview()
+      }
+    } catch {
+      isProcessingRef.current = false
+      setListening()
     }
   }
 

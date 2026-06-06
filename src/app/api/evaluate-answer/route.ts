@@ -197,7 +197,10 @@ Candidate's answer:
       supabase.from('questions').update({ asked: true }).eq('id', question_id),
     ])
 
-    if (answerError) console.error('Failed to save answer:', answerError)
+    if (answerError) {
+      console.error('Failed to save answer:', answerError)
+      return NextResponse.json({ error: 'Failed to save answer — please retry' }, { status: 500 })
+    }
     if (askedError) console.error('Failed to mark question asked:', askedError)
 
     // Select next question using adaptive difficulty — sort buckets so we step

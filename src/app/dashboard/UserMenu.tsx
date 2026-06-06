@@ -46,9 +46,11 @@ export default function UserMenu({ name, email, avatarUrl, creditBalance, plan }
 
   async function handleSignOut() {
     setOpen(false)
-    const { createClient } = await import('@/lib/supabase')
-    const supabase = createClient()
-    await supabase.auth.signOut()
+    try {
+      const { createClient } = await import('@/lib/supabase')
+      const supabase = createClient()
+      await supabase.auth.signOut()
+    } catch { /* session cleared client-side regardless */ }
     router.push('/')
   }
 
