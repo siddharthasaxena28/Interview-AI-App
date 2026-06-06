@@ -4,6 +4,14 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAnalytics } from '@/hooks/useAnalytics'
 
+const LOADING_STEPS = [
+  'Reviewing your answers…',
+  'Scoring each question…',
+  'Identifying strengths and gaps…',
+  'Building your report…',
+  'Almost ready…',
+]
+
 export default function FeedbackClient({
   sessionId,
   hasReport,
@@ -18,7 +26,14 @@ export default function FeedbackClient({
   const router = useRouter()
   const analytics = useAnalytics()
   const [timedOut, setTimedOut] = useState(false)
+  const [stepIndex, setStepIndex] = useState(0)
   const retriedRef = useRef(false)
+
+  useEffect(() => {
+    if (hasReport) return
+    const t = setInterval(() => setStepIndex(i => (i + 1) % LOADING_STEPS.length), 2500)
+    return () => clearInterval(t)
+  }, [hasReport])
 
   useEffect(() => {
     if (hasReport) {
@@ -83,6 +98,14 @@ export default function FeedbackClient({
           </button>
         </div>
       </div>
+    )
+  }
+
+  if (!hasReport) {
+    return (
+      <p className="text-sm text-gray-500 mt-2 transition-all duration-300">
+        {LOADING_STEPS[stepIndex]}
+      </p>
     )
   }
 

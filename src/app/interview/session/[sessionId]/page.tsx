@@ -55,6 +55,7 @@ function SessionPageInner({ params }: SessionPageProps) {
   const [ttsFallback, setTtsFallback] = useState(false)
   const [evalError, setEvalError] = useState<{ msg: string; retry: () => void } | null>(null)
   const [showEndConfirm, setShowEndConfirm] = useState(false)
+  const [ttsNotice, setTtsNotice] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -80,6 +81,13 @@ function SessionPageInner({ params }: SessionPageProps) {
   const hasGreetedRef = useRef(false)
   const reconnectAttemptsRef = useRef(0)
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null)
+  // Tracks how many times the interviewer has asked for clarification on the
+  // current question so we don't loop forever on persistent audio issues.
+  const clarificationAttemptsRef = useRef<Record<string, number>>({})
+  // Auto-retry tracking for answer evaluation API failures
+  const evalAutoRetriedRef = useRef(false)
+  // Ensures TTS fallback announcement fires only once per session
+  const ttsFallbackAnnouncedRef = useRef(false)
   // Holds a resolve() callback for the currently-playing speakText promise so
   // stopAllAudio() can resolve it immediately from outside the function.
   const cancelSpeakRef = useRef<(() => void) | null>(null)
@@ -92,7 +100,6 @@ function SessionPageInner({ params }: SessionPageProps) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const recordedChunksRef = useRef<Blob[]>([])
   const recordingQuestionIdRef = useRef<string | null>(null)
-  const evalAutoRetriedRef = useRef(false)
   // Waveform visualizer — AnalyserNode taps the mic source in parallel; bars
   // are updated via direct DOM manipulation to avoid 60fps React re-renders.
   const analyserRef = useRef<AnalyserNode | null>(null)
@@ -375,7 +382,7 @@ function SessionPageInner({ params }: SessionPageProps) {
           // 1000 = normal close, 1001 = going away — don't reconnect
           if (event.code === 1000 || event.code === 1001 || endingRef.current || !isMountedRef.current) return
           if (reconnectAttemptsRef.current >= 3) {
-            if (isMountedRef.current) setError('Connection lost. Please refresh to continue.')
+            if (isMountedRef.current) setError('Speech recognition disconnected. Tap Try Again to reconnect.')
             return
           }
           reconnectAttemptsRef.current++
@@ -604,6 +611,7 @@ function SessionPageInner({ params }: SessionPageProps) {
         const errBody = await res.json().catch(() => ({ error: 'unknown' })) as { detail?: string; error?: string }
         throw new Error(`TTS ${res.status}: ${errBody.detail ?? errBody.error ?? 'unknown error'}`)
       }
+      console.log(`[TTS] OK — voice=${res.headers.get('X-Voice-Id') ?? 'unknown'} model=${res.headers.get('X-TTS-Model') ?? 'unknown'} round=${sessionData.session.round_type} gender=${genderParam}`)
 
       const audioBlob = await res.blob()
       const audioUrl = URL.createObjectURL(audioBlob)
@@ -642,6 +650,11 @@ function SessionPageInner({ params }: SessionPageProps) {
       // Browser speech as absolute last resort so the interview never goes silent
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         setTtsFallback(true)
+        if (!ttsFallbackAnnouncedRef.current) {
+          ttsFallbackAnnouncedRef.current = true
+          setTtsNotice(true)
+          setTimeout(() => setTtsNotice(false), 4000)
+        }
         // Wait for voices to load (Chrome loads them asynchronously; speak() silently
         // does nothing if called before getVoices() returns a non-empty list)
         if (window.speechSynthesis.getVoices().length === 0) {
@@ -678,6 +691,7 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   const handleAnswerComplete = useCallback(async (transcript: string) => {
     if (!currentQuestion || !sessionData) return
+    evalAutoRetriedRef.current = false
     setEvalError(null)
     setProcessing()
     setFinalTranscript('')
@@ -697,6 +711,30 @@ function SessionPageInner({ params }: SessionPageProps) {
 
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Evaluation failed')
+
+      // Interviewer couldn't hear/understand — ask the candidate to repeat.
+      // Don't advance the question or save the answer. Cap at 2 attempts per
+      // question so a persistent audio problem doesn't loop indefinitely.
+      if (data.needs_clarification) {
+        const qId = currentQuestion.id
+        const attempts = (clarificationAttemptsRef.current[qId] ?? 0) + 1
+        clarificationAttemptsRef.current[qId] = attempts
+
+        if (attempts <= 2) {
+          const spoken: string = data.spoken_response ?? "Sorry, I didn't catch that — could you say it again?"
+          await speakText(spoken)
+          // Return without advancing — the Deepgram listener will pick up the next utterance.
+          return
+        }
+        // 3rd failure: treat as a graceful skip so the interview continues.
+        // Fall through with the original data but clear needs_clarification so
+        // the rest of the branch logic runs normally.
+        data.needs_clarification = false
+        delete clarificationAttemptsRef.current[qId]
+      } else {
+        // Successful answer — clear any prior clarification count for this question.
+        delete clarificationAttemptsRef.current[currentQuestion.id]
+      }
 
       if (data.next_question && data.questions_remaining > 0) {
         setCurrentQuestion(data.next_question)
@@ -722,6 +760,12 @@ function SessionPageInner({ params }: SessionPageProps) {
 
         await speakText(ackText)
       } else {
+        // Speak a closing line before navigating away so the interview doesn't
+        // cut off mid-conversation. startListening=false — no mic needed after this.
+        const closing = data.spoken_response
+          ? `${data.spoken_response}... That wraps up our interview. Thank you for your time — your feedback report will be ready in just a moment.`
+          : `That wraps up our interview. Thank you for your time — your feedback report will be ready in just a moment.`
+        await speakText(closing, false)
         await endInterview()
       }
     } catch {
@@ -1059,7 +1103,7 @@ function SessionPageInner({ params }: SessionPageProps) {
           {ttsFallback && (
             <div className="flex items-center gap-1 text-xs text-amber-400" title="ElevenLabs TTS unavailable — using browser voice">
               <span>⚠</span>
-              <span className="hidden sm:inline">Browser voice (TTS error)</span>
+              <span>Browser voice</span>
             </div>
           )}
           <div className={`text-xs sm:text-sm font-mono tabular-nums ${timeWarning ? 'text-amber-400' : 'text-gray-400'}`}>
@@ -1077,6 +1121,13 @@ function SessionPageInner({ params }: SessionPageProps) {
           )}
         </div>
       </div>
+
+      {/* TTS fallback announcement */}
+      {ttsNotice && (
+        <div className="px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-center">
+          <span className="text-amber-400 text-xs">⚠ Audio quality reduced — switched to browser voice</span>
+        </div>
+      )}
 
       {/* Non-fatal answer evaluation error banner */}
       {evalError && (

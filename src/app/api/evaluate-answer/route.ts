@@ -22,12 +22,11 @@ Set "candidate_wants_to_skip": true whenever the candidate signals — explicitl
 Explicit signals: "pass", "skip", "next question", "move on", "I don't know", "I have no idea", "I'm not sure about this one", "I'll pass"
 
 Implicit signals:
-  - Answer is 1-3 words with no substance ("hmm", "not sure", "uh", "yeah")
   - Candidate expresses discomfort or unwillingness ("I'm blanking", "I'd rather not")
-  - Candidate trails off with no real attempt
+  - Candidate trails off with no real attempt and the words make clear they are giving up
 
 When candidate_wants_to_skip is true:
-  - ALWAYS set "probe": false and "probe_question": ""
+  - ALWAYS set "needs_clarification": false, "probe": false and "probe_question": ""
   - Score honestly, lean towards 2 if no real attempt
   - "spoken_response" must be brief, gracious, and FEEL DIFFERENT every time.
     React to the specific words the candidate used — if they said "I'll pass" react differently than if they said "I'm blanking on this one."
@@ -52,7 +51,33 @@ When candidate_wants_to_skip is true:
 
     IMPORTANT: Do NOT always default to "No worries at all" — vary naturally based on what was said.
 
---- PROBING (only when candidate has NOT signalled skip) ---
+--- CLARIFICATION (check AFTER skip detection, BEFORE probing) ---
+Set "needs_clarification": true when the transcript appears incomplete or garbled — meaning you genuinely could not hear or understand the candidate, NOT when they chose not to answer.
+
+Set needs_clarification: true when:
+  - Transcript is 1-5 words AND contains no skip signal (e.g. "I think", "so basically", "the uh", "yeah well", or pure phonetic noise)
+  - Answer appears cut off mid-sentence (starts coherently but ends abruptly with no conclusion)
+  - Transcript is only filler sounds with no semantic content ("um", "uh uh uh", "hmm hmm", "er er")
+
+Do NOT set needs_clarification if:
+  - The candidate clearly signalled skip (see SKIP DETECTION above — candidate_wants_to_skip takes priority)
+  - The answer is short but semantically complete ("REST is stateless", "O of N log N", "it prevents SQL injection")
+  - The answer is vague — use probing for that, not clarification
+
+When needs_clarification is true:
+  - Set score: 1 (will not be saved — placeholder only)
+  - Set probe: false, probe_question: ""
+  - Set candidate_wants_to_skip: false
+  - "spoken_response" must sound like a natural human who missed something — brief, warm, not robotic.
+    Vary these naturally — never repeat the same phrasing twice:
+    "Sorry, I didn't quite catch that — could you say it again?"
+    "I think your audio cut out — could you repeat that?"
+    "I missed that — mind saying it again?"
+    "Could you repeat that? I didn't get the full answer."
+    "I didn't catch all of that — could you say it once more?"
+    "Sorry about that — could you run through that again?"
+
+--- PROBING (only when candidate has NOT signalled skip AND needs_clarification is false) ---
 Probe when:
 - The answer is vague, uses buzzwords without substance, or is clearly a guess
 - The candidate gave a correct but shallow answer and an obvious deeper question exists
@@ -71,6 +96,7 @@ When you probe, "probe_question" is a single specific follow-up — phrased conv
 - NEVER include "Let's move on" or "Here's the next question" — only react to this answer
 - For probes: lead naturally into the follow-up ("Hmm, let me push on that a bit —")
 - For skips: brief and gracious — vary the phrasing every time (see SKIP DETECTION section for examples)
+- For clarification: brief and natural — sound like a human who missed something
 
 Examples by score:
   Score 5: "Excellent — I really liked how you tied in the trade-offs."
@@ -85,7 +111,8 @@ Return ONLY a JSON object with this exact structure:
   "spoken_response": "<one natural sentence — your immediate spoken reaction, in your persona's voice>",
   "probe": <true|false>,
   "probe_question": "<specific follow-up question phrased conversationally, or empty string>",
-  "candidate_wants_to_skip": <true|false>
+  "candidate_wants_to_skip": <true|false>,
+  "needs_clarification": <true|false>
 }`
 
 export async function POST(request: NextRequest) {
@@ -168,7 +195,7 @@ Candidate's answer:
     const content = message.content[0]
     if (content.type !== 'text') throw new Error('Unexpected response type')
 
-    let evaluation: { score: number; spoken_response: string; probe: boolean; probe_question: string; candidate_wants_to_skip: boolean }
+    let evaluation: { score: number; spoken_response: string; probe: boolean; probe_question: string; candidate_wants_to_skip: boolean; needs_clarification: boolean }
     try {
       const jsonMatch = content.text.match(/\{[\s\S]*\}/)
       evaluation = JSON.parse(jsonMatch ? jsonMatch[0] : content.text)
@@ -177,13 +204,34 @@ Candidate's answer:
       return NextResponse.json({ error: 'Failed to parse evaluation response' }, { status: 502 })
     }
 
-    // Safety net: never probe a candidate who wants to skip regardless of what the model returned.
+    // Safety nets: mutual exclusivity between the three decision branches.
+    // skip takes priority, then clarification, then probe.
     if (evaluation.candidate_wants_to_skip) {
       evaluation.probe = false
       evaluation.probe_question = ''
+      evaluation.needs_clarification = false
+    } else if (evaluation.needs_clarification) {
+      evaluation.probe = false
+      evaluation.probe_question = ''
+      evaluation.candidate_wants_to_skip = false
     }
 
     const score = Math.min(5, Math.max(1, evaluation.score ?? 3))
+
+    // When the interviewer needs clarification the answer was not received — don't
+    // save it to the DB and don't mark the question as asked so the candidate gets
+    // a clean second attempt at the same question.
+    if (evaluation.needs_clarification) {
+      return NextResponse.json({
+        score: null,
+        spoken_response: evaluation.spoken_response ?? '',
+        next_question: q,        // same question — not a new one
+        is_probe: false,
+        candidate_wants_to_skip: false,
+        needs_clarification: true,
+        questions_remaining: -1, // signal: don't use this to end the interview
+      })
+    }
 
     // Persist answer and mark question asked in parallel — both are independent writes
     const [{ error: answerError }, { error: askedError }] = await Promise.all([
@@ -279,6 +327,7 @@ Candidate's answer:
       next_question: nextQuestion,
       is_probe: isProbe,
       candidate_wants_to_skip: evaluation.candidate_wants_to_skip ?? false,
+      needs_clarification: false,
       // Count the freshly-inserted probe so the client doesn't end the interview
       // prematurely when the candidate is probed on the last scripted question.
       questions_remaining: questionsRemaining,

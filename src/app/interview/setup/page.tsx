@@ -49,7 +49,15 @@ function SetupPageInner() {
   const [resumeParsing, setResumeParsing] = useState(false)
   const [resumeFileName, setResumeFileName] = useState('')
   const [driveUrl, setDriveUrl] = useState('')
+  const [creditBalance, setCreditBalance] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    fetch('/api/account-data')
+      .then(r => r.json())
+      .then(d => { if (typeof d.credit_balance === 'number') setCreditBalance(d.credit_balance) })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!loading) { setLoadingMsg(0); return }
@@ -576,7 +584,15 @@ function SetupPageInner() {
           )}
         </div>
 
-        <p className="text-center text-xs text-gray-400 mt-6">
+        {creditBalance === 1 && (
+          <p className="text-center text-xs text-amber-600 mt-4">
+            This will use your last credit.{' '}
+            <a href="/dashboard" className="underline underline-offset-2 hover:text-amber-700 transition-colors">
+              Invite friends to earn more →
+            </a>
+          </p>
+        )}
+        <p className="text-center text-xs text-gray-500 mt-2">
           Question generation usually takes 10–15 seconds
         </p>
       </div>
