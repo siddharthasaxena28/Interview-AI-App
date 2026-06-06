@@ -54,6 +54,7 @@ function SessionPageInner({ params }: SessionPageProps) {
   const [resumeDismissed, setResumeDismissed] = useState(false)
   const [ttsFallback, setTtsFallback] = useState(false)
   const [evalError, setEvalError] = useState<{ msg: string; retry: () => void } | null>(null)
+  const [showEndConfirm, setShowEndConfirm] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -1242,13 +1243,42 @@ function SessionPageInner({ params }: SessionPageProps) {
         )}
 
         <button
-          onClick={() => endInterview(true)}
+          onClick={() => setShowEndConfirm(true)}
           className="flex flex-col items-center gap-1 sm:gap-1.5 px-3 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 transition-all duration-200 hover:border-red-500/40"
         >
           <PhoneOff className="w-4 h-4 sm:w-5 sm:h-5" />
           <span className="text-[10px] sm:text-xs font-medium">End Interview</span>
         </button>
       </div>
+
+      {/* End Interview confirmation modal */}
+      {showEndConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#111118] border border-white/[0.10] rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <div className="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-4">
+              <PhoneOff className="w-5 h-5 text-red-400" />
+            </div>
+            <h3 className="text-white font-semibold text-center mb-2">End Interview?</h3>
+            <p className="text-gray-400 text-sm text-center mb-6 leading-relaxed">
+              Your progress will be saved and a feedback report will be generated. This cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowEndConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl bg-white/[0.06] text-gray-300 border border-white/[0.08] text-sm font-medium hover:bg-white/[0.10] transition-colors"
+              >
+                Keep Going
+              </button>
+              <button
+                onClick={() => { setShowEndConfirm(false); endInterview(true) }}
+                className="flex-1 py-2.5 rounded-xl bg-red-500/10 text-red-400 border border-red-500/20 text-sm font-medium hover:bg-red-500/20 transition-colors"
+              >
+                End Interview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
