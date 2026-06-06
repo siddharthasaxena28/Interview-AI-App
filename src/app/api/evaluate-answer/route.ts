@@ -137,6 +137,7 @@ Specificity is mandatory. Reference something the candidate actually said by nam
 
 If no compelling specific insight warrants a pivot: return "suggested_next_question": ""
 
+
 --- CONVERSATION HISTORY ---
 You will receive the recent conversation history (last few Q&A exchanges) and the candidate's self-introduction. Use this to:
 - Make transitions feel natural and connected ("You mentioned X earlier — that actually leads into my next question...")
