@@ -3,36 +3,25 @@
 // are set (correct across Vercel serverless instances). Falls back to an
 // in-process map when those vars are absent (local dev / preview deploys).
 
-let _upstash: {
-  ratelimit: (key: string, max: number, windowMs: number) => Promise<boolean>
-} | null = null
+import { Redis } from '@upstash/redis'
+import { Ratelimit } from '@upstash/ratelimit'
 
-function getUpstash() {
-  if (_upstash !== null) return _upstash
+let _limiter: Ratelimit | null = null
+
+function getLimiter(max: number, windowMs: number): Ratelimit | null {
   const url = process.env.UPSTASH_REDIS_REST_URL
   const token = process.env.UPSTASH_REDIS_REST_TOKEN
   if (!url || !token) return null
 
-  // Lazy import so the in-process path never loads these modules.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { Redis } = require('@upstash/redis')
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { Ratelimit } = require('@upstash/ratelimit')
-
-  const redis = new Redis({ url, token })
-
-  _upstash = {
-    ratelimit: async (key: string, max: number, windowMs: number) => {
-      const limiter = new Ratelimit({
-        redis,
-        limiter: Ratelimit.slidingWindow(max, `${windowMs}ms`),
-        prefix: 'rl',
-      })
-      const { success } = await limiter.limit(key)
-      return success
-    },
+  if (!_limiter) {
+    const redis = new Redis({ url, token })
+    _limiter = new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(max, `${windowMs}ms`),
+      prefix: 'rl',
+    })
   }
-  return _upstash
+  return _limiter
 }
 
 // In-process fallback (single-instance only).
@@ -52,10 +41,11 @@ export async function checkRateLimit(
   maxRequests: number,
   windowMs: number,
 ): Promise<boolean> {
-  const upstash = getUpstash()
-  if (upstash) {
+  const limiter = getLimiter(maxRequests, windowMs)
+  if (limiter) {
     try {
-      return await upstash.ratelimit(key, maxRequests, windowMs)
+      const { success } = await limiter.limit(key)
+      return success
     } catch {
       // Redis unavailable — fall through to in-process
     }
