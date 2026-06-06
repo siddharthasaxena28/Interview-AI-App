@@ -48,9 +48,12 @@ Return format:
     "text": "Question text here",
     "difficulty": 2,
     "topic_tag": "fundamentals",
-    "expected_keywords": ["keyword1", "keyword2"]
+    "expected_keywords": ["keyword1", "keyword2"],
+    "is_resume_based": false
   }
-]`
+]
+
+is_resume_based: Set to true ONLY when the question directly references content from the candidate's résumé — their specific projects, companies, technologies, or roles they mentioned. Set to false for all JD-only or general questions.`
 
 // Valid tag sets per round — used server-side to normalise any tag the model invents.
 const VALID_TAGS: Record<string, string[]> = {
@@ -97,6 +100,24 @@ export async function POST(request: NextRequest) {
 
     if (!jd_text || !company || !role || !round_type) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+
+    // Input length caps — server-side guards match client-side validation
+    const VALID_ROUND_TYPES = ['tech_l1', 'tech_l2', 'managerial', 'hr', 'full_loop']
+    if (!VALID_ROUND_TYPES.includes(round_type)) {
+      return NextResponse.json({ error: 'Invalid round_type' }, { status: 400 })
+    }
+    if (typeof experience_years !== 'number' || isNaN(experience_years) || experience_years < 0 || experience_years > 50) {
+      return NextResponse.json({ error: 'Invalid experience_years' }, { status: 400 })
+    }
+    if (jd_text.length > 6000) {
+      return NextResponse.json({ error: 'Job description too long (max 6000 characters)' }, { status: 400 })
+    }
+    if (company.length > 200) {
+      return NextResponse.json({ error: 'Company name too long' }, { status: 400 })
+    }
+    if (role.length > 200) {
+      return NextResponse.json({ error: 'Role too long' }, { status: 400 })
     }
 
     // Gate the paid generation: a user with no credits can't run the interview anyway,
@@ -162,6 +183,7 @@ Generate 15 interview questions for this ${round_type} round at ${company}.${res
       difficulty: number
       topic_tag: string
       expected_keywords?: string[]
+      is_resume_based?: boolean
     }>
 
     try {
@@ -196,15 +218,22 @@ Generate 15 interview questions for this ${round_type} round at ${company}.${res
     }
 
     // Save questions to Supabase
-    const questionsToInsert = questions.slice(0, 15).map((q, index) => ({
-      session_id: session.id,
-      text: q.text,
-      round_type,
-      difficulty: Math.min(5, Math.max(1, q.difficulty ?? 2)),
-      topic_tag: normalizeTag(q.topic_tag ?? '', round_type),
-      order_index: index,
-      asked: false,
-    }))
+    const questionsToInsert = questions.slice(0, 15).map((q, index) => {
+      const keywords = Array.isArray(q.expected_keywords) ? q.expected_keywords : []
+      // Tag resume-based questions with a special marker stored in expected_keywords.
+      // The session UI and feedback UI read this to show "From your résumé" badges.
+      if (q.is_resume_based) keywords.push('__resume')
+      return {
+        session_id: session.id,
+        text: q.text,
+        round_type,
+        difficulty: Math.min(5, Math.max(1, q.difficulty ?? 2)),
+        topic_tag: normalizeTag(q.topic_tag ?? '', round_type),
+        expected_keywords: keywords,
+        order_index: index,
+        asked: false,
+      }
+    })
 
     const { error: questionsError } = await supabase
       .from('questions')

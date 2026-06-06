@@ -31,7 +31,7 @@ export default function EnableReminders() {
 
   if (status === 'enabled') {
     return (
-      <div className="flex items-center gap-2 text-sm text-emerald-400">
+      <div className="flex items-center gap-2 text-sm text-emerald-600">
         <Check className="w-4 h-4" /> Reminders on
       </div>
     )
@@ -39,7 +39,7 @@ export default function EnableReminders() {
 
   if (status === 'denied') {
     return (
-      <span className="text-xs text-gray-600">
+      <span className="text-xs text-gray-400">
         Notifications blocked — enable them in your browser settings.
       </span>
     )
@@ -49,7 +49,7 @@ export default function EnableReminders() {
     <button
       onClick={enable}
       disabled={status === 'working'}
-      className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/15 border border-indigo-500/20 px-3 py-1.5 rounded-lg transition-all duration-200 disabled:opacity-60"
+      className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-lg transition-all duration-200 disabled:opacity-60"
     >
       {status === 'working' ? (
         <>

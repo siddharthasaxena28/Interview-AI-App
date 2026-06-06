@@ -2,25 +2,25 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Mic, MessageSquare, BarChart3, X, ArrowRight } from 'lucide-react'
+import { Mic, FileText, BarChart3, X, ArrowRight, CheckCircle2 } from 'lucide-react'
 
 const STORAGE_KEY = 'iai_onboarding_shown'
 
 const STEPS = [
   {
-    icon: MessageSquare,
-    title: 'Real AI interviewer',
-    desc: 'A voice AI asks role-specific questions, probes your answers, and adapts to your level — just like a real interviewer.',
+    icon: FileText,
+    title: 'Upload your résumé',
+    desc: 'At setup, upload your CV and the AI will ask questions grounded in your actual projects, skills, and experience — just like a real interviewer who\'s read it.',
   },
   {
-    icon: Mic,
-    title: 'Speak naturally',
-    desc: 'Just talk. The AI transcribes and evaluates your spoken answers in real-time — no typing required.',
+    icon: CheckCircle2,
+    title: 'Press Done when finished',
+    desc: 'Speak your answer, then hit Done to submit it. Or just pause — silence detection auto-submits. Use Skip if you want to move on without answering.',
   },
   {
     icon: BarChart3,
-    title: 'Detailed scorecard',
-    desc: 'Get a scored report with strengths, gaps, communication analysis, and per-question feedback you can act on.',
+    title: 'Full scorecard + AI coach',
+    desc: 'After each session, review your transcript, get per-question scores and ideal answers, then chat with an AI coach to dig deeper.',
   },
 ]
 
@@ -63,7 +63,7 @@ export default function OnboardingModal({ show, userName, creditBalance }: Props
         </button>
 
         <div className="text-center mb-8">
-          <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <Mic className="w-7 h-7 text-white" />
           </div>
           <h2 className="text-2xl font-bold text-gray-900">
@@ -71,7 +71,7 @@ export default function OnboardingModal({ show, userName, creditBalance }: Props
           </h2>
           <p className="text-gray-500 mt-2 text-sm">
             You have{' '}
-            <span className="font-semibold text-blue-600">
+            <span className="font-semibold text-indigo-600">
               {creditBalance} free {creditBalance === 1 ? 'session' : 'sessions'}
             </span>{' '}
             ready to use.
@@ -81,8 +81,8 @@ export default function OnboardingModal({ show, userName, creditBalance }: Props
         <div className="grid gap-4 mb-8">
           {STEPS.map(({ icon: Icon, title, desc }) => (
             <div key={title} className="flex gap-4 items-start">
-              <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
-                <Icon className="w-5 h-5 text-blue-600" />
+              <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+                <Icon className="w-5 h-5 text-indigo-600" />
               </div>
               <div>
                 <div className="font-semibold text-gray-900 text-sm">{title}</div>
@@ -96,14 +96,14 @@ export default function OnboardingModal({ show, userName, creditBalance }: Props
           {creditBalance > 0 ? (
             <button
               onClick={startInterview}
-              className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
+              className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition-colors"
             >
               Start your first interview <ArrowRight className="w-4 h-4" />
             </button>
           ) : (
             <button
               onClick={() => { dismiss(); router.push('/pricing') }}
-              className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
+              className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition-colors"
             >
               Get started <ArrowRight className="w-4 h-4" />
             </button>

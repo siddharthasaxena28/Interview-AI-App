@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    if (!checkRateLimit(`drill-questions:${user.id}`, 10, 3_600_000)) {
+    if (!await checkRateLimit(`drill-questions:${user.id}`, 10, 3_600_000)) {
       return NextResponse.json({
         questions: getDailyDrillQuestions(today, filter),
         personalized: false,

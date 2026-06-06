@@ -46,6 +46,7 @@ export interface Question {
   round_type: RoundType
   difficulty: number
   topic_tag: string
+  expected_keywords?: string[]
   order_index: number
   asked: boolean
 }

@@ -20,12 +20,12 @@ interface StoredPlan {
 }
 
 const ROUND_COLORS: Record<string, string> = {
-  tech_l1: 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20',
-  tech_l2: 'bg-violet-500/10 text-violet-400 border border-violet-500/20',
-  managerial: 'bg-blue-500/10 text-blue-400 border border-blue-500/20',
-  hr: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20',
-  full_loop: 'bg-orange-500/10 text-orange-400 border border-orange-500/20',
-  drill: 'bg-white/[0.04] text-gray-400 border border-white/[0.08]',
+  tech_l1: 'bg-indigo-50 text-indigo-600 border border-indigo-200',
+  tech_l2: 'bg-violet-50 text-violet-600 border border-violet-200',
+  managerial: 'bg-blue-50 text-blue-600 border border-blue-200',
+  hr: 'bg-emerald-50 text-emerald-600 border border-emerald-200',
+  full_loop: 'bg-orange-50 text-orange-600 border border-orange-200',
+  drill: 'bg-gray-100 text-gray-600 border border-gray-200',
 }
 
 export default function StudyPlanWidget() {
@@ -42,14 +42,11 @@ export default function StudyPlanWidget() {
         const parsed: StoredPlan = JSON.parse(stored)
         // Only use cached plan if less than 48 hours old
         const age = Date.now() - new Date(parsed.generated_at).getTime()
-        if (age < 48 * 3600 * 1000) setPlan(parsed)
+        if (!isNaN(age) && age < 48 * 3600 * 1000) setPlan(parsed)
       }
       // Try to read interview date from InterviewCountdown's localStorage key
-      const countdown = localStorage.getItem('interview-countdown')
-      if (countdown) {
-        const { date } = JSON.parse(countdown) as { date?: string }
-        if (date) setInterviewDate(date)
-      }
+      const countdown = localStorage.getItem('interviewai_next_interview_date')
+      if (countdown) setInterviewDate(countdown)
     } catch { /* ignore */ }
   }, [])
 
@@ -88,29 +85,29 @@ export default function StudyPlanWidget() {
     : 0
 
   return (
-    <div className="bg-[#111118] border border-white/[0.06] hover:border-white/[0.12] rounded-2xl overflow-hidden mb-8 transition-all duration-200">
+    <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl overflow-hidden mb-8 transition-all duration-200 shadow-sm">
       <button
         onClick={() => setExpanded(e => !e)}
-        className="w-full px-6 py-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors"
+        className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors"
       >
         <div className="flex items-center gap-2">
-          <Target className="w-4 h-4 text-indigo-400" />
-          <h2 className="font-semibold text-white">Your Study Plan</h2>
+          <Target className="w-4 h-4 text-indigo-600" />
+          <h2 className="font-semibold text-gray-900">Your Study Plan</h2>
           {plan && (
-            <span className="text-xs bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded-full font-medium">
+            <span className="text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-0.5 rounded-full font-medium">
               {plan.days.length} days
             </span>
           )}
         </div>
-        <ChevronRight className={`w-4 h-4 text-gray-600 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+        <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${expanded ? 'rotate-90' : ''}`} />
       </button>
 
       {expanded && (
-        <div className="border-t border-white/[0.06] px-6 py-4">
+        <div className="border-t border-gray-200 px-6 py-4">
           {!plan ? (
             <div className="text-center py-4">
               <Calendar className="w-10 h-10 text-indigo-500/30 mx-auto mb-3" />
-              <p className="text-sm text-gray-400 mb-4">
+              <p className="text-sm text-gray-600 mb-4">
                 Get a personalised day-by-day prep plan based on your weak areas and interview date.
               </p>
               {/* Optional interview date */}
@@ -119,7 +116,7 @@ export default function StudyPlanWidget() {
                   type="date"
                   value={interviewDate}
                   onChange={e => setInterviewDate(e.target.value)}
-                  className="text-sm bg-[#0a0a0f] border border-white/[0.08] text-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 focus:border-indigo-500/50"
+                  className="text-sm bg-slate-50 border border-gray-200 text-gray-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-500/50"
                   placeholder="Interview date (optional)"
                   min={new Date().toISOString().split('T')[0]}
                 />
@@ -146,26 +143,26 @@ export default function StudyPlanWidget() {
                       key={d.day}
                       className={`rounded-xl border p-3 transition-all ${
                         isToday
-                          ? 'ring-1 ring-indigo-500/40 bg-indigo-500/5 border-indigo-500/30'
+                          ? 'ring-1 ring-indigo-300 bg-indigo-50 border-indigo-300'
                           : isPast
-                            ? 'border-white/[0.04] bg-white/[0.02] opacity-40'
-                            : 'border-white/[0.06] bg-white/[0.01]'
+                            ? 'border-gray-100 bg-slate-50 opacity-40'
+                            : 'border-gray-200 bg-slate-50'
                       }`}
                     >
                       <div className="flex items-start gap-3">
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 ${
-                          isToday ? 'bg-indigo-600 text-white' : isPast ? 'bg-white/[0.06] text-gray-600' : 'bg-white/[0.04] text-gray-500'
+                          isToday ? 'bg-indigo-600 text-white' : isPast ? 'bg-gray-100 text-gray-400' : 'bg-gray-100 text-gray-600'
                         }`}>
                           {isToday ? 'Today' : `D${d.day}`}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-0.5">
-                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${ROUND_COLORS[roundKey] ?? 'bg-white/[0.04] text-gray-400 border border-white/[0.08]'}`}>
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${ROUND_COLORS[roundKey] ?? 'bg-gray-100 text-gray-600 border border-gray-200'}`}>
                               {d.focus}
                             </span>
                           </div>
-                          <p className="text-sm text-gray-300">{d.action}</p>
-                          <p className="text-xs text-gray-600 mt-0.5">{d.why}</p>
+                          <p className="text-sm text-gray-700">{d.action}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">{d.why}</p>
                         </div>
                         {isToday && (
                           <Link
@@ -182,7 +179,7 @@ export default function StudyPlanWidget() {
               </div>
               <button
                 onClick={refresh}
-                className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-400 transition-colors"
+                className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors"
               >
                 <RefreshCw className="w-3 h-3" /> Regenerate plan
               </button>

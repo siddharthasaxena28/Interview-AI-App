@@ -29,6 +29,7 @@ export default function FeedbackClient({
       })
       return
     }
+    if (timedOut) return
 
     // Trigger generation immediately. The session page already fired it as a head
     // start, but the route dedups (returns the existing report), so this is safe and
@@ -61,13 +62,13 @@ export default function FeedbackClient({
       clearInterval(pollInterval)
       clearTimeout(giveUpTimer)
     }
-  }, [hasReport, sessionId, overallScore, selectionProbability, analytics, router])
+  }, [hasReport, timedOut, sessionId, overallScore, selectionProbability, analytics, router])
 
   if (!hasReport && timedOut) {
     return (
       <div className="mt-6 text-center">
-        <div className="inline-block bg-amber-500/10 border border-amber-500/20 rounded-2xl px-6 py-4">
-          <p className="text-sm text-amber-400 mb-3">
+        <div className="inline-block bg-amber-50 border border-amber-200 rounded-2xl px-6 py-4">
+          <p className="text-sm text-amber-600 mb-3">
             Report is taking longer than expected.
           </p>
           <button

@@ -29,6 +29,7 @@ export async function generateMetadata({
 
   const title = `${company} ${role} Interview — ${score}/100 on InterviewAI`
   const description = `Scored ${score}/100 with a ${prob}% chance of selection for the ${role} role at ${company}. Powered by InterviewAI — practise like it's real.`
+  const ogImageUrl = `${appUrl}/report/${token}/opengraph-image`
 
   return {
     title,
@@ -39,11 +40,13 @@ export async function generateMetadata({
       url: `${appUrl}/report/${token}`,
       siteName: 'InterviewAI',
       type: 'article',
+      images: [{ url: ogImageUrl, width: 1200, height: 630, alt: `${company} ${role} interview scorecard` }],
     },
     twitter: {
       card: 'summary_large_image',
       title,
       description,
+      images: [ogImageUrl],
     },
   }
 }

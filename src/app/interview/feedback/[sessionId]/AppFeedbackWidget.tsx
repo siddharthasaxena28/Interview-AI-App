@@ -61,11 +61,11 @@ export default function AppFeedbackWidget({ sessionId }: Props) {
   if (!ready || dismissed) return null
 
   return (
-    <div className="bg-[#111118] border border-white/[0.06] rounded-2xl p-6 mt-6">
+    <div className="bg-white border border-gray-200 rounded-2xl p-6 mt-6 shadow-sm">
       {submitted ? (
         <div className="flex flex-col items-center py-6 text-center">
-          <CheckCircle2 className="w-12 h-12 text-emerald-400 mb-3" />
-          <p className="font-semibold text-white text-lg">Thank you for your feedback!</p>
+          <CheckCircle2 className="w-12 h-12 text-emerald-600 mb-3" />
+          <p className="font-semibold text-gray-900 text-lg">Thank you for your feedback!</p>
           <p className="text-gray-500 text-sm mt-1">
             We read every submission and use it to make InterviewAI better.
           </p>
@@ -74,14 +74,14 @@ export default function AppFeedbackWidget({ sessionId }: Props) {
         <>
           <div className="flex items-start justify-between mb-4">
             <div>
-              <h3 className="font-semibold text-white">How was your experience?</h3>
+              <h3 className="font-semibold text-gray-900">How was your experience?</h3>
               <p className="text-sm text-gray-500 mt-0.5">
                 Your feedback helps us improve InterviewAI for everyone.
               </p>
             </div>
             <button
               onClick={dismiss}
-              className="text-gray-600 hover:text-gray-400 transition-colors ml-4 shrink-0"
+              className="text-gray-400 hover:text-gray-600 transition-colors ml-4 shrink-0"
               aria-label="Dismiss"
             >
               <X className="w-4 h-4" />
@@ -103,13 +103,13 @@ export default function AppFeedbackWidget({ sessionId }: Props) {
                   className={`w-8 h-8 transition-colors ${
                     star <= (hovered || rating)
                       ? 'fill-amber-400 text-amber-400'
-                      : 'fill-white/[0.05] text-white/[0.12]'
+                      : 'fill-gray-200 text-gray-300'
                   }`}
                 />
               </button>
             ))}
             {(hovered || rating) > 0 && (
-              <span className="text-sm text-gray-400 ml-1">
+              <span className="text-sm text-gray-600 ml-1">
                 {STAR_LABELS[(hovered || rating) - 1]}
               </span>
             )}
@@ -119,37 +119,37 @@ export default function AppFeedbackWidget({ sessionId }: Props) {
           {rating > 0 && (
             <div className="mt-5 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1.5">
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
                   What could we improve?{' '}
-                  <span className="text-gray-600 font-normal">(optional)</span>
+                  <span className="text-gray-400 font-normal">(optional)</span>
                 </label>
                 <textarea
                   rows={3}
                   value={improvements}
                   onChange={(e) => setImprovements(e.target.value)}
                   placeholder="Audio quality, question difficulty, UI experience, transcription accuracy…"
-                  className="w-full text-sm bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 focus:border-indigo-500/40 resize-none transition-colors"
+                  className="w-full text-sm bg-gray-100 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-500/40 resize-none transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1.5">
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
                   Any features you&apos;d love to see?{' '}
-                  <span className="text-gray-600 font-normal">(optional)</span>
+                  <span className="text-gray-400 font-normal">(optional)</span>
                 </label>
                 <textarea
                   rows={3}
                   value={suggestions}
                   onChange={(e) => setSuggestions(e.target.value)}
                   placeholder="Interview transcript export, video recording, timed practice mode, company-specific question packs…"
-                  className="w-full text-sm bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 focus:border-indigo-500/40 resize-none transition-colors"
+                  className="w-full text-sm bg-gray-100 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-500/40 resize-none transition-colors"
                 />
               </div>
 
               <div className="flex items-center justify-between pt-1">
                 <button
                   onClick={dismiss}
-                  className="text-sm text-gray-600 hover:text-gray-400 transition-colors"
+                  className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
                 >
                   Skip
                 </button>

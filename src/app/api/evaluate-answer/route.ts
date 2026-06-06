@@ -108,6 +108,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
+    // Cap transcript to ~3 min of speech — prevents prompt injection and token overuse
+    const cappedTranscript = transcript.slice(0, 3000)
+
     // Verify session belongs to this user
     const { data: session } = await supabase
       .from('interview_sessions')
@@ -157,7 +160,7 @@ Question (difficulty ${q.difficulty}/5, topic: ${q.topic_tag}):
 "${q.text}"
 
 Candidate's answer:
-"${transcript || '[No answer — candidate was silent]'}"`,
+"${cappedTranscript || '[No answer — candidate was silent]'}"`,
         },
       ],
     })
@@ -170,7 +173,8 @@ Candidate's answer:
       const jsonMatch = content.text.match(/\{[\s\S]*\}/)
       evaluation = JSON.parse(jsonMatch ? jsonMatch[0] : content.text)
     } catch {
-      evaluation = { score: 3, spoken_response: '', probe: false, probe_question: '', candidate_wants_to_skip: false }
+      console.error('[evaluate-answer] Failed to parse Claude response:', content.text.slice(0, 200))
+      return NextResponse.json({ error: 'Failed to parse evaluation response' }, { status: 502 })
     }
 
     // Safety net: never probe a candidate who wants to skip regardless of what the model returned.
@@ -186,14 +190,17 @@ Candidate's answer:
       supabase.from('answers').insert({
         session_id,
         question_id,
-        transcript_text: transcript,
+        transcript_text: cappedTranscript,
         duration_seconds: durationSeconds,
         score,
       }),
       supabase.from('questions').update({ asked: true }).eq('id', question_id),
     ])
 
-    if (answerError) console.error('Failed to save answer:', answerError)
+    if (answerError) {
+      console.error('Failed to save answer:', answerError)
+      return NextResponse.json({ error: 'Failed to save answer — please retry' }, { status: 500 })
+    }
     if (askedError) console.error('Failed to mark question asked:', askedError)
 
     // Select next question using adaptive difficulty — sort buckets so we step
