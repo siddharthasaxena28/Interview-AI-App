@@ -113,6 +113,23 @@ Do NOT probe more than once per topic.
 
 When you probe, "probe_question" is a single specific follow-up — phrased conversationally, as you'd say it aloud.
 
+--- CONVERSATION HISTORY ---
+You will receive the recent conversation history (last few Q&A exchanges) and the candidate's self-introduction. Use this to:
+- Make transitions feel natural and connected ("You mentioned X earlier — that actually leads into my next question...")
+- Spot contradictions or undersell ("Earlier you said you led the team, but just now you said you were a contributor — can you clarify?")
+- Calibrate difficulty expectations based on what they've already revealed
+- Reference specific projects, skills, or experiences the candidate mentioned
+
+Only reference previous answers when it genuinely improves the response — don't force it.
+
+--- PROBE DEPTH ---
+If the user message contains "Already on a follow-up question: yes" — do NOT probe again. Score and move on. A candidate should never face more than two consecutive follow-ups on the same topic.
+
+--- CONFIDENCE SIGNAL ---
+The user message may include a speech-pattern note ("hesitant" or "confident"). Adjust your spoken_response tone accordingly:
+- Hesitant: be more encouraging in tone (still honest about the score — just warmer delivery)
+- Confident: can be more direct and push harder on gaps
+
 --- spoken_response RULES ---
 "spoken_response" is what you say out loud immediately after the candidate finishes. It must:
 - Be EXACTLY ONE sentence (10 words maximum)
@@ -124,6 +141,7 @@ When you probe, "probe_question" is a single specific follow-up — phrased conv
 - For probes: lead naturally into the follow-up ("Hmm, let me push on that a bit —")
 - For skips: brief and gracious — vary the phrasing every time (see SKIP DETECTION section for examples)
 - For clarification: brief and natural — sound like a human who missed something
+- When you have conversation history: you may weave in a brief reference to a prior answer in your spoken_response if it fits naturally
 
 Examples by score:
   Score 5: "Excellent — I really liked how you tied in the trade-offs."
@@ -152,11 +170,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { transcript, question_id, session_id, start_time } = await request.json() as {
+    const {
+      transcript, question_id, session_id, start_time,
+      conversation_history, intro_transcript, answer_confidence, is_already_probe,
+    } = await request.json() as {
       transcript: string
       question_id: string
       session_id: string
       start_time?: number
+      conversation_history?: { question: string; answer: string; score: number }[]
+      intro_transcript?: string
+      answer_confidence?: 'confident' | 'hesitant'
+      is_already_probe?: boolean
     }
 
     if (!transcript || !question_id || !session_id) {
@@ -209,13 +234,17 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: 'user',
-          content: `Your interviewer persona: ${personaStyle}
-
-Question (difficulty ${q.difficulty}/5, topic: ${q.topic_tag}):
-"${q.text}"
-
-Candidate's answer:
-"${cappedTranscript || '[No answer — candidate was silent]'}"`,
+          content: [
+            `Your interviewer persona: ${personaStyle}`,
+            intro_transcript ? `Candidate self-introduction: "${intro_transcript.slice(0, 500)}"` : '',
+            (conversation_history && conversation_history.length > 0)
+              ? `Recent conversation (${conversation_history.length} exchange${conversation_history.length > 1 ? 's' : ''}):\n${conversation_history.map(h => `Q: "${h.question}"\nA: "${h.answer.slice(0, 400)}" [Score: ${h.score}/5]`).join('\n\n')}`
+              : '',
+            `Already on a follow-up question: ${is_already_probe ? 'yes — do NOT probe again' : 'no'}`,
+            answer_confidence ? `Speech pattern: ${answer_confidence}` : '',
+            `Question (difficulty ${q.difficulty}/5, topic: ${q.topic_tag}):\n"${q.text}"`,
+            `Candidate's answer:\n"${cappedTranscript || '[No answer — candidate was silent]'}"`,
+          ].filter(Boolean).join('\n\n'),
         },
       ],
     })
@@ -230,6 +259,12 @@ Candidate's answer:
     } catch {
       console.error('[evaluate-answer] Failed to parse Claude response:', content.text.slice(0, 200))
       return NextResponse.json({ error: 'Failed to parse evaluation response' }, { status: 502 })
+    }
+
+    // If already on a probe, never insert another — force the interview forward.
+    if (is_already_probe) {
+      evaluation.probe = false
+      evaluation.probe_question = ''
     }
 
     // Safety nets: mutual exclusivity — skip > encourage > clarification > probe.
