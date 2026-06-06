@@ -806,13 +806,28 @@ function SessionPageInner({ params }: SessionPageProps) {
     evalAutoRetriedRef.current = false
     stopAnswerRecording(currentQuestion.id)
 
-    const nextIndex = questionIndex + 1
     try {
-      if (nextIndex < sessionData.questions.length) {
-        const nextQ = sessionData.questions[nextIndex]
-        setCurrentQuestion(nextQ)
-        setQuestionIndex(nextIndex)
-        await speakText(`No worries, let's move on. ${nextQ.text}`)
+      // Route through evaluate-answer so the question is marked as asked and
+      // recorded with a score — the API's skip detection handles [skip] naturally
+      // and returns a varied gracious response instead of a hardcoded string.
+      const res = await fetch('/api/evaluate-answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcript: '[skip]',
+          question_id: currentQuestion.id,
+          session_id: sessionId,
+          start_time: answerStartRef.current,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Skip failed')
+
+      if (data.next_question && data.questions_remaining > 0) {
+        setCurrentQuestion(data.next_question)
+        if (!data.is_probe) setQuestionIndex((i) => i + 1)
+        const spoken = (data.spoken_response ?? '').trim()
+        await speakText(spoken ? `${spoken}... ${data.next_question.text}` : data.next_question.text)
       } else {
         await endInterview()
       }
