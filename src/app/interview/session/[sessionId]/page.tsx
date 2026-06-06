@@ -57,6 +57,7 @@ function SessionPageInner({ params }: SessionPageProps) {
   const [showEndConfirm, setShowEndConfirm] = useState(false)
   const [ttsNotice, setTtsNotice] = useState(false)
   const [isProbe, setIsProbe] = useState(false)
+  const [isDynamic, setIsDynamic] = useState(false)
   const [questionElapsed, setQuestionElapsed] = useState(0)
   const [answerLengthHint, setAnswerLengthHint] = useState<{ text: string; type: 'green' | 'amber' } | null>(null)
 
@@ -90,10 +91,11 @@ function SessionPageInner({ params }: SessionPageProps) {
   // Tracks encouragement prompts per question — capped at 1 so the AI doesn't
   // keep saying "go on" indefinitely if the candidate is genuinely done.
   const encourageAttemptsRef = useRef<Record<string, number>>({})
-  // Pre-fetched short filler audio clips played immediately on answer submission to
-  // hide the evaluate-answer API latency. Populated when the interview phase begins.
+  // Pre-fetched short filler audio clips that loop continuously from answer submission
+  // until speakText() interrupts with the real response — eliminates dead silence.
   const fillerQueueRef = useRef<string[]>([])
   const fillerIndexRef = useRef(0)
+  const fillerChainActiveRef = useRef(false)
   // Rolling log of the last 4 Q&A exchanges passed to Claude for cross-answer memory.
   const conversationHistoryRef = useRef<{ question: string; answer: string; score: number }[]>([])
   // Self-introduction transcript — passed to evaluate-answer so Claude can reference
@@ -154,7 +156,7 @@ function SessionPageInner({ params }: SessionPageProps) {
   // instantly from cache (hiding the 2–5 s evaluate-answer API latency).
   useEffect(() => {
     if (phase !== 'interview' || !sessionData || fillerQueueRef.current.length > 0) return
-    const phrases = ["Mm-hmm.", "I see.", "Got it.", "Sure.", "Alright."]
+    const phrases = ["Mm-hmm.", "Let me think about that.", "I see.", "Interesting.", "Right, okay."]
     Promise.all(phrases.map(async (text) => {
       try {
         const res = await fetch('/api/tts', {
@@ -585,18 +587,37 @@ function SessionPageInner({ params }: SessionPageProps) {
     })
   }
 
-  // Play a pre-fetched filler clip immediately from cache — hides the evaluate-answer
-  // API latency. Does NOT set state or mute the mic; speakText will override when ready.
-  function playFiller() {
+  // Plays pre-fetched filler clips in a loop from the moment the candidate finishes
+  // speaking until speakText() sets a new src on audioRef — creating continuous audio
+  // coverage across the full evaluate-answer API round-trip. speakText naturally
+  // interrupts the chain by overwriting audioRef.current.src.
+  async function playFillerChain() {
     const urls = fillerQueueRef.current
     if (!urls.length || !audioRef.current) return
-    const url = urls[fillerIndexRef.current % urls.length]
-    fillerIndexRef.current++
-    audioRef.current.onended = null
-    audioRef.current.onerror = null
-    audioRef.current.pause()
-    audioRef.current.src = url
-    audioRef.current.play().catch(() => {})
+    fillerChainActiveRef.current = true
+    let i = fillerIndexRef.current
+    while (fillerChainActiveRef.current) {
+      const el = audioRef.current
+      if (!el) break
+      const url = urls[i % urls.length]
+      i++
+      el.onended = null
+      el.onerror = null
+      el.pause()
+      el.src = url
+      await new Promise<void>(resolve => {
+        el.onended = () => resolve()
+        el.onerror = () => resolve()
+        el.play().catch(() => resolve())
+        // 5s ceiling per clip — guards against a hung audio element
+        setTimeout(resolve, 5000)
+      })
+    }
+    fillerIndexRef.current = i
+  }
+
+  function stopFillerChain() {
+    fillerChainActiveRef.current = false
   }
 
   // Proxy for prosodic confidence — counts filler words as a fraction of total words.
@@ -613,6 +634,7 @@ function SessionPageInner({ params }: SessionPageProps) {
   // speech synthesis, and resolves the pending speakText promise so callers
   // awaiting it unblock right away.
   function stopAllAudio() {
+    stopFillerChain()
     cancelSpeakRef.current?.()
     cancelSpeakRef.current = null
     if (audioRef.current) {
@@ -654,6 +676,7 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   async function speakText(text: string, startListening = true): Promise<void> {
     if (!sessionData) return
+    stopFillerChain() // stop any running filler chain before taking over audioRef
     setAiSpeaking()
     systemMutedRef.current = true
     setFinalTranscript('')
@@ -772,9 +795,8 @@ function SessionPageInner({ params }: SessionPageProps) {
     setFinalTranscript('')
     stopAnswerRecording(currentQuestion.id)
 
-    // Play a cached filler clip instantly to bridge the evaluate-answer API latency.
-    // speakText() will pause this automatically when the real audio is ready.
-    playFiller()
+    // Loop filler clips continuously until speakText() takes over audioRef.
+    void playFillerChain()
 
     const answerConfidence = analyzeAnswerConfidence(transcript)
 
@@ -848,6 +870,7 @@ function SessionPageInner({ params }: SessionPageProps) {
         const answerDurationSecs = Math.round((Date.now() - answerStartRef.current) / 1000)
 
         setIsProbe(data.is_probe ?? false)
+        setIsDynamic(data.is_dynamic ?? false)
         setCurrentQuestion(data.next_question)
         // A probe stays on the same logical question — don't advance the counter.
         if (!data.is_probe) setQuestionIndex((i) => i + 1)
@@ -890,6 +913,7 @@ function SessionPageInner({ params }: SessionPageProps) {
         await speakText(bridge)
       }
     } catch {
+      stopFillerChain()
       if (!evalAutoRetriedRef.current) {
         // First failure: retry silently after a brief pause.
         evalAutoRetriedRef.current = true
@@ -917,7 +941,7 @@ function SessionPageInner({ params }: SessionPageProps) {
   const handleCandidateQuestion = useCallback(async (transcript: string) => {
     if (!sessionData || endingRef.current) return
     setProcessing()
-    playFiller()
+    void playFillerChain()
 
     candidateQuestionsCountRef.current++
     const count = candidateQuestionsCountRef.current
@@ -1432,6 +1456,11 @@ function SessionPageInner({ params }: SessionPageProps) {
                       <span className="text-xs text-gray-500 uppercase tracking-widest capitalize">
                         Q{questionIndex + 1} · {currentQuestion.topic_tag.replace(/_/g, ' ')} · Difficulty {currentQuestion.difficulty}/5
                       </span>
+                      {isDynamic && (
+                        <span className="text-[10px] font-semibold bg-violet-500/10 text-violet-400 border border-violet-500/20 px-2 py-0.5 rounded-full normal-case tracking-normal">
+                          Contextual
+                        </span>
+                      )}
                       {isLastQuestion && (
                         <span className="text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full normal-case tracking-normal">
                           Final question
