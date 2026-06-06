@@ -142,13 +142,27 @@ export default async function DashboardPage() {
             </div>
             <span className="font-bold text-gray-900 tracking-tight">InterviewAI</span>
           </div>
-          <UserMenu
-            name={authUser.user_metadata?.full_name ?? ''}
-            email={authUser.email ?? ''}
-            avatarUrl={authUser.user_metadata?.avatar_url}
-            creditBalance={creditBalance}
-            plan={user?.plan ?? 'free'}
-          />
+          <div className="flex items-center gap-3">
+            <Link
+              href="/pricing"
+              className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                creditBalance > 0
+                  ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
+                  : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+              }`}
+            >
+              <CreditCard className="w-3 h-3" />
+              {creditBalance} {creditBalance === 1 ? 'credit' : 'credits'}
+              {creditBalance === 0 && ' · Top up →'}
+            </Link>
+            <UserMenu
+              name={authUser.user_metadata?.full_name ?? ''}
+              email={authUser.email ?? ''}
+              avatarUrl={authUser.user_metadata?.avatar_url}
+              creditBalance={creditBalance}
+              plan={user?.plan ?? 'free'}
+            />
+          </div>
         </div>
       </nav>
 

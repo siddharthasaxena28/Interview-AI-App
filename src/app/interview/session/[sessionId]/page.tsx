@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Mic, MicOff, PhoneOff, Volume2, CheckCircle2 } from 'lucide-react'
+import { Mic, MicOff, PhoneOff, Volume2, CheckCircle2, SkipForward } from 'lucide-react'
 import { useAudioStateMachine } from '@/hooks/useAudioStateMachine'
 import { useAnalytics } from '@/hooks/useAnalytics'
 import { formatDuration } from '@/lib/utils'
@@ -692,6 +692,30 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   useEffect(() => { handleAnswerCompleteRef.current = handleAnswerComplete }, [handleAnswerComplete])
 
+  async function handleSkip() {
+    if (isProcessingRef.current || !currentQuestion || !sessionData || ending) return
+    if (phase !== 'interview') return
+    isProcessingRef.current = true
+    setEvalError(null)
+    setProcessing()
+    finalTranscriptRef.current = ''
+    liveTranscriptRef.current = ''
+    setFinalTranscript('')
+    setLiveTranscript('')
+    evalAutoRetriedRef.current = false
+    stopAnswerRecording(currentQuestion.id)
+
+    const nextIndex = questionIndex + 1
+    if (nextIndex < sessionData.questions.length) {
+      const nextQ = sessionData.questions[nextIndex]
+      setCurrentQuestion(nextQ)
+      setQuestionIndex(nextIndex)
+      await speakText(`No worries, let's move on. ${nextQ.text}`)
+    } else {
+      await endInterview()
+    }
+  }
+
   function handleResume() {
     if (!resumeInfo || !sessionData) return
     // Find the saved question in the loaded question list
@@ -1129,6 +1153,16 @@ function SessionPageInner({ params }: SessionPageProps) {
           >
             <CheckCircle2 className="w-5 h-5" />
             <span className="text-xs font-medium">Done</span>
+          </button>
+        )}
+
+        {(state === 'LISTENING' || state === 'USER_SPEAKING') && phase === 'interview' && (
+          <button
+            onClick={handleSkip}
+            className="flex flex-col items-center gap-1.5 px-5 py-3 rounded-2xl bg-white/[0.06] text-gray-400 hover:bg-white/[0.10] border border-white/[0.08] hover:text-gray-200 transition-all duration-200"
+          >
+            <SkipForward className="w-5 h-5" />
+            <span className="text-xs font-medium">Skip</span>
           </button>
         )}
 
