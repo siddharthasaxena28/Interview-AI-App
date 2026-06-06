@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mic, MicOff, ChevronRight, CheckCircle, RotateCcw, Zap, Clock, ArrowRight, Sparkles } from 'lucide-react'
@@ -60,10 +61,14 @@ const FILTER_OPTIONS: { value: DrillRoundFilter; label: string }[] = [
   { value: 'hr', label: 'HR' },
 ]
 
-export default function DrillPage() {
+function DrillPageInner() {
+  const searchParams = useSearchParams()
+  const urlFilter = searchParams.get('filter') as DrillRoundFilter | null
   // Compute once on mount so midnight doesn't replace questions mid-session
   const today = useMemo(() => new Date().toISOString().split('T')[0], [])
-  const [filter, setFilter] = useState<DrillRoundFilter>('mixed')
+  const [filter, setFilter] = useState<DrillRoundFilter>(
+    FILTER_OPTIONS.some(f => f.value === urlFilter) ? urlFilter! : 'mixed'
+  )
   const [questions, setQuestions] = useState<DrillQuestion[]>([])
   const [loadingQuestions, setLoadingQuestions] = useState(true)
   const [personalized, setPersonalized] = useState(false)
@@ -530,5 +535,17 @@ export default function DrillPage() {
         </AnimatePresence>
       </main>
     </div>
+  )
+}
+
+export default function DrillPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-gray-200 border-t-indigo-500 rounded-full animate-spin" />
+      </div>
+    }>
+      <DrillPageInner />
+    </Suspense>
   )
 }

@@ -92,6 +92,11 @@ function SessionPageInner({ params }: SessionPageProps) {
   const recordedChunksRef = useRef<Blob[]>([])
   const recordingQuestionIdRef = useRef<string | null>(null)
   const evalAutoRetriedRef = useRef(false)
+  // Waveform visualizer — AnalyserNode taps the mic source in parallel; bars
+  // are updated via direct DOM manipulation to avoid 60fps React re-renders.
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const waveformRef = useRef<HTMLDivElement | null>(null)
+  const waveformRafRef = useRef<number | null>(null)
 
   // Keep isMountedRef true for the lifetime of this mount. Without this dedicated
   // effect the ref stays false after any remount (StrictMode or client-side
@@ -105,6 +110,16 @@ function SessionPageInner({ params }: SessionPageProps) {
   useEffect(() => { phaseRef.current = phase }, [phase])
   useEffect(() => { endingRef.current = ending }, [ending])
   useEffect(() => { audioStateRef.current = state }, [state])
+
+  useEffect(() => {
+    if ((state === 'LISTENING' || state === 'USER_SPEAKING') && phase === 'interview') {
+      startWaveform()
+    } else {
+      stopWaveform()
+    }
+    return stopWaveform
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, phase])
 
   // Persist progress so the user can resume if they accidentally navigate away
   useEffect(() => {
@@ -424,6 +439,14 @@ function SessionPageInner({ params }: SessionPageProps) {
     }
 
     source.connect(processor)
+
+    // Read-only tap for waveform — parallel connection, cannot affect pipeline
+    const analyser = audioContext.createAnalyser()
+    analyser.fftSize = 64
+    analyser.smoothingTimeConstant = 0.85
+    source.connect(analyser)
+    analyserRef.current = analyser
+
     const silentGain = audioContext.createGain()
     silentGain.gain.value = 0
     processor.connect(silentGain)
@@ -470,6 +493,39 @@ function SessionPageInner({ params }: SessionPageProps) {
       saveAnswerAudio(sessionId, questionId, blob).catch(() => {})
     }
     mr.stop()
+  }
+
+  function startWaveform() {
+    const container = waveformRef.current
+    const analyser = analyserRef.current
+    if (!container || !analyser) return
+    const bars = container.querySelectorAll<HTMLDivElement>('[data-bar]')
+    if (bars.length === 0) return
+    const liveAnalyser: AnalyserNode = analyser
+    const dataArray = new Uint8Array(liveAnalyser.frequencyBinCount)
+    const COUNT = bars.length
+    function tick() {
+      waveformRafRef.current = requestAnimationFrame(tick)
+      liveAnalyser.getByteFrequencyData(dataArray)
+      bars.forEach((bar, i) => {
+        const v = dataArray[Math.floor(i * dataArray.length / COUNT)] / 255
+        bar.style.height = `${Math.max(12, v * 100)}%`
+        bar.style.opacity = String(Math.max(0.2, v * 0.85 + 0.15))
+      })
+    }
+    tick()
+  }
+
+  function stopWaveform() {
+    if (waveformRafRef.current !== null) {
+      cancelAnimationFrame(waveformRafRef.current)
+      waveformRafRef.current = null
+    }
+    const container = waveformRef.current
+    container?.querySelectorAll<HTMLDivElement>('[data-bar]').forEach(bar => {
+      bar.style.height = '12%'
+      bar.style.opacity = '0.2'
+    })
   }
 
   // Immediately silences the AI: stops the <audio> element, cancels browser
@@ -1108,6 +1164,20 @@ function SessionPageInner({ params }: SessionPageProps) {
           </div>
         ) : null}
 
+        {/* Waveform visualizer */}
+        {(state === 'LISTENING' || state === 'USER_SPEAKING') && phase === 'interview' && (
+          <div ref={waveformRef} className="flex items-end gap-[2px] h-10 max-w-xs w-full">
+            {Array.from({ length: 24 }).map((_, i) => (
+              <div
+                key={i}
+                data-bar
+                className="flex-1 rounded-sm bg-indigo-400"
+                style={{ height: '12%', opacity: 0.2 }}
+              />
+            ))}
+          </div>
+        )}
+
         {/* Live transcript */}
         {(liveTranscript || finalTranscript) && (
           <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 sm:p-4 max-w-2xl w-full max-h-28 sm:max-h-none overflow-y-auto">
@@ -1121,17 +1191,17 @@ function SessionPageInner({ params }: SessionPageProps) {
       </div>
 
       {/* Controls */}
-      <div className="px-4 sm:px-6 py-4 sm:py-5 border-t border-white/[0.06] flex items-center justify-center gap-3 sm:gap-4">
+      <div className="px-4 sm:px-6 py-4 sm:py-5 border-t border-white/[0.06] flex items-center justify-center gap-2 sm:gap-4">
         <button
           onClick={() => setMuted((m) => { mutedRef.current = !m; return !m })}
-          className={`flex flex-col items-center gap-1.5 px-5 py-3 rounded-2xl transition-all duration-200 ${
+          className={`flex flex-col items-center gap-1 sm:gap-1.5 px-3 sm:px-5 py-2.5 sm:py-3 rounded-2xl transition-all duration-200 ${
             muted
               ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20'
               : 'bg-white/[0.06] text-gray-400 hover:bg-white/[0.10] border border-white/[0.08] hover:text-gray-200'
           }`}
         >
-          {muted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-          <span className="text-xs font-medium">{muted ? 'Unmute' : 'Mute'}</span>
+          {muted ? <MicOff className="w-4 h-4 sm:w-5 sm:h-5" /> : <Mic className="w-4 h-4 sm:w-5 sm:h-5" />}
+          <span className="text-[10px] sm:text-xs font-medium">{muted ? 'Unmute' : 'Mute'}</span>
         </button>
 
         {/* Manual submit — lets users trigger answer submission without waiting for
@@ -1149,29 +1219,29 @@ function SessionPageInner({ params }: SessionPageProps) {
               evalAutoRetriedRef.current = false
               handleAnswerCompleteRef.current(full || '[No answer provided]')
             }}
-            className="flex flex-col items-center gap-1.5 px-5 py-3 rounded-2xl bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all duration-200 hover:border-emerald-500/40"
+            className="flex flex-col items-center gap-1 sm:gap-1.5 px-3 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all duration-200 hover:border-emerald-500/40"
           >
-            <CheckCircle2 className="w-5 h-5" />
-            <span className="text-xs font-medium">Done</span>
+            <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
+            <span className="text-[10px] sm:text-xs font-medium">Done</span>
           </button>
         )}
 
         {(state === 'LISTENING' || state === 'USER_SPEAKING') && phase === 'interview' && (
           <button
             onClick={handleSkip}
-            className="flex flex-col items-center gap-1.5 px-5 py-3 rounded-2xl bg-white/[0.06] text-gray-400 hover:bg-white/[0.10] border border-white/[0.08] hover:text-gray-200 transition-all duration-200"
+            className="flex flex-col items-center gap-1 sm:gap-1.5 px-3 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-white/[0.06] text-gray-400 hover:bg-white/[0.10] border border-white/[0.08] hover:text-gray-200 transition-all duration-200"
           >
-            <SkipForward className="w-5 h-5" />
-            <span className="text-xs font-medium">Skip</span>
+            <SkipForward className="w-4 h-4 sm:w-5 sm:h-5" />
+            <span className="text-[10px] sm:text-xs font-medium">Skip</span>
           </button>
         )}
 
         <button
           onClick={() => endInterview(true)}
-          className="flex flex-col items-center gap-1.5 px-5 py-3 rounded-2xl bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 transition-all duration-200 hover:border-red-500/40"
+          className="flex flex-col items-center gap-1 sm:gap-1.5 px-3 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 transition-all duration-200 hover:border-red-500/40"
         >
-          <PhoneOff className="w-5 h-5" />
-          <span className="text-xs font-medium">End Interview</span>
+          <PhoneOff className="w-4 h-4 sm:w-5 sm:h-5" />
+          <span className="text-[10px] sm:text-xs font-medium">End Interview</span>
         </button>
       </div>
     </div>

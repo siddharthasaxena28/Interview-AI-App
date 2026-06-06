@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { ChevronDown, ChevronUp, MessageSquare, Lightbulb, Copy, Check, Play, Square, Mic, RotateCcw } from 'lucide-react'
+import { ChevronDown, ChevronUp, MessageSquare, Lightbulb, Copy, Check, Play, Square, Mic, RotateCcw, Zap } from 'lucide-react'
 import type { PerQuestionFeedback } from '@/types'
 import { getAnswerAudio } from '@/lib/audio-storage'
 
@@ -340,13 +340,22 @@ export default function FeedbackPerQuestion({ perQuestion, questions, answers, s
 
                   {/* Retry This Topic CTA */}
                   {pq.score <= 3 && q?.topic_tag && (
-                    <a
-                      href={`/interview/setup?round_type=${TOPIC_ROUND[q.topic_tag] ?? 'tech_l1'}`}
-                      className="flex items-center gap-2 text-xs text-indigo-600 hover:text-indigo-700 font-medium pt-1 transition-colors"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      Practice {q.topic_tag.replace(/_/g, ' ')} questions in a full interview →
-                    </a>
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <a
+                        href={`/drill?filter=${TOPIC_ROUND[q.topic_tag] ?? 'tech_l1'}`}
+                        className="flex items-center gap-1.5 text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 px-3 py-1.5 rounded-lg font-medium transition-colors"
+                      >
+                        <Zap className="w-3 h-3" />
+                        Drill {q.topic_tag.replace(/_/g, ' ')} — free
+                      </a>
+                      <a
+                        href={`/interview/setup?round_type=${TOPIC_ROUND[q.topic_tag] ?? 'tech_l1'}`}
+                        className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-indigo-600 font-medium transition-colors"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Full interview →
+                      </a>
+                    </div>
                   )}
                 </div>
               )}

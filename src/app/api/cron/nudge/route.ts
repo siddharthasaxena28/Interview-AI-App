@@ -102,7 +102,7 @@ function streakAtRiskHtml({ name, streak, appUrl }: { name: string; streak: numb
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f9fafb;margin:0;padding:20px;">
   <div style="max-width:600px;margin:0 auto;background:white;border-radius:16px;overflow:hidden;border:1px solid #e5e7eb;">
-    <div style="background:#1d4ed8;padding:32px;text-align:center;">
+    <div style="background:#4f46e5;padding:32px;text-align:center;">
       <div style="font-size:48px;margin-bottom:8px;">🔥</div>
       <h1 style="color:white;margin:0;font-size:22px;">Your streak is at risk!</h1>
     </div>
@@ -117,7 +117,7 @@ function streakAtRiskHtml({ name, streak, appUrl }: { name: string; streak: numb
         <div style="color:#92400e;font-size:14px;">current streak — don't break it!</div>
       </div>
       <div style="text-align:center;">
-        <a href="${appUrl}/interview/setup" style="background:#1d4ed8;color:white;text-decoration:none;padding:14px 36px;border-radius:10px;font-weight:600;font-size:15px;display:inline-block;">
+        <a href="${appUrl}/interview/setup" style="background:#4f46e5;color:white;text-decoration:none;padding:14px 36px;border-radius:10px;font-weight:600;font-size:15px;display:inline-block;">
           Start Today's Interview →
         </a>
       </div>
@@ -136,9 +136,9 @@ function reEngageHtml({ name, appUrl, weakTopic, weakScore }: { name: string; ap
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f9fafb;margin:0;padding:20px;">
   <div style="max-width:600px;margin:0 auto;background:white;border-radius:16px;overflow:hidden;border:1px solid #e5e7eb;">
-    <div style="background:#1d4ed8;padding:32px;text-align:center;">
+    <div style="background:#4f46e5;padding:32px;text-align:center;">
       <h1 style="color:white;margin:0;font-size:22px;">InterviewAI</h1>
-      <p style="color:#93c5fd;margin:8px 0 0;">Miss you! Time for a quick practice?</p>
+      <p style="color:#a5b4fc;margin:8px 0 0;">Miss you! Time for a quick practice?</p>
     </div>
     <div style="padding:32px;">
       <p style="color:#374151;margin-bottom:16px;">Hi ${name},</p>
@@ -156,7 +156,7 @@ function reEngageHtml({ name, appUrl, weakTopic, weakScore }: { name: string; ap
         Get 20 minutes of focused practice today. Your future self will thank you.
       </p>
       <div style="text-align:center;">
-        <a href="${appUrl}/interview/setup" style="background:#1d4ed8;color:white;text-decoration:none;padding:14px 36px;border-radius:10px;font-weight:600;font-size:15px;display:inline-block;">
+        <a href="${appUrl}/interview/setup" style="background:#4f46e5;color:white;text-decoration:none;padding:14px 36px;border-radius:10px;font-weight:600;font-size:15px;display:inline-block;">
           Start a Practice Interview →
         </a>
       </div>
