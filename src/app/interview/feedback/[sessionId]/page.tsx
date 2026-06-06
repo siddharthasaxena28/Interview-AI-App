@@ -340,7 +340,7 @@ export default async function FeedbackPage({
             </div>
             {commDimensions ? (
               <div className="space-y-4">
-                {commDimensions.map(dim => (
+                {commDimensions.map((dim, i) => (
                   <div key={dim.label}>
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-sm font-medium text-gray-700">{dim.label}</span>
@@ -352,10 +352,10 @@ export default async function FeedbackPage({
                     </div>
                     <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
                       <div
-                        className={`h-1.5 rounded-full ${
+                        className={`h-1.5 rounded-full animate-bar-fill ${
                           dim.score >= 80 ? 'bg-emerald-500' : dim.score >= 60 ? 'bg-amber-500' : 'bg-red-500'
                         }`}
-                        style={{ width: `${dim.score}%` }}
+                        style={{ width: `${dim.score}%`, animationDelay: `${i * 0.1 + 0.2}s` }}
                       />
                     </div>
                     {dim.note && (
@@ -386,7 +386,7 @@ export default async function FeedbackPage({
                 <TrendingUp className="w-4 h-4 text-indigo-600" /> Performance by Topic
               </h2>
               <div className="space-y-3">
-                {topicData.map(({ tag, avg }) => {
+                {topicData.map(({ tag, avg }, i) => {
                   const pct = (avg / 5) * 100
                   return (
                     <div key={tag}>
@@ -400,10 +400,10 @@ export default async function FeedbackPage({
                       </div>
                       <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
                         <div
-                          className={`h-1.5 rounded-full ${
+                          className={`h-1.5 rounded-full animate-bar-fill ${
                             avg >= 4 ? 'bg-emerald-500' : avg >= 3 ? 'bg-amber-500' : 'bg-red-500'
                           }`}
-                          style={{ width: `${pct}%` }}
+                          style={{ width: `${pct}%`, animationDelay: `${i * 0.08 + 0.3}s` }}
                         />
                       </div>
                     </div>

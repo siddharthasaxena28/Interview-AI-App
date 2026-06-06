@@ -220,7 +220,7 @@ export default function PricingPage() {
               <button
                 onClick={() => handlePurchase(pack.key as PackKey, pack.total)}
                 disabled={loadingPack === pack.key}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 bg-indigo-600 hover:bg-indigo-500 text-white"
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all active:scale-[0.97] disabled:opacity-50 bg-indigo-600 hover:bg-indigo-500 text-white"
               >
                 {loadingPack === pack.key ? (
                   <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />

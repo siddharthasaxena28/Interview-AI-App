@@ -104,6 +104,11 @@
   100% { transform: scale(2);   opacity: 0; }
 }
 
+@keyframes barFill {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
 /* ── Animation utility classes ───────────────────────────────────────────── */
 
 @layer utilities {
@@ -137,5 +142,10 @@
   .animate-gradient-shift {
     animation: gradient-shift 6s ease infinite;
     background-size: 200% 200%;
+  }
+
+  .animate-bar-fill {
+    transform-origin: left center;
+    animation: barFill 0.9s cubic-bezier(0.2, 0, 0, 1) both;
   }
 }

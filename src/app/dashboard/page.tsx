@@ -445,7 +445,7 @@ export default async function DashboardPage() {
               {(sessions as InterviewSession[]).slice(0, 10).map((session) => {
                 const report = reportMap.get(session.id)
                 return (
-                  <div key={session.id} className="px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                  <div key={session.id} className="px-6 py-4 flex items-center justify-between hover:bg-indigo-50/30 transition-colors">
                     <div>
                       <div className="font-medium text-gray-900 text-sm">
                         {session.company} — {session.role}

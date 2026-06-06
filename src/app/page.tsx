@@ -82,74 +82,85 @@ export default async function LandingPage() {
             maskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, transparent 65%)',
           }}
         />
-        <div className="max-w-4xl mx-auto relative z-10 w-full animate-fadeIn">
-          <div className="inline-flex items-center gap-2 border border-indigo-200 bg-indigo-50 text-indigo-600 text-sm px-4 py-1.5 rounded-full mb-8">
-            <Zap className="w-3 h-3" />
-            <span>India&apos;s first AI voice mock interview platform</span>
-          </div>
-          <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-gray-900 mb-6 leading-tight tracking-tight">
-            Practice like it&apos;s real.<br />
-            <span className="text-indigo-600">Perform when it matters.</span>
-          </h1>
-          <p className="text-lg md:text-xl text-gray-500 mb-10 max-w-xl mx-auto leading-relaxed">
-            Simulate a real telephonic interview with AI. Get JD-specific questions,
-            real-time adaptive difficulty, and a detailed feedback report — available 24/7.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16">
-            {isLoggedIn ? (
-              <Link
-                href={dashboardHref}
-                className="bg-indigo-600 text-white text-lg px-8 py-4 rounded-xl hover:bg-indigo-500 transition-colors flex items-center gap-2 font-semibold shadow-[0_4px_24px_rgba(99,102,241,0.25)]"
-              >
-                Go to Dashboard <ArrowRight className="w-5 h-5" />
-              </Link>
-            ) : (
-              <>
+        <div className="max-w-4xl mx-auto relative z-10 w-full">
+          <FadeIn className="inline-block mb-8" delay={0}>
+            <div className="inline-flex items-center gap-2 border border-indigo-200 bg-indigo-50 text-indigo-600 text-sm px-4 py-1.5 rounded-full">
+              <Zap className="w-3 h-3" />
+              <span>India&apos;s first AI voice mock interview platform</span>
+            </div>
+          </FadeIn>
+          <FadeIn delay={0.08}>
+            <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-gray-900 mb-6 leading-tight tracking-tight">
+              Practice like it&apos;s real.<br />
+              <span className="text-indigo-600">Perform when it matters.</span>
+            </h1>
+          </FadeIn>
+          <FadeIn delay={0.16}>
+            <p className="text-lg md:text-xl text-gray-500 mb-10 max-w-xl mx-auto leading-relaxed">
+              Simulate a real telephonic interview with AI. Get JD-specific questions,
+              real-time adaptive difficulty, and a detailed feedback report — available 24/7.
+            </p>
+          </FadeIn>
+          <FadeIn delay={0.24}>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16">
+              {isLoggedIn ? (
                 <Link
-                  href={signupHref}
-                  className="bg-indigo-600 text-white text-lg px-8 py-4 rounded-xl hover:bg-indigo-500 transition-colors flex items-center gap-2 font-semibold shadow-[0_4px_24px_rgba(99,102,241,0.25)]"
+                  href={dashboardHref}
+                  className="bg-indigo-600 text-white text-lg px-8 py-4 rounded-xl hover:bg-indigo-500 active:scale-[0.97] transition-all flex items-center gap-2 font-semibold shadow-[0_4px_24px_rgba(99,102,241,0.25)]"
                 >
-                  Start Free Interview <ArrowRight className="w-5 h-5" />
+                  Go to Dashboard <ArrowRight className="w-5 h-5" />
                 </Link>
-                <Link
-                  href={signupHref}
-                  className="bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-700 text-lg px-8 py-4 rounded-xl transition-colors font-medium"
-                >
-                  No credit card · 1 free session
-                </Link>
-              </>
-            )}
-          </div>
-          {/* Stats row */}
-          <div className="flex flex-wrap justify-center gap-3">
-            {[
-              { icon: Mic, value: displayCount, label: 'Mock interviews completed' },
-              { icon: Zap, value: 'No subscription', label: 'Pay as you go, credits never expire' },
-              { icon: Clock, value: '24 / 7', label: 'Practice any time, no scheduling' },
-            ].map(({ icon: Icon, value, label }) => (
-              <div key={label} className="bg-white border border-gray-200 shadow-sm rounded-xl px-4 py-3 sm:px-6 sm:py-4 flex items-center gap-2.5 sm:gap-3 max-w-[calc(50%-6px)] sm:max-w-none">
-                <div className="w-8 h-8 sm:w-9 sm:h-9 bg-indigo-50 rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0">
-                  <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600" />
+              ) : (
+                <>
+                  <Link
+                    href={signupHref}
+                    className="bg-indigo-600 text-white text-lg px-8 py-4 rounded-xl hover:bg-indigo-500 active:scale-[0.97] transition-all flex items-center gap-2 font-semibold shadow-[0_4px_24px_rgba(99,102,241,0.25)]"
+                  >
+                    Start Free Interview <ArrowRight className="w-5 h-5" />
+                  </Link>
+                  <Link
+                    href={signupHref}
+                    className="bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-700 text-lg px-8 py-4 rounded-xl transition-all active:scale-[0.97] font-medium"
+                  >
+                    No credit card · 1 free session
+                  </Link>
+                </>
+              )}
+            </div>
+          </FadeIn>
+          <FadeIn delay={0.32}>
+            <div className="flex flex-wrap justify-center gap-3">
+              {[
+                { icon: Mic, value: displayCount, label: 'Mock interviews completed' },
+                { icon: Zap, value: 'No subscription', label: 'Pay as you go, credits never expire' },
+                { icon: Clock, value: '24 / 7', label: 'Practice any time, no scheduling' },
+              ].map(({ icon: Icon, value, label }) => (
+                <div key={label} className="bg-white border border-gray-200 shadow-sm rounded-xl px-4 py-3 sm:px-6 sm:py-4 flex items-center gap-2.5 sm:gap-3 max-w-[calc(50%-6px)] sm:max-w-none">
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-indigo-50 rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0">
+                    <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600" />
+                  </div>
+                  <div className="text-left min-w-0">
+                    <div className="font-bold text-gray-900 text-xs sm:text-sm truncate">{value}</div>
+                    <div className="text-[10px] sm:text-xs text-gray-500 leading-snug">{label}</div>
+                  </div>
                 </div>
-                <div className="text-left min-w-0">
-                  <div className="font-bold text-gray-900 text-xs sm:text-sm truncate">{value}</div>
-                  <div className="text-[10px] sm:text-xs text-gray-500 leading-snug">{label}</div>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          </FadeIn>
         </div>
       </section>
 
       {/* Features */}
       <section className="px-6 py-24 bg-slate-50">
         <div className="max-w-6xl mx-auto">
-          <h2 className="text-3xl font-bold text-center text-gray-900 mb-4">
-            Everything you need to crack your interview
-          </h2>
-          <p className="text-center text-gray-500 mb-14 max-w-2xl mx-auto">
-            Not a quiz. Not a chatbot. A real telephonic interview simulation with AI.
-          </p>
+          <FadeIn>
+            <h2 className="text-3xl font-bold text-center text-gray-900 mb-4">
+              Everything you need to crack your interview
+            </h2>
+            <p className="text-center text-gray-500 mb-14 max-w-2xl mx-auto">
+              Not a quiz. Not a chatbot. A real telephonic interview simulation with AI.
+            </p>
+          </FadeIn>
           <StaggerContainer className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[
               {
@@ -169,7 +180,7 @@ export default async function LandingPage() {
               },
             ].map(({ icon: Icon, title, desc }) => (
               <StaggerItem key={title} lift>
-                <div className="bg-white border border-gray-200 shadow-sm rounded-2xl p-6 hover:border-indigo-300 transition-all duration-300 h-full">
+                <div className="bg-white border border-gray-200 shadow-sm rounded-2xl p-6 hover:border-indigo-300 hover:shadow-md transition-all duration-300 h-full">
                   <div className="bg-indigo-50 rounded-xl p-3 w-fit mb-4">
                     <Icon className="w-5 h-5 text-indigo-600" />
                   </div>
@@ -185,10 +196,12 @@ export default async function LandingPage() {
       {/* How it works */}
       <section className="px-6 py-24 bg-white border-y border-gray-100">
         <div className="max-w-4xl mx-auto">
-          <h2 className="text-3xl font-bold text-center text-gray-900 mb-14">
-            How it works
-          </h2>
-          <StaggerContainer className="grid md:grid-cols-4 gap-6">
+          <FadeIn>
+            <h2 className="text-3xl font-bold text-center text-gray-900 mb-14">
+              How it works
+            </h2>
+          </FadeIn>
+          <StaggerContainer className="grid grid-cols-2 md:grid-cols-4 gap-6">
             {[
               { step: '1', title: 'Paste your JD', desc: 'Share the job description and company name' },
               { step: '2', title: 'Pick a round', desc: 'Choose Technical, Managerial, or HR' },
@@ -212,12 +225,14 @@ export default async function LandingPage() {
       {/* Pricing */}
       <section className="px-6 py-24 bg-slate-50">
         <div className="max-w-4xl mx-auto">
-          <h2 className="text-3xl font-bold text-center text-gray-900 mb-3">
-            Buy sessions when you need them
-          </h2>
-          <p className="text-center text-gray-500 mb-12">
-            No subscription. No monthly bills. Credits never expire.
-          </p>
+          <FadeIn>
+            <h2 className="text-3xl font-bold text-center text-gray-900 mb-3">
+              Buy sessions when you need them
+            </h2>
+            <p className="text-center text-gray-500 mb-12">
+              No subscription. No monthly bills. Credits never expire.
+            </p>
+          </FadeIn>
           <StaggerContainer className="grid md:grid-cols-3 gap-5">
             {[
               { name: 'Single', price: '₹249', per: '₹249/session', sessions: '1 session', saving: null, highlighted: false },
@@ -275,7 +290,7 @@ export default async function LandingPage() {
           <p className="text-gray-500 mb-10">One free session. No credit card. Just practice.</p>
           <Link
             href={isLoggedIn ? dashboardHref : signupHref}
-            className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-8 py-4 rounded-xl transition-colors text-lg shadow-[0_4px_24px_rgba(99,102,241,0.3)]"
+            className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.97] text-white font-semibold px-8 py-4 rounded-xl transition-all text-lg shadow-[0_4px_24px_rgba(99,102,241,0.3)]"
           >
             {isLoggedIn ? 'Go to Dashboard' : 'Start your free interview'}
             <ArrowRight className="w-5 h-5" />
