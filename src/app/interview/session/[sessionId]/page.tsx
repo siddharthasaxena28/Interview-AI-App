@@ -1246,22 +1246,37 @@ function SessionPageInner({ params }: SessionPageProps) {
           <div className="bg-[#111118] border border-white/[0.06] rounded-2xl p-4 sm:p-6 max-w-2xl w-full text-center">
             <div className="flex items-center justify-between gap-2 mb-3">
               <div className="flex items-center gap-2 flex-wrap justify-center flex-1">
-                {isProbe ? (
-                  <span className="text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2.5 py-0.5 rounded-full">
-                    ↩ Follow-up — the interviewer wants to dig deeper
-                  </span>
-                ) : (
-                  <>
-                    <span className="text-xs text-gray-500 uppercase tracking-widest capitalize">
-                      Q{questionIndex + 1} · {currentQuestion.topic_tag.replace(/_/g, ' ')} · Difficulty {currentQuestion.difficulty}/5
+                {(() => {
+                  const isLastQuestion = questionIndex + 1 >= totalQuestions
+                  const isWrapUpProbe = isProbe && isLastQuestion
+                  if (isWrapUpProbe) return (
+                    <span className="text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2.5 py-0.5 rounded-full">
+                      ↩ Wrap-up — one last follow-up before we finish
                     </span>
-                    {currentQuestion.expected_keywords?.includes('__resume') && (
-                      <span className="text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded-full normal-case tracking-normal">
-                        From your résumé
+                  )
+                  if (isProbe) return (
+                    <span className="text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2.5 py-0.5 rounded-full">
+                      ↩ Follow-up — the interviewer wants to dig deeper
+                    </span>
+                  )
+                  return (
+                    <>
+                      <span className="text-xs text-gray-500 uppercase tracking-widest capitalize">
+                        Q{questionIndex + 1} · {currentQuestion.topic_tag.replace(/_/g, ' ')} · Difficulty {currentQuestion.difficulty}/5
                       </span>
-                    )}
-                  </>
-                )}
+                      {isLastQuestion && (
+                        <span className="text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full normal-case tracking-normal">
+                          Final question
+                        </span>
+                      )}
+                      {currentQuestion.expected_keywords?.includes('__resume') && (
+                        <span className="text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded-full normal-case tracking-normal">
+                          From your résumé
+                        </span>
+                      )}
+                    </>
+                  )
+                })()}
               </div>
               {/* Per-question timer — shows only while candidate is answering */}
               {(state === 'LISTENING' || state === 'USER_SPEAKING') && questionElapsed > 0 && (
@@ -1351,7 +1366,7 @@ function SessionPageInner({ params }: SessionPageProps) {
               setFinalTranscript('')
               setLiveTranscript('')
               evalAutoRetriedRef.current = false
-              handleAnswerCompleteRef.current(full || '[No answer provided]')
+              handleAnswerCompleteRef.current(full || '[skip]')
             }}
             className="flex flex-col items-center gap-1 sm:gap-1.5 px-3 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all duration-200 hover:border-emerald-500/40"
           >
