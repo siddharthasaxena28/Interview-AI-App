@@ -14,6 +14,37 @@ import AppFeedbackWidget from './AppFeedbackWidget'
 import CoachChat from './CoachChat'
 import FullTranscript from './FullTranscript'
 
+// Finds the candidate's most recent prior *completed* session of the same round
+// type and returns its report's headline scores, so the report can show progress
+// against their own history rather than just a one-off snapshot.
+async function getPriorReport(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  userId: string,
+  roundType: string,
+  excludeSessionId: string
+) {
+  const { data: priorSession } = await supabase
+    .from('interview_sessions')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('round_type', roundType)
+    .eq('status', 'completed')
+    .neq('id', excludeSessionId)
+    .order('ended_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (!priorSession) return null
+
+  const { data: priorReport } = await supabase
+    .from('feedback_reports')
+    .select('overall_score, selection_probability, communication_score')
+    .eq('session_id', priorSession.id)
+    .maybeSingle()
+
+  return priorReport as Pick<FeedbackReport, 'overall_score' | 'selection_probability' | 'communication_score'> | null
+}
+
 export default async function FeedbackPage({
   params,
 }: {
@@ -39,11 +70,13 @@ export default async function FeedbackPage({
     { data: questions },
     { data: answers },
     { data: benchmarkRows },
+    priorReport,
   ] = await Promise.all([
     supabase.from('feedback_reports').select('*').eq('session_id', sessionId).single(),
     supabase.from('questions').select('id, text, difficulty, topic_tag, expected_keywords').eq('session_id', sessionId).eq('asked', true).order('order_index'),
     supabase.from('answers').select('question_id, transcript_text, duration_seconds').eq('session_id', sessionId),
     supabase.rpc('get_selection_probability_benchmark', { p_round_type: session.round_type }),
+    getPriorReport(supabase, user.id, session.round_type, sessionId),
   ])
 
   const s = session as InterviewSession
@@ -256,7 +289,36 @@ export default async function FeedbackPage({
             />
           </div>
 
-          <div className="mt-6 pt-5 border-t border-gray-200 flex flex-wrap items-center justify-center gap-2">
+          {/* Progress vs the candidate's own history — makes practice feel like
+              improvement, not just a one-off grade against a faceless benchmark. */}
+          {priorReport && (
+            <div className="mt-6 pt-5 border-t border-gray-200 flex flex-wrap items-center justify-center gap-2">
+              <TrendingUp className="w-3.5 h-3.5 text-gray-400" />
+              <span className="text-xs text-gray-500">
+                Since your last {getRoundLabel(s.round_type as RoundType)} interview:
+              </span>
+              {([
+                ['Overall', r.overall_score - priorReport.overall_score],
+                ['Selection chance', r.selection_probability - priorReport.selection_probability],
+                ['Communication', r.communication_score - priorReport.communication_score],
+              ] as const).map(([label, diff]) => (
+                <span
+                  key={label}
+                  className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${
+                    diff > 0
+                      ? 'bg-emerald-50 text-emerald-600'
+                      : diff < 0
+                        ? 'bg-amber-50 text-amber-600'
+                        : 'bg-gray-100 text-gray-500'
+                  }`}
+                >
+                  {label} {diff > 0 ? `↑ +${diff}` : diff < 0 ? `↓ ${diff}` : '— no change'}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div className={`pt-5 flex flex-wrap items-center justify-center gap-2 ${priorReport ? 'mt-4 border-t border-gray-100' : 'mt-6 border-t border-gray-200'}`}>
             <span className="text-xs text-gray-500">
               {benchmarkLabel}
             </span>
