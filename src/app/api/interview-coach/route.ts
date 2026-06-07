@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { getQuestionCount } from '@/lib/personas'
 
 const client = new Anthropic()
 
@@ -55,7 +56,9 @@ export async function POST(request: NextRequest) {
       { data: report },
     ] = await Promise.all([
       supabase.from('interview_sessions').select('company, role, round_type').eq('id', session_id).eq('user_id', user.id).single(),
-      supabase.from('questions').select('id, text, topic_tag, difficulty').eq('session_id', session_id).eq('asked', true).order('order_index').limit(15),
+      // round_type isn't known yet (fetched in this same Promise.all) — use full_loop's
+      // count as the upper bound so larger sessions aren't silently truncated.
+      supabase.from('questions').select('id, text, topic_tag, difficulty').eq('session_id', session_id).eq('asked', true).order('order_index').limit(getQuestionCount('full_loop')),
       supabase.from('answers').select('question_id, transcript_text, score').eq('session_id', session_id),
       supabase.from('feedback_reports').select('overall_score, selection_probability, report_text').eq('session_id', session_id).maybeSingle(),
     ])

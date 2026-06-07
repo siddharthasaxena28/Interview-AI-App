@@ -16,7 +16,7 @@ const client = new Anthropic()
 // we only need enough text for Claude to write specific feedback. Shorter answers =
 // smaller prompts = faster generation. Long interviews get the most aggressive cut.
 function answerMaxChars(questionCount: number): number {
-  if (questionCount >= 15) return 500   // full_loop (~20 q) — be aggressive
+  if (questionCount >= 15) return 500   // full_loop (~26 q) — be aggressive
   if (questionCount >= 10) return 750   // medium interview
   return 1200                           // short interview — keep most detail
 }

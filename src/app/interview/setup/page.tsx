@@ -476,7 +476,7 @@ function SetupPageInner() {
                       <span className="text-xs text-gray-500 ml-auto">~60 min · 1 credit</span>
                     </div>
                     <p className="text-sm text-gray-600 mt-1 leading-relaxed">
-                      Covers all 4 round types in one session — Technical L1, Technical L2, Managerial &amp; HR.
+                      26 questions across all 4 round types in one session — Technical L1, Technical L2, Managerial &amp; HR.
                       Best value if you&rsquo;re unsure which rounds are coming or want comprehensive prep.
                     </p>
                     <div className="flex flex-wrap gap-1.5 mt-2.5">

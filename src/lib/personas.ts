@@ -77,6 +77,13 @@ export function getRoundDuration(roundType: RoundType): number {
   return 30
 }
 
+// full_loop spans all four sub-domains, so it needs more questions than a
+// single focused round to give each domain comparable depth (~6-7 each).
+export function getQuestionCount(roundType: RoundType): number {
+  if (roundType === 'full_loop') return 26
+  return 15
+}
+
 // How each interviewer reacts out loud — injected into live AI calls (answer
 // evaluation + the intro conversation) so spoken responses match the persona's
 // character. Keyed by round_type.

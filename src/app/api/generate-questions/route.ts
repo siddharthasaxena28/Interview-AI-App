@@ -1,19 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { getQuestionCount } from '@/lib/personas'
 import type { RoundType } from '@/types'
 
 const client = new Anthropic()
 
 const SYSTEM_PROMPT = `You are an expert technical interviewer with 15 years of hiring experience at top tech companies across India and globally.
 
-Given a job description, company name, role, candidate experience level, round type, and optionally the candidate's résumé, generate exactly 15 interview questions.
+Given a job description, company name, role, candidate experience level, round type, and optionally the candidate's résumé, generate exactly the number of interview questions specified in the request below.
 
 Requirements:
 - Questions must reference the actual JD skills and technologies
 - If a résumé is provided, ground several questions in the candidate's ACTUAL projects, skills and experience — name their specific projects/technologies, just like a real interviewer who has read their CV. Mix these with JD-driven questions.
 - Research what the specified company typically asks — reference their known interview culture
-- Start at difficulty level 2, escalate to level 4-5 by question 12
+- Start at difficulty level 2 and escalate gradually, reaching difficulty 4-5 by roughly the final quarter of the set
 - Match the round type persona:
   - tech_l1: Friendly, fundamentals-focused, difficulty 1-3
   - tech_l2: Direct, probing, system design and architecture, difficulty 3-5
@@ -148,6 +149,10 @@ export async function POST(request: NextRequest) {
     // Résumé is optional and used only to personalise question generation (not stored).
     const resume = (resume_text ?? '').trim().slice(0, 6000)
 
+    // full_loop spans all four sub-domains (tech_l1/tech_l2/managerial/hr), so it
+    // needs more questions than a single focused round for comparable per-domain depth.
+    const questionCount = getQuestionCount(round_type)
+
     // Generate questions BEFORE inserting the session row — this prevents orphaned
     // `setup` rows (and wasted rate-limit budget) when the LLM call fails.
     const userMessage = `Company: ${company}
@@ -158,7 +163,7 @@ Round Type: ${round_type}
 Job Description:
 ${jd_text}
 ${resume ? `\nCandidate Résumé:\n${resume}\n` : ''}
-Generate 15 interview questions for this ${round_type} round at ${company}.${resume ? ' Ground several questions in the candidate\'s actual résumé projects and experience.' : ''}`
+Generate ${questionCount} interview questions for this ${round_type} round at ${company}.${resume ? ' Ground several questions in the candidate\'s actual résumé projects and experience.' : ''}`
 
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
@@ -218,7 +223,7 @@ Generate 15 interview questions for this ${round_type} round at ${company}.${res
     }
 
     // Save questions to Supabase
-    const questionsToInsert = questions.slice(0, 15).map((q, index) => {
+    const questionsToInsert = questions.slice(0, questionCount).map((q, index) => {
       const keywords = Array.isArray(q.expected_keywords) ? q.expected_keywords : []
       // Tag resume-based questions with a special marker stored in expected_keywords.
       // The session UI and feedback UI read this to show "From your résumé" badges.
