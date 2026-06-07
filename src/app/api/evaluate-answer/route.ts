@@ -360,6 +360,10 @@ export async function POST(request: NextRequest) {
         transcript_text: transcript.slice(0, 10000),
         duration_seconds: durationSeconds,
         score,
+        // Persist the measured filler-word-density signal (computed client-side
+        // in analyzeAnswerConfidence) so generate-feedback can ground its
+        // communication metrics in real data instead of re-guessing from text.
+        confidence: answer_confidence ?? null,
       }),
       supabase.from('questions').update({ asked: true }).eq('id', question_id),
     ])

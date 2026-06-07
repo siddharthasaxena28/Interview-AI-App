@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS public.answers (
   transcript_text text NOT NULL DEFAULT '',
   duration_seconds integer NOT NULL DEFAULT 0,
   score integer CHECK (score BETWEEN 1 AND 5),
+  confidence text CHECK (confidence IN ('confident', 'hesitant')),
   recorded_at timestamptz NOT NULL DEFAULT now()
 );
 

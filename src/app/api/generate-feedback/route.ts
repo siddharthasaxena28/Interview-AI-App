@@ -47,10 +47,40 @@ Rules:
 
 const OVERALL_SYSTEM_PROMPT = `You are an expert interview coach generating an overall interview performance assessment.
 
+--- SCORING ANCHOR (read before assigning overall_score) ---
+You will be given the average of the candidate's per-question scores (each already graded 1-5
+by a real-time evaluator) and the average difficulty of the questions they faced. Convert that
+average into overall_score using this baseline band, then adjust by at most ±8 points for
+communication quality, depth/specificity beyond the raw number, and consistency:
+  avg 4.5-5.0 → baseline ~88-96
+  avg 4.0-4.4 → baseline ~78-87
+  avg 3.5-3.9 → baseline ~68-77
+  avg 3.0-3.4 → baseline ~58-67
+  avg 2.5-2.9 → baseline ~46-57
+  avg 2.0-2.4 → baseline ~34-45
+  avg below 2.0 → baseline ~15-33
+If average difficulty was high (4+/5), credit the candidate more — performing at a given score
+level on hard questions is more impressive than the same level on easy ones, so lean toward the
+upper end of the band (or slightly above it). If average difficulty was low (≤2/5), lean toward
+the lower end. The candidate can see their individual question scores, so overall_score must stay
+inside (or very close to) the band implied by the average — a number that contradicts the visible
+per-question scores will feel arbitrary and erode trust.
+
+--- SELECTION PROBABILITY ANCHOR ---
+Use overall_score as your starting point for selection_probability, then adjust using the
+specific selection_factors you identify (a single standout strength or dealbreaker can shift it
+meaningfully):
+  overall_score 85+  → roughly 60-85%
+  overall_score 70-84 → roughly 35-60%
+  overall_score 50-69 → roughly 15-35%
+  overall_score below 50 → roughly 2-15%
+These bands are loose guides, not hard rules — but stay broadly consistent with them so the
+number feels principled rather than arbitrary across different candidates and sessions.
+
 Return ONLY a valid JSON object (no per_question array):
 {
-  "overall_score": <0-100, weighted average considering depth, accuracy, and communication>,
-  "selection_probability": <0-100, honest realistic estimate of advancing to the next round>,
+  "overall_score": <0-100, derived from the scoring anchor above — see rules>,
+  "selection_probability": <0-100, derived from the selection probability anchor above — see rules>,
   "selection_factors": [
     "the single biggest thing that helped or hurt their chances, stated concretely — e.g. 'Strong, structured answer on the system design question' or 'Vague on conflict-resolution — no concrete example given'",
     "second most influential factor, equally concrete",
@@ -82,7 +112,17 @@ Rules:
 - selection_factors: 2-3 concrete factors that explain WHY you landed on that probability — these are shown to the candidate so they can see your reasoning, not just a bare number. Each must trace to something specific in the transcript.
 - Be honest and constructive — generic praise hurts candidates
 - Use topic performance patterns to identify themes
-- overall_score must reflect true performance, not a confidence boost`
+- overall_score must reflect true performance, not a confidence boost
+
+--- MEASURED DELIVERY SIGNAL (ground truth — do not contradict) ---
+You will be given a measured delivery signal computed directly from each answer's actual
+filler-word density (not inferred from a text impression): how many answers came across as
+"confident" vs "hesitant/filler-heavy". Treat this as ground truth for "confidence" and
+"filler_words" — set those two sub-scores so they are consistent with the measured ratio
+(e.g. if most answers measured hesitant/filler-heavy, "filler_words" and "confidence" must be
+on the lower end, regardless of how polished the transcript text reads). You may still use the
+transcript content to inform "clarity" and "pacing" and to write the *_note explanations —
+just make sure confidence_note/filler_note reference what was actually measured.`
 
 export async function POST(request: NextRequest) {
   try {
@@ -201,6 +241,32 @@ export async function POST(request: NextRequest) {
           .reduce((a, b) => a + b, 0) / qCount
       ).toFixed(1)
 
+      // Average difficulty — lets the overall-assessment call credit candidates who
+      // scored well on harder questions more than the same score on easy ones (the
+      // adaptive-difficulty engine means two "avg 4.0/5" sessions can reflect very
+      // different actual performance levels).
+      const avgDifficulty = (
+        orderedQuestions.reduce((a, q) => a + q.difficulty, 0) / qCount
+      ).toFixed(1)
+
+      // Measured delivery signal — aggregates the real per-answer filler-word-density
+      // classification (persisted from analyzeAnswerConfidence on the client) so the
+      // communication sub-scores are grounded in actual measurement rather than an
+      // LLM's text impression of tone from truncated transcript snippets.
+      const confidenceCounts = orderedQuestions.reduce(
+        (acc, q) => {
+          const c = answerMap.get(q.id)?.confidence
+          if (c === 'confident') acc.confident++
+          else if (c === 'hesitant') acc.hesitant++
+          return acc
+        },
+        { confident: 0, hesitant: 0 }
+      )
+      const measuredCount = confidenceCounts.confident + confidenceCounts.hesitant
+      const confidenceSummary = measuredCount > 0
+        ? `${confidenceCounts.confident} of ${measuredCount} answers measured "confident" delivery (low filler-word density); ${confidenceCounts.hesitant} measured "hesitant" (filler-word density above 12%).`
+        : 'No measured delivery data available for this session — base communication sub-scores on transcript content alone.'
+
       // ── Two parallel Claude calls — wall-clock ≈ max(A, B) instead of A + B ──
       const [perQMessage, overallMessage] = await Promise.all([
         client.messages.create({
@@ -220,7 +286,7 @@ export async function POST(request: NextRequest) {
           system: [{ type: 'text', text: OVERALL_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
           messages: [{
             role: 'user',
-            content: `Interview: ${session.company} — ${session.role} (${session.round_type}), ${session.experience_years} yrs experience\nQuestions answered: ${qCount}, Average score: ${avgScore}/5\n\nTopic performance:\n${topicSummary}\n\nInterview highlights:\n${condensedTranscript}\n\nGenerate the overall assessment.`,
+            content: `Interview: ${session.company} — ${session.role} (${session.round_type}), ${session.experience_years} yrs experience\nQuestions answered: ${qCount}, Average score: ${avgScore}/5, Average question difficulty: ${avgDifficulty}/5\n\nMeasured delivery signal: ${confidenceSummary}\n\nTopic performance:\n${topicSummary}\n\nInterview highlights:\n${condensedTranscript}\n\nGenerate the overall assessment.`,
           }],
         }),
       ])

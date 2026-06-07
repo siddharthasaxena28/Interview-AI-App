@@ -58,6 +58,7 @@ export interface Answer {
   transcript_text: string
   duration_seconds: number
   score: number | null
+  confidence: 'confident' | 'hesitant' | null
   recorded_at: string
 }
 
