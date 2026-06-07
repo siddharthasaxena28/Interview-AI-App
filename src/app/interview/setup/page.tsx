@@ -473,7 +473,7 @@ function SetupPageInner() {
                       <span className="text-xs font-semibold bg-indigo-600 text-white px-2 py-0.5 rounded-full">
                         Recommended
                       </span>
-                      <span className="text-xs text-gray-500 ml-auto">~60 min · 1 credit</span>
+                      <span className="text-xs text-gray-500 ml-auto">26 questions · ~60 min · 1 credit</span>
                     </div>
                     <p className="text-sm text-gray-600 mt-1 leading-relaxed">
                       26 questions across all 4 round types in one session — Technical L1, Technical L2, Managerial &amp; HR.
@@ -517,6 +517,7 @@ function SetupPageInner() {
                         <div>
                           <div className="font-medium text-gray-900 text-sm leading-snug">{option.label}</div>
                           <div className="text-xs text-gray-500 mt-0.5 leading-snug">{option.desc}</div>
+                          <div className="text-xs text-gray-400 mt-1">15 questions · ~30 min</div>
                         </div>
                       </div>
                     </button>
@@ -525,7 +526,7 @@ function SetupPageInner() {
               </div>
 
               <p className="text-xs text-gray-400 mt-3 text-center">
-                ~30 min for individual rounds &nbsp;·&nbsp; Each option costs 1 credit
+                15 questions · ~30 min for individual rounds &nbsp;·&nbsp; Each option costs 1 credit
               </p>
             </div>
           )}
