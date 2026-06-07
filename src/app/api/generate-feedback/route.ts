@@ -404,21 +404,16 @@ async function updateWeakAreas(
       topicGroups.set(q.topic_tag, arr)
     }
   }
+  // Atomic upsert via RPC (see upsert_weak_area_migration.sql) — folds the
+  // read-modify-write of the rolling average into a single DB statement so
+  // concurrent session completions for the same topic can't clobber each other.
   await Promise.all(Array.from(topicGroups.entries()).map(async ([topicTag, scores]) => {
     const sessionAvg = scores.reduce((a, b) => a + b, 0) / scores.length
-    const { data: existing } = await supabase
-      .from('weak_areas')
-      .select('avg_score, session_count')
-      .eq('user_id', userId)
-      .eq('topic_tag', topicTag)
-      .single()
-    const existingCount = existing?.session_count ?? 0
-    const newCount = existingCount + 1
-    const newAvg = ((existing?.avg_score ?? 0) * existingCount + sessionAvg) / newCount
-    const { error: upsertErr } = await supabase.from('weak_areas').upsert(
-      { user_id: userId, topic_tag: topicTag, avg_score: Math.round(newAvg * 100) / 100, session_count: newCount, last_updated: new Date().toISOString() },
-      { onConflict: 'user_id,topic_tag' }
-    )
+    const { error: upsertErr } = await supabase.rpc('upsert_weak_area', {
+      p_user_id: userId,
+      p_topic_tag: topicTag,
+      p_session_avg: sessionAvg,
+    })
     if (upsertErr) console.error('weak_areas upsert error:', topicTag, upsertErr)
   }))
 }

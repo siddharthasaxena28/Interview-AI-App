@@ -48,20 +48,29 @@ export default async function DashboardPage() {
   const { data: { user: authUser } } = await supabase.auth.getUser()
   if (!authUser) redirect('/auth/login')
 
-  const { data: userData } = await supabase
-    .from('users')
-    .select('*')
-    .eq('id', authUser.id)
-    .single()
-
-  // Fetch more sessions so we can compute progress comparison
-  const { data: sessions } = await supabase
-    .from('interview_sessions')
-    .select('*')
-    .eq('user_id', authUser.id)
-    .eq('status', 'completed')
-    .order('ended_at', { ascending: false })
-    .limit(20)
+  // users, sessions, and weak_areas all key off authUser.id only — fetch in
+  // parallel rather than in series to cut ~3 sequential round-trips down to 1.
+  const [
+    { data: userData },
+    { data: sessions },
+    { data: weakAreas },
+  ] = await Promise.all([
+    supabase.from('users').select('*').eq('id', authUser.id).single(),
+    // Fetch more sessions so we can compute progress comparison
+    supabase
+      .from('interview_sessions')
+      .select('*')
+      .eq('user_id', authUser.id)
+      .eq('status', 'completed')
+      .order('ended_at', { ascending: false })
+      .limit(20),
+    supabase
+      .from('weak_areas')
+      .select('topic_tag, avg_score, session_count')
+      .eq('user_id', authUser.id)
+      .order('avg_score', { ascending: true })
+      .limit(3),
+  ])
 
   const sessionIds = (sessions ?? []).map((s: InterviewSession) => s.id)
 
@@ -71,13 +80,6 @@ export default async function DashboardPage() {
         .select('session_id, overall_score, selection_probability')
         .in('session_id', sessionIds)
     : { data: [] }
-
-  const { data: weakAreas } = await supabase
-    .from('weak_areas')
-    .select('topic_tag, avg_score, session_count')
-    .eq('user_id', authUser.id)
-    .order('avg_score', { ascending: true })
-    .limit(3)
 
   const reportMap = new Map(
     (reports ?? []).map((r: Pick<FeedbackReport, 'session_id' | 'overall_score' | 'selection_probability'>) => [r.session_id, r])
@@ -108,12 +110,18 @@ export default async function DashboardPage() {
   // Requires >= 6 reports so the two windows never overlap.
   const scoreOf = (s: InterviewSession) => (reportMap.get(s.id) as { overall_score: number | null })?.overall_score ?? 0
   let progressDelta: number | null = null
+  // Below 6 reports the two comparison windows would overlap, so there's no
+  // trend to show yet — surface how many more sessions until there is one,
+  // rather than just hiding the indicator with no explanation.
+  let sessionsUntilTrend: number | null = null
   if (sessionsWithReports.length >= 6) {
     const first3 = sessionsWithReports.slice(0, 3)
     const last3 = sessionsWithReports.slice(-3)
     const avgFirst = first3.reduce((a, s) => a + scoreOf(s), 0) / 3
     const avgLast = last3.reduce((a, s) => a + scoreOf(s), 0) / 3
     progressDelta = Math.round(avgLast - avgFirst)
+  } else if (sessionsWithReports.length >= 1) {
+    sessionsUntilTrend = 6 - sessionsWithReports.length
   }
 
   const roundLabels: Record<string, string> = {
@@ -287,7 +295,12 @@ export default async function DashboardPage() {
                   )}
                 </div>
                 <div className="text-xs text-gray-500">
-                  Avg score{progressDelta !== null ? ' · trend' : ''}
+                  Avg score
+                  {progressDelta !== null
+                    ? ' · trend'
+                    : sessionsUntilTrend !== null
+                      ? ` · ${sessionsUntilTrend} more session${sessionsUntilTrend === 1 ? '' : 's'} for trend`
+                      : ''}
                 </div>
               </div>
             </div>
@@ -330,7 +343,7 @@ export default async function DashboardPage() {
               <h2 className="font-semibold text-gray-900 flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-indigo-600" /> Score Trend
               </h2>
-              {progressDelta !== null && (
+              {progressDelta !== null ? (
                 <span className={`text-sm font-semibold px-2.5 py-1 rounded-full ${
                   progressDelta > 0
                     ? 'text-emerald-600 bg-emerald-50 border border-emerald-200'
@@ -340,6 +353,10 @@ export default async function DashboardPage() {
                 }`}>
                   {progressDelta > 0 ? `↑ +${progressDelta} pts improved` : progressDelta < 0 ? `↓ ${progressDelta} pts` : 'Holding steady'}
                 </span>
+              ) : sessionsUntilTrend !== null && (
+                <span className="text-sm font-medium px-2.5 py-1 rounded-full text-gray-500 bg-gray-100 border border-gray-100">
+                  Building your baseline · {sessionsUntilTrend} more to go
+                </span>
               )}
             </div>
             <svg
@@ -348,6 +365,8 @@ export default async function DashboardPage() {
               height="60"
               preserveAspectRatio="none"
               className="overflow-visible"
+              role="img"
+              aria-label={`Score trend across your last ${chartData.length} interviews, from ${chartData[0].score} on ${chartData[0].label} to ${chartData[chartData.length - 1].score} on ${chartData[chartData.length - 1].label}`}
             >
               <defs>
                 <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
