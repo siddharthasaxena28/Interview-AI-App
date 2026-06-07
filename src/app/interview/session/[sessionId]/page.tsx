@@ -1208,50 +1208,6 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   useEffect(() => { handleCandidateQuestionRef.current = handleCandidateQuestion }, [handleCandidateQuestion])
 
-  async function handleSkip() {
-    if (isProcessingRef.current || !currentQuestion || !sessionData || ending) return
-    if (phase !== 'interview') return
-    isProcessingRef.current = true
-    setEvalError(null)
-    setProcessing()
-    finalTranscriptRef.current = ''
-    liveTranscriptRef.current = ''
-    setFinalTranscript('')
-    setLiveTranscript('')
-    evalAutoRetriedRef.current = false
-    stopAnswerRecording(currentQuestion.id)
-
-    try {
-      // Route through evaluate-answer so the question is marked as asked and
-      // recorded with a score — the API's skip detection handles [skip] naturally
-      // and returns a varied gracious response instead of a hardcoded string.
-      const res = await fetch('/api/evaluate-answer', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          transcript: '[skip]',
-          question_id: currentQuestion.id,
-          session_id: sessionId,
-          start_time: answerStartRef.current,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Skip failed')
-
-      if (data.next_question && data.questions_remaining > 0) {
-        setCurrentQuestion(data.next_question)
-        if (!data.is_probe) setQuestionIndex((i) => i + 1)
-        const spoken = (data.spoken_response ?? '').trim()
-        await speakText(spoken ? `${spoken}... ${data.next_question.text}` : data.next_question.text)
-      } else {
-        await endInterview()
-      }
-    } catch {
-      isProcessingRef.current = false
-      setListening()
-    }
-  }
-
   function handleResume() {
     if (!resumeInfo || !sessionData) return
     // Find the saved question in the loaded question list
@@ -1767,15 +1723,6 @@ function SessionPageInner({ params }: SessionPageProps) {
           {muted ? <MicOff className="w-4 h-4 sm:w-5 sm:h-5" /> : <Mic className="w-4 h-4 sm:w-5 sm:h-5" />}
           <span className="text-[10px] sm:text-xs font-medium">{muted ? 'Unmute' : 'Mute'}</span>
         </button>
-
-        {(state === 'LISTENING' || state === 'USER_SPEAKING') && phase === 'interview' && (
-          <button
-            onClick={handleSkip}
-            className="text-xs text-gray-600 hover:text-gray-400 transition-colors underline underline-offset-2 px-2 py-1"
-          >
-            Pass on this question
-          </button>
-        )}
 
         {(state === 'LISTENING' || state === 'USER_SPEAKING') && phase === 'candidate_questions' && (
           <button
