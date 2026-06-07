@@ -51,6 +51,11 @@ Return ONLY a valid JSON object (no per_question array):
 {
   "overall_score": <0-100, weighted average considering depth, accuracy, and communication>,
   "selection_probability": <0-100, honest realistic estimate of advancing to the next round>,
+  "selection_factors": [
+    "the single biggest thing that helped or hurt their chances, stated concretely — e.g. 'Strong, structured answer on the system design question' or 'Vague on conflict-resolution — no concrete example given'",
+    "second most influential factor, equally concrete",
+    "optional third factor if there's a clear one — omit rather than pad to 3"
+  ],
   "strengths": [
     {"title": "strength name", "example": "quote or specific reference from their answers", "advice": "how to leverage this in future interviews"}
   ],
@@ -74,6 +79,7 @@ Return ONLY a valid JSON object (no per_question array):
 Rules:
 - strengths: exactly 3, grounded in actual things they demonstrated
 - gaps: exactly 3, grounded in what was weak or missing
+- selection_factors: 2-3 concrete factors that explain WHY you landed on that probability — these are shown to the candidate so they can see your reasoning, not just a bare number. Each must trace to something specific in the transcript.
 - Be honest and constructive — generic praise hurts candidates
 - Use topic performance patterns to identify themes
 - overall_score must reflect true performance, not a confidence boost`
@@ -128,6 +134,7 @@ export async function POST(request: NextRequest) {
       feedback = {
         overall_score: 0,
         selection_probability: 0,
+        selection_factors: [],
         strengths: [
           { title: 'Showed up', example: 'Candidate initiated an interview session', advice: 'Complete the full interview to receive meaningful strengths feedback' },
           { title: 'N/A', example: '', advice: '' },
@@ -263,6 +270,9 @@ export async function POST(request: NextRequest) {
         ...overallFeedback,
         per_question: perQuestionFeedback,
       } as FeedbackJSON
+
+      // Safety net — older prompt versions / odd Haiku output might omit this field
+      if (!Array.isArray(feedback.selection_factors)) feedback.selection_factors = []
     }
 
     const shareToken = generateShareToken()
@@ -273,6 +283,7 @@ export async function POST(request: NextRequest) {
         session_id,
         overall_score: Math.min(100, Math.max(0, feedback.overall_score)),
         selection_probability: Math.min(100, Math.max(0, feedback.selection_probability)),
+        selection_factors_json: feedback.selection_factors,
         strengths_json: feedback.strengths,
         gaps_json: feedback.gaps,
         per_question_json: feedback.per_question,

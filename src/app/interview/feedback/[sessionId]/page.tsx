@@ -38,10 +38,12 @@ export default async function FeedbackPage({
     { data: report },
     { data: questions },
     { data: answers },
+    { data: benchmarkRows },
   ] = await Promise.all([
     supabase.from('feedback_reports').select('*').eq('session_id', sessionId).single(),
     supabase.from('questions').select('id, text, difficulty, topic_tag, expected_keywords').eq('session_id', sessionId).eq('asked', true).order('order_index'),
     supabase.from('answers').select('question_id, transcript_text, duration_seconds').eq('session_id', sessionId),
+    supabase.rpc('get_selection_probability_benchmark', { p_round_type: session.round_type }),
   ])
 
   const s = session as InterviewSession
@@ -164,11 +166,26 @@ export default async function FeedbackPage({
       ]
     : null
 
-  const benchmark: Record<string, number> = {
+  // Real cross-user average from feedback_reports (via SECURITY DEFINER RPC — see
+  // selection_probability_benchmark_migration.sql). Below a minimum sample size the
+  // number is too noisy to call an "industry average", so we fall back to a labeled
+  // estimate instead of presenting a thin sample as representative.
+  const MIN_BENCHMARK_SAMPLE = 20
+  const benchmarkRow = benchmarkRows?.[0] as { avg_probability: number | null; sample_size: number | string } | undefined
+  const benchmarkSampleSize = benchmarkRow ? Number(benchmarkRow.sample_size) : 0
+  const benchmarkIsLive = benchmarkSampleSize >= MIN_BENCHMARK_SAMPLE && benchmarkRow?.avg_probability != null
+
+  const ESTIMATED_BENCHMARK: Record<string, number> = {
     tech_l1: 55, tech_l2: 52, managerial: 54, hr: 62, full_loop: 53,
   }
-  const benchmarkAvg = benchmark[s.round_type as string] ?? 55
+  const benchmarkAvg = benchmarkIsLive
+    ? Math.round(Number(benchmarkRow!.avg_probability))
+    : (ESTIMATED_BENCHMARK[s.round_type as string] ?? 55)
   const benchmarkDiff = r.selection_probability - benchmarkAvg
+  const selectionFactors: string[] = (r.selection_factors_json as string[] | null) ?? []
+  const benchmarkLabel = benchmarkIsLive
+    ? `Average across ${benchmarkSampleSize} InterviewAI candidates for ${getRoundLabel(s.round_type as RoundType)}:`
+    : `Estimated industry average for ${getRoundLabel(s.round_type as RoundType)}:`
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -241,7 +258,7 @@ export default async function FeedbackPage({
 
           <div className="mt-6 pt-5 border-t border-gray-200 flex flex-wrap items-center justify-center gap-2">
             <span className="text-xs text-gray-500">
-              Industry average for {getRoundLabel(s.round_type as RoundType)}:
+              {benchmarkLabel}
             </span>
             <span className="text-xs font-semibold text-gray-700">{benchmarkAvg}%</span>
             <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${
@@ -254,6 +271,22 @@ export default async function FeedbackPage({
                 : `↓ ${benchmarkDiff}% below average`}
             </span>
           </div>
+
+          {/* Why this number — grounds the selection probability in concrete factors
+              instead of presenting a bare percentage as an opaque measurement. */}
+          {selectionFactors.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <p className="text-xs font-semibold text-gray-500 mb-2">Why this estimate</p>
+              <ul className="space-y-1.5">
+                {selectionFactors.map((factor, i) => (
+                  <li key={i} className="flex gap-2 text-xs text-gray-600 leading-relaxed">
+                    <span className="text-indigo-400 flex-shrink-0">•</span>
+                    <span>{factor}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         {/* Overall assessment */}

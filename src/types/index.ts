@@ -102,6 +102,7 @@ export interface FeedbackReport {
   per_question_json: PerQuestionFeedback[]
   communication_score: number
   communication_json: CommunicationFeedback | null
+  selection_factors_json: string[] | null
   report_text: string
   share_token: string
   emailed_at: string | null
@@ -110,6 +111,7 @@ export interface FeedbackReport {
 export interface FeedbackJSON {
   overall_score: number
   selection_probability: number
+  selection_factors: string[]
   strengths: StrengthItem[]
   gaps: GapItem[]
   per_question: PerQuestionFeedback[]
