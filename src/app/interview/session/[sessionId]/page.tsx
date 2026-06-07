@@ -10,55 +10,6 @@ import type { Question, RoundType } from '@/types'
 import { PERSONAS } from '@/lib/personas'
 import { saveAnswerAudio, clearOldAudio } from '@/lib/audio-storage'
 
-// Bank of natural-sounding filler phrases the interviewer persona uses to bridge
-// the 2–5 s evaluate-answer round-trip without dead air. Several variants per
-// situational category — selectFillerCategory() picks the category that fits the
-// candidate's answer, and pickFillerPhrase() then picks a random, non-repeating
-// phrase from within it, so the same line never plays back-to-back or on a
-// predictable cadence the way a single hard-coded rotation would.
-const FILLER_PHRASE_BANK = {
-  ackSeeking: [
-    "Yes, that makes sense.",
-    "Right, I follow you.",
-    "Got it — that's clear.",
-    "Yes, that tracks, go on.",
-  ],
-  shortAnswer: [
-    "I see.",
-    "Mm-hmm.",
-    "Okay, got it.",
-    "Understood.",
-  ],
-  longTechnical: [
-    "That's quite detailed — let me think that through.",
-    "Okay, that's a thorough technical answer.",
-    "Let me process that for a moment.",
-    "That's a solid breakdown — give me a second.",
-  ],
-  longBehavioral: [
-    "I appreciate you walking me through that.",
-    "Thanks for sharing that experience.",
-    "That's a good example — let me think on it.",
-    "That gives me a good sense of how you handled it.",
-  ],
-  veryLong: [
-    "That's quite comprehensive — give me a moment to take it all in.",
-    "Okay, that was thorough. One second.",
-    "Lots to unpack there — let me gather my thoughts.",
-    "That covered a lot of ground — let me process that.",
-  ],
-  continuation: [
-    "Right, okay.",
-    "Interesting.",
-    "I see what you mean.",
-    "Hmm, okay.",
-    "Mm-hmm, go on.",
-    "Noted.",
-  ],
-} as const
-
-type FillerCategory = keyof typeof FILLER_PHRASE_BANK
-
 interface SessionPageProps {
   params: { sessionId: string }
 }
@@ -140,13 +91,6 @@ function SessionPageInner({ params }: SessionPageProps) {
   // Tracks encouragement prompts per question — capped at 1 so the AI doesn't
   // keep saying "go on" indefinitely if the candidate is genuinely done.
   const encourageAttemptsRef = useRef<Record<string, number>>({})
-  // Pre-fetched filler audio clips that loop continuously from answer submission
-  // until speakText() interrupts with the real response — eliminates dead silence.
-  // Keyed by phrase text (not index) so random selection can't be thrown off by
-  // any individual TTS pre-fetch failing.
-  const fillerMapRef = useRef<Map<string, string>>(new Map())
-  const lastFillerTextRef = useRef<string>('')
-  const fillerChainActiveRef = useRef(false)
   // Rolling log of the last 4 Q&A exchanges passed to Claude for cross-answer memory.
   const conversationHistoryRef = useRef<{ question: string; answer: string; score: number }[]>([])
   // Self-introduction transcript — passed to evaluate-answer so Claude can reference
@@ -207,28 +151,6 @@ function SessionPageInner({ params }: SessionPageProps) {
     return stopWaveform
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, phase])
-
-  // Pre-fetch filler audio clips when the interview phase begins so they play
-  // instantly from cache (hiding the 2–5 s evaluate-answer API latency).
-  useEffect(() => {
-    if (phase !== 'interview' || !sessionData || fillerMapRef.current.size > 0) return
-    const phrases = Array.from(new Set(Object.values(FILLER_PHRASE_BANK).flat()))
-    Promise.all(phrases.map(async (text) => {
-      try {
-        const res = await fetch('/api/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, round_type: sessionData.session.round_type, gender: genderParam }),
-        })
-        if (!res.ok) return null
-        const blob = await res.blob()
-        return [text, URL.createObjectURL(blob)] as const
-      } catch { return null }
-    })).then(results => {
-      for (const r of results) if (r) fillerMapRef.current.set(r[0], r[1])
-    })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, sessionData])
 
   // Persist progress so the user can resume if they accidentally navigate away
   useEffect(() => {
@@ -678,88 +600,6 @@ function SessionPageInner({ params }: SessionPageProps) {
     })
   }
 
-  // Plays pre-fetched filler clips in a loop from the moment the candidate finishes
-  // speaking until speakText() sets a new src on audioRef — creating continuous audio
-  // coverage across the full evaluate-answer API round-trip. speakText naturally
-  // interrupts the chain by overwriting audioRef.current.src.
-  // Picks a random phrase from the given category, never repeating the line that
-  // played immediately before it (falls back to the full bank if every phrase in
-  // the category failed to pre-fetch). This is what keeps the chain feeling live
-  // rather than a fixed loop — no two consecutive fillers, and no predictable cycle.
-  function pickFillerPhrase(category: FillerCategory): string | null {
-    const map = fillerMapRef.current
-    if (!map.size) return null
-    const inCategory = FILLER_PHRASE_BANK[category].filter(p => map.has(p))
-    const pool = inCategory.length ? inCategory : Array.from(map.keys())
-    const fresh = pool.filter(p => p !== lastFillerTextRef.current)
-    const candidates = fresh.length ? fresh : pool
-    const choice = candidates[Math.floor(Math.random() * candidates.length)]
-    lastFillerTextRef.current = choice
-    return choice
-  }
-
-  async function playFillerChain(firstCategory?: FillerCategory) {
-    if (!fillerMapRef.current.size || !audioRef.current) return
-    fillerChainActiveRef.current = true
-    let category: FillerCategory | undefined = firstCategory
-    while (fillerChainActiveRef.current) {
-      const el = audioRef.current
-      if (!el) break
-      const phrase = pickFillerPhrase(category ?? 'continuation')
-      // Subsequent loops (long evaluate-answer round-trips) draw from the
-      // generic continuation pool — the contextual pick only opens the chain.
-      category = 'continuation'
-      if (!phrase) break
-      const url = fillerMapRef.current.get(phrase)
-      if (!url) break
-      el.onended = null
-      el.onerror = null
-      el.pause()
-      el.src = url
-      await new Promise<void>(resolve => {
-        el.onended = () => resolve()
-        el.onerror = () => resolve()
-        el.play().catch(() => resolve())
-        // 5s ceiling per clip — guards against a hung audio element
-        setTimeout(resolve, 5000)
-      })
-    }
-  }
-
-  function stopFillerChain() {
-    fillerChainActiveRef.current = false
-  }
-
-  // Picks the situational filler category based on answer length, round type,
-  // and whether the candidate is seeking acknowledgment. The actual phrase is
-  // then chosen at random (and non-repeating) from within that category.
-  function selectFillerCategory(transcript: string, roundType: RoundType): FillerCategory {
-    const words = transcript.trim().split(/\s+/).filter(Boolean)
-    const wc = words.length
-    const lower = transcript.toLowerCase()
-
-    // Candidate is seeking acknowledgment — respond directly
-    if (/does that make sense|is that right|am i on the right track|right\?$|make sense\?/.test(lower)) return 'ackSeeking'
-
-    const isBehavioral = roundType === 'hr' || roundType === 'managerial'
-
-    // Very long answer (> 150 words) — acknowledge thoroughness
-    if (wc > 150) {
-      return isBehavioral ? 'longBehavioral' : 'veryLong'
-    }
-
-    // Short answer (< 15 words) — neutral acknowledgment
-    if (wc < 15) return 'shortAnswer'
-
-    // Long answer (60–150 words) — round-specific
-    if (wc >= 60) {
-      return isBehavioral ? 'longBehavioral' : 'longTechnical'
-    }
-
-    // Medium answer (15–59 words) — generic continuation
-    return 'continuation'
-  }
-
   // Proxy for prosodic confidence — counts filler words as a fraction of total words.
   // High filler density → hesitant; low → confident. Used to warm/cool Claude's tone.
   function analyzeAnswerConfidence(transcript: string): 'confident' | 'hesitant' {
@@ -774,7 +614,6 @@ function SessionPageInner({ params }: SessionPageProps) {
   // speech synthesis, and resolves the pending speakText promise so callers
   // awaiting it unblock right away.
   function stopAllAudio() {
-    stopFillerChain()
     cancelSpeakRef.current?.()
     cancelSpeakRef.current = null
     if (audioRef.current) {
@@ -857,7 +696,6 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   async function speakText(text: string, startListening = true): Promise<void> {
     if (!sessionData) return
-    stopFillerChain() // stop any running filler chain before taking over audioRef
     setAiSpeaking()
     systemMutedRef.current = true
     setFinalTranscript('')
@@ -1012,10 +850,6 @@ function SessionPageInner({ params }: SessionPageProps) {
     setFinalTranscript('')
     stopAnswerRecording(currentQuestion.id)
 
-    // Loop filler clips — start from the clip that best matches this answer's
-    // length/type so the first sound the candidate hears feels contextual.
-    void playFillerChain(selectFillerCategory(transcript, sessionData.session.round_type))
-
     const answerConfidence = analyzeAnswerConfidence(transcript)
 
     try {
@@ -1131,7 +965,6 @@ function SessionPageInner({ params }: SessionPageProps) {
         await speakText(bridge)
       }
     } catch {
-      stopFillerChain()
       if (!evalAutoRetriedRef.current) {
         // First failure: retry silently after a brief pause.
         evalAutoRetriedRef.current = true
@@ -1159,7 +992,6 @@ function SessionPageInner({ params }: SessionPageProps) {
   const handleCandidateQuestion = useCallback(async (transcript: string) => {
     if (!sessionData || endingRef.current) return
     setProcessing()
-    void playFillerChain()
 
     candidateQuestionsCountRef.current++
     const count = candidateQuestionsCountRef.current
