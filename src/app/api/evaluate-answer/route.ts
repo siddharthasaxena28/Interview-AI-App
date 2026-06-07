@@ -214,7 +214,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // Cap transcript to ~3 min of speech — prevents prompt injection and token overuse
+    // Cap what we send to the model to ~3 min of speech — prevents prompt
+    // injection and token overuse. The full transcript is still persisted
+    // below so long answers aren't silently clipped in the saved record/report.
     const cappedTranscript = transcript.slice(0, 3000)
 
     // Verify session belongs to this user
@@ -355,7 +357,7 @@ export async function POST(request: NextRequest) {
       supabase.from('answers').insert({
         session_id,
         question_id,
-        transcript_text: cappedTranscript,
+        transcript_text: transcript.slice(0, 10000),
         duration_seconds: durationSeconds,
         score,
       }),

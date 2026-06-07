@@ -23,6 +23,7 @@ Each question should take 2-3 minutes to answer verbally. Make them feel like re
 
 export async function POST(request: NextRequest) {
   let filter: DrillRoundFilter = 'mixed'
+  let hasHistory = false
   const today = new Date().toISOString().split('T')[0]
 
   try {
@@ -37,6 +38,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         questions: getDailyDrillQuestions(today, filter),
         personalized: false,
+        reason: 'rate_limited',
       })
     }
 
@@ -56,6 +58,8 @@ export async function POST(request: NextRequest) {
         .order('avg_score', { ascending: true })
         .limit(3),
     ])
+
+    hasHistory = !!latestSession || (weakAreas?.length ?? 0) > 0
 
     const role = latestSession?.role ?? null
     const company = latestSession?.company ?? null
@@ -108,6 +112,7 @@ Questions must feel specific to this role — not generic textbook problems.`
       return NextResponse.json({
         questions: getDailyDrillQuestions(today, filter),
         personalized: false,
+        reason: hasHistory ? 'parse_failed' : 'no_history',
       })
     }
 
@@ -123,12 +128,14 @@ Questions must feel specific to this role — not generic textbook problems.`
       questions,
       personalized: !!(role && company),
       context: role && company ? { role, company } : undefined,
+      reason: 'ok',
     })
   } catch (error) {
     console.error('drill-questions error:', error)
     return NextResponse.json({
       questions: getDailyDrillQuestions(today, filter),
       personalized: false,
+      reason: hasHistory ? 'error' : 'no_history',
     })
   }
 }

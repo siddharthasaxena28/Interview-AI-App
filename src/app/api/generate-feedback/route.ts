@@ -425,34 +425,12 @@ async function completeReferral(
   const { createServiceClient } = await import('@/lib/supabase-server')
   const svc = await createServiceClient()
 
-  const { data: referral } = await svc
-    .from('referrals')
-    .select('id, referrer_id')
-    .eq('referee_id', userId)
-    .eq('status', 'pending')
-    .single()
-  if (!referral) return
-
-  const { data: claimed } = await svc.from('referrals')
-    .update({ status: 'completed', completed_at: new Date().toISOString() })
-    .eq('id', referral.id)
-    .eq('status', 'pending')
-    .select('id')
-    .maybeSingle()
-  if (!claimed) return
-
-  await Promise.all([
-    creditReferralBonus(svc, referral.referrer_id),
-    creditReferralBonus(svc, userId),
-  ])
-}
-
-async function creditReferralBonus(
-  svc: Awaited<ReturnType<typeof import('@/lib/supabase-server').createServiceClient>>,
-  id: string,
-) {
-  await svc.rpc('increment_user_credits', { p_user_id: id, p_amount: 1 })
-  await svc.from('credit_transactions').insert({ user_id: id, amount: 1, type: 'referral' })
+  // Atomic claim + crediting (see complete_referral_migration.sql) — the
+  // referral status flip and both credit grants happen in a single
+  // transaction, so a partial failure can't mark the referral completed
+  // without paying out the bonus.
+  const { error } = await svc.rpc('complete_referral', { p_referee_id: userId })
+  if (error) console.error('complete_referral error:', error)
 }
 
 async function sendFeedbackEmail(

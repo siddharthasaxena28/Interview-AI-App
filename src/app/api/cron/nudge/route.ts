@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
+import crypto from 'crypto'
 import { createServiceClient } from '@/lib/supabase-server'
 import { sendPushToUser } from '@/lib/push-server'
 
+function isAuthorized(authHeader: string | null): boolean {
+  if (!process.env.CRON_SECRET || !authHeader) return false
+  const expected = Buffer.from(`Bearer ${process.env.CRON_SECRET}`)
+  const actual = Buffer.from(authHeader)
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual)
+}
+
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('Authorization')
-  if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!isAuthorized(request.headers.get('Authorization'))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -58,16 +65,25 @@ export async function GET(request: NextRequest) {
     .select('id, email, name')
     .eq('last_session_date', toDate(3))
 
-  for (const u of nudgeUsers ?? []) {
-    // Fetch top weak area for personalised message
-    const { data: topWeak } = await supabase
+  // Batch-fetch weak areas for all nudge users in one query (was N+1 — one
+  // query per user) and pick each user's single weakest topic client-side.
+  const nudgeUserIds = (nudgeUsers ?? []).map(u => u.id)
+  const weakestByUser = new Map<string, { topic_tag: string; avg_score: number }>()
+  if (nudgeUserIds.length > 0) {
+    const { data: allWeakAreas } = await supabase
       .from('weak_areas')
-      .select('topic_tag, avg_score')
-      .eq('user_id', u.id)
+      .select('user_id, topic_tag, avg_score')
+      .in('user_id', nudgeUserIds)
       .order('avg_score', { ascending: true })
-      .limit(1)
-      .maybeSingle()
+    for (const wa of allWeakAreas ?? []) {
+      if (!weakestByUser.has(wa.user_id)) {
+        weakestByUser.set(wa.user_id, { topic_tag: wa.topic_tag, avg_score: wa.avg_score })
+      }
+    }
+  }
 
+  for (const u of nudgeUsers ?? []) {
+    const topWeak = weakestByUser.get(u.id) ?? null
     const weakTopic = topWeak
       ? topWeak.topic_tag.replace(/_/g, ' ')
       : null

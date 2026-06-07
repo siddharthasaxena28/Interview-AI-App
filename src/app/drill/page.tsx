@@ -11,6 +11,7 @@ interface DrillQuestionsResponse {
   questions: DrillQuestion[]
   personalized: boolean
   context?: { role: string; company: string }
+  reason?: 'ok' | 'rate_limited' | 'parse_failed' | 'no_history' | 'error'
 }
 import type { RoundType } from '@/types'
 
@@ -73,6 +74,7 @@ function DrillPageInner() {
   const [loadingQuestions, setLoadingQuestions] = useState(true)
   const [personalized, setPersonalized] = useState(false)
   const [personalizationCtx, setPersonalizationCtx] = useState<{ role: string; company: string } | null>(null)
+  const [questionsReason, setQuestionsReason] = useState<DrillQuestionsResponse['reason']>(undefined)
   const [qIndex, setQIndex] = useState(0)
   const [phase, setPhase] = useState<'intro' | 'answering' | 'scored' | 'done'>('intro')
   const [transcript, setTranscript] = useState('')
@@ -98,11 +100,13 @@ function DrillPageInner() {
         setQuestions(data.questions?.length ? data.questions : getDailyDrillQuestions(today, filter))
         setPersonalized(data.personalized ?? false)
         setPersonalizationCtx(data.context ?? null)
+        setQuestionsReason(data.reason)
       })
       .catch(() => {
         setQuestions(getDailyDrillQuestions(today, filter))
         setPersonalized(false)
         setPersonalizationCtx(null)
+        setQuestionsReason('error')
       })
       .finally(() => setLoadingQuestions(false))
   }, [filter, today])
@@ -277,10 +281,15 @@ function DrillPageInner() {
                 <Sparkles className="w-3 h-3" />
                 Tailored for <span className="font-semibold">{personalizationCtx.role}</span> at <span className="font-semibold">{personalizationCtx.company}</span>
               </p>
-            ) : (
+            ) : questionsReason === 'no_history' ? (
               <p className="text-xs text-gray-400 mb-5 flex items-center justify-center gap-1.5">
                 <Sparkles className="w-3 h-3 text-indigo-500" />
                 Complete your first mock interview to get questions personalised to your role and weak areas.
+              </p>
+            ) : (
+              <p className="text-xs text-gray-400 mb-5 flex items-center justify-center gap-1.5">
+                <Sparkles className="w-3 h-3 text-indigo-500" />
+                Today&apos;s practice questions are ready — personalisation will be back shortly.
               </p>
             )}
 
@@ -340,7 +349,7 @@ function DrillPageInner() {
             <div className="w-full bg-gray-200 rounded-full h-1">
               <div
                 className="bg-indigo-600 h-1 rounded-full transition-all"
-                style={{ width: `${((qIndex) / questions.length) * 100}%` }}
+                style={{ width: `${((qIndex + 1) / questions.length) * 100}%` }}
               />
             </div>
 

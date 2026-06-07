@@ -70,29 +70,18 @@ Candidate's answer:
 
     const score = Math.min(5, Math.max(1, result.score ?? 3))
 
-    // Feed drill scores into weak_areas so personalization improves over time
+    // Feed drill scores into weak_areas so personalization improves over time.
+    // Uses the atomic upsert_weak_area RPC (see upsert_weak_area_migration.sql)
+    // instead of a JS read-modify-write, which would race with concurrent
+    // session completions for the same user+topic.
     const normalizedTag = normalizeTopic(topic_tag ?? '')
     if (normalizedTag) {
-      const { data: existing } = await supabase
-        .from('weak_areas')
-        .select('avg_score, session_count')
-        .eq('user_id', user.id)
-        .eq('topic_tag', normalizedTag)
-        .maybeSingle()
-
-      const existingCount = existing?.session_count ?? 0
-      const newCount = existingCount + 1
-      const newAvg = ((existing?.avg_score ?? 0) * existingCount + score) / newCount
-      await supabase.from('weak_areas').upsert(
-        {
-          user_id: user.id,
-          topic_tag: normalizedTag,
-          avg_score: Math.round(newAvg * 100) / 100,
-          session_count: newCount,
-          last_updated: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,topic_tag' },
-      )
+      const { error: upsertErr } = await supabase.rpc('upsert_weak_area', {
+        p_user_id: user.id,
+        p_topic_tag: normalizedTag,
+        p_session_avg: score,
+      })
+      if (upsertErr) console.error('drill weak_areas upsert error:', normalizedTag, upsertErr)
     }
 
     return NextResponse.json({
