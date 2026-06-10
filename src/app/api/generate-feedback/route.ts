@@ -16,8 +16,8 @@ const client = new Anthropic()
 // we only need enough text for Claude to write specific feedback. Shorter answers =
 // smaller prompts = faster generation. Long interviews get the most aggressive cut.
 function answerMaxChars(questionCount: number): number {
-  if (questionCount >= 15) return 500   // full_loop (~26 q) — be aggressive
-  if (questionCount >= 10) return 750   // medium interview
+  if (questionCount > 15) return 500   // full_loop (~26 q) — be aggressive
+  if (questionCount >= 10) return 750   // individual rounds (15 q) and medium sessions
   return 1200                           // short interview — keep most detail
 }
 
@@ -263,16 +263,18 @@ export async function POST(request: NextRequest) {
         { confident: 0, hesitant: 0 }
       )
       const measuredCount = confidenceCounts.confident + confidenceCounts.hesitant
+      const unmeasuredCount = qCount - measuredCount
       const confidenceSummary = measuredCount > 0
-        ? `${confidenceCounts.confident} of ${measuredCount} answers measured "confident" delivery (low filler-word density); ${confidenceCounts.hesitant} measured "hesitant" (filler-word density above 12%).`
+        ? `Of ${qCount} total answers, ${measuredCount} have measured delivery data: ${confidenceCounts.confident} measured "confident" (low filler-word density); ${confidenceCounts.hesitant} measured "hesitant" (filler-word density above 12%). ${unmeasuredCount > 0 ? `${unmeasuredCount} answer${unmeasuredCount > 1 ? 's have' : ' has'} no measurement — do not assume unmeasured answers match the measured distribution.` : 'All answers have measured data.'}`
         : 'No measured delivery data available for this session — base communication sub-scores on transcript content alone.'
 
       // ── Two parallel Claude calls — wall-clock ≈ max(A, B) instead of A + B ──
       const [perQMessage, overallMessage] = await Promise.all([
         client.messages.create({
           model: 'claude-haiku-4-5-20251001',
-          // Per-question: ~150 tokens × n questions. 4096 is safe up to ~27 questions.
-          max_tokens: 4096,
+          // Per-question: worst case ~220 tokens × 26 questions (score + feedback + ideal_answer_hint
+          // bullets for low-scoring answers) ≈ 5700 tokens. 6144 gives comfortable headroom.
+          max_tokens: 6144,
           system: [{ type: 'text', text: PER_QUESTION_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
           messages: [{
             role: 'user',
@@ -294,6 +296,10 @@ export async function POST(request: NextRequest) {
       // ── Parse per-question result ───────────────────────────────────────────
       const perQContent = perQMessage.content[0]
       if (perQContent.type !== 'text') throw new Error('Unexpected per-question response type')
+
+      if (perQMessage.stop_reason === 'max_tokens') {
+        console.error('Per-question Haiku call hit max_tokens — increase max_tokens if this recurs')
+      }
 
       let perQuestionFeedback: FeedbackJSON['per_question'] = []
       try {
