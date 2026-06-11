@@ -4,7 +4,7 @@ import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { getProbabilityLabel } from '@/lib/utils'
 import { getRoundLabel } from '@/lib/personas'
 import { CheckCircle, AlertCircle, Share2, RotateCcw, Mic, TrendingUp, ArrowLeft } from 'lucide-react'
-import type { FeedbackReport, InterviewSession, StrengthItem, GapItem, PerQuestionFeedback, CommunicationFeedback, RoundType } from '@/types'
+import type { FeedbackReport, InterviewSession, StrengthItem, GapItem, PerQuestionFeedback, CommunicationFeedback, RoundType, FeedbackSignal } from '@/types'
 import FeedbackClient from './FeedbackClient'
 import GeneratingBanner from './GeneratingBanner'
 import ScoreCard from './ScoreCard'
@@ -167,6 +167,8 @@ export default async function FeedbackPage({
   const gaps: GapItem[] = (r.gaps_json as GapItem[]) ?? []
   const perQuestion: PerQuestionFeedback[] = (r.per_question_json as PerQuestionFeedback[]) ?? []
   const commJson: CommunicationFeedback | null = (r.communication_json as CommunicationFeedback | null) ?? null
+  const redFlags: FeedbackSignal[] = (r.red_flags_json as FeedbackSignal[] | null) ?? []
+  const standoutMoments: FeedbackSignal[] = (r.standout_moments_json as FeedbackSignal[] | null) ?? []
 
   const questionList = (questions ?? []) as Array<{ id: string; text: string; difficulty: number; topic_tag: string; expected_keywords?: string[] }>
   const answerList = (answers ?? []) as Array<{ question_id: string; transcript_text: string; duration_seconds: number }>
@@ -359,6 +361,58 @@ export default async function FeedbackPage({
             <p className="text-gray-600 text-sm leading-7 whitespace-pre-wrap">{r.report_text}</p>
           </div>
         </div>
+
+        {/* Key Signals — red flags and standout moments (only rendered when non-empty) */}
+        {(redFlags.length > 0 || standoutMoments.length > 0) && (
+          <div className="grid md:grid-cols-2 gap-5">
+            {redFlags.length > 0 && (
+              <div className="bg-white border border-red-200 rounded-2xl overflow-hidden">
+                <div className="h-px bg-gradient-to-r from-red-500/60 to-rose-500/60" />
+                <div className="p-5">
+                  <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-500" /> Watch Out For
+                  </h2>
+                  <div className="space-y-3">
+                    {redFlags.map((rf, i) => (
+                      <div key={i} className="flex gap-3 p-3.5 rounded-xl bg-red-50 border border-red-200">
+                        <div className="w-5 h-5 rounded-full bg-red-100 text-red-600 text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+                          !
+                        </div>
+                        <div>
+                          <div className="font-semibold text-red-700 text-sm mb-0.5">{rf.signal}</div>
+                          <p className="text-red-600 text-xs leading-relaxed">{rf.detail}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+            {standoutMoments.length > 0 && (
+              <div className="bg-white border border-indigo-200 rounded-2xl overflow-hidden">
+                <div className="h-px bg-gradient-to-r from-indigo-500/60 to-violet-500/60" />
+                <div className="p-5">
+                  <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-indigo-600" /> Standout Moments
+                  </h2>
+                  <div className="space-y-3">
+                    {standoutMoments.map((sm, i) => (
+                      <div key={i} className="flex gap-3 p-3.5 rounded-xl bg-indigo-50 border border-indigo-200">
+                        <div className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-600 text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+                          ★
+                        </div>
+                        <div>
+                          <div className="font-semibold text-indigo-700 text-sm mb-0.5">{sm.signal}</div>
+                          <p className="text-indigo-600 text-xs leading-relaxed">{sm.detail}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Strengths + Focus Areas */}
         <div className="grid md:grid-cols-2 gap-5">

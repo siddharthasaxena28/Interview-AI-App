@@ -48,22 +48,20 @@ Rules:
 const OVERALL_SYSTEM_PROMPT = `You are an expert interview coach generating an overall interview performance assessment.
 
 --- SCORING ANCHOR (read before assigning overall_score) ---
-You will be given the average of the candidate's per-question scores (each already graded 1-5
-by a real-time evaluator) and the average difficulty of the questions they faced. Convert that
-average into overall_score using this baseline band, then adjust by at most ±8 points for
-communication quality, depth/specificity beyond the raw number, and consistency:
-  avg 4.5-5.0 → baseline ~88-96
-  avg 4.0-4.4 → baseline ~78-87
-  avg 3.5-3.9 → baseline ~68-77
-  avg 3.0-3.4 → baseline ~58-67
-  avg 2.5-2.9 → baseline ~46-57
-  avg 2.0-2.4 → baseline ~34-45
-  avg below 2.0 → baseline ~15-33
-If average difficulty was high (4+/5), credit the candidate more — performing at a given score
-level on hard questions is more impressive than the same level on easy ones, so lean toward the
-upper end of the band (or slightly above it). If average difficulty was low (≤2/5), lean toward
-the lower end. The candidate can see their individual question scores, so overall_score must stay
-inside (or very close to) the band implied by the average — a number that contradicts the visible
+You will be given both the simple average and the difficulty-weighted average of per-question
+scores (each already graded 1-5 by a real-time evaluator). Use the WEIGHTED average as your
+primary anchor — it credits candidates who performed well on harder questions. Convert to
+overall_score using this baseline band, then adjust by at most ±8 points for communication
+quality, depth/specificity beyond the raw number, and consistency:
+  weighted avg 4.5-5.0 → baseline ~88-96
+  weighted avg 4.0-4.4 → baseline ~78-87
+  weighted avg 3.5-3.9 → baseline ~68-77
+  weighted avg 3.0-3.4 → baseline ~58-67
+  weighted avg 2.5-2.9 → baseline ~46-57
+  weighted avg 2.0-2.4 → baseline ~34-45
+  weighted avg below 2.0 → baseline ~15-33
+The candidate can see their individual question scores, so overall_score must stay inside (or
+very close to) the band implied by the weighted average — a number that contradicts the visible
 per-question scores will feel arbitrary and erode trust.
 
 --- SELECTION PROBABILITY ANCHOR ---
@@ -103,6 +101,12 @@ Return ONLY a valid JSON object (no per_question array):
     "filler_words": <0-100, where 100=no fillers at all>,
     "filler_note": "one concise sentence assessment"
   },
+  "red_flags": [
+    {"signal": "brief label for the disqualifying pattern", "detail": "specific evidence from the interview — exact question or quote"}
+  ],
+  "standout_moments": [
+    {"signal": "brief label for the impressive moment", "detail": "specific evidence — exact question or quote that demonstrated it"}
+  ],
   "summary": "2-3 paragraph honest narrative assessment of the overall interview performance"
 }
 
@@ -110,6 +114,8 @@ Rules:
 - strengths: exactly 3, grounded in actual things they demonstrated
 - gaps: exactly 3, grounded in what was weak or missing
 - selection_factors: 2-3 concrete factors that explain WHY you landed on that probability — these are shown to the candidate so they can see your reasoning, not just a bare number. Each must trace to something specific in the transcript.
+- red_flags: 0-3 items. Include ONLY genuine disqualifying or seriously concerning patterns — e.g. "Cannot explain items on own resume", "Zero concrete examples across all behavioral questions", "Fundamental error on a core concept for this role". Empty array if nothing is disqualifying. Do NOT pad.
+- standout_moments: 0-2 items. Include ONLY genuinely impressive moments worth calling out — e.g. correctly naming and justifying a non-obvious trade-off, depth well beyond what the question required. Empty array if nothing stands out. Do NOT pad.
 - Be honest and constructive — generic praise hurts candidates
 - Use topic performance patterns to identify themes
 - overall_score must reflect true performance, not a confidence boost
@@ -122,7 +128,13 @@ filler-word density (not inferred from a text impression): how many answers came
 (e.g. if most answers measured hesitant/filler-heavy, "filler_words" and "confidence" must be
 on the lower end, regardless of how polished the transcript text reads). You may still use the
 transcript content to inform "clarity" and "pacing" and to write the *_note explanations —
-just make sure confidence_note/filler_note reference what was actually measured.`
+just make sure confidence_note/filler_note reference what was actually measured.
+
+--- FULL_LOOP SESSIONS ---
+When round_type is full_loop: your "summary" must include one sentence per domain covered
+(Technical L1 fundamentals, Technical L2 system design, Managerial/leadership, HR/behavioral)
+noting the candidate's relative strength or weakness in that domain. This gives the candidate
+a clear cross-domain picture of where to focus next.`
 
 export async function POST(request: NextRequest) {
   try {
@@ -241,13 +253,21 @@ export async function POST(request: NextRequest) {
           .reduce((a, b) => a + b, 0) / qCount
       ).toFixed(1)
 
-      // Average difficulty — lets the overall-assessment call credit candidates who
-      // scored well on harder questions more than the same score on easy ones (the
-      // adaptive-difficulty engine means two "avg 4.0/5" sessions can reflect very
-      // different actual performance levels).
+      // Average difficulty — context for the overall-assessment call.
       const avgDifficulty = (
         orderedQuestions.reduce((a, q) => a + q.difficulty, 0) / qCount
       ).toFixed(1)
+
+      // Difficulty-weighted average score: Σ(score × difficulty) / Σ(difficulty).
+      // Questions where the candidate scored well on hard content count more than
+      // the same score on easy questions, making the anchor fairer across sessions
+      // where the adaptive engine pushed to harder or easier questions.
+      const totalDifficultyWeight = orderedQuestions.reduce((a, q) => a + q.difficulty, 0)
+      const weightedAvgScore = (
+        orderedQuestions
+          .map(q => (answerMap.get(q.id)?.score ?? 0) * q.difficulty)
+          .reduce((a, b) => a + b, 0) / Math.max(1, totalDifficultyWeight)
+      ).toFixed(2)
 
       // Measured delivery signal — aggregates the real per-answer filler-word-density
       // classification (persisted from analyzeAnswerConfidence on the client) so the
@@ -288,7 +308,7 @@ export async function POST(request: NextRequest) {
           system: [{ type: 'text', text: OVERALL_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
           messages: [{
             role: 'user',
-            content: `Interview: ${session.company} — ${session.role} (${session.round_type}), ${session.experience_years} yrs experience\nQuestions answered: ${qCount}, Average score: ${avgScore}/5, Average question difficulty: ${avgDifficulty}/5\n\nMeasured delivery signal: ${confidenceSummary}\n\nTopic performance:\n${topicSummary}\n\nInterview highlights:\n${condensedTranscript}\n\nGenerate the overall assessment.`,
+            content: `Interview: ${session.company} — ${session.role} (${session.round_type}), ${session.experience_years} yrs experience\nQuestions answered: ${qCount}, Simple avg score: ${avgScore}/5, Difficulty-weighted avg score: ${weightedAvgScore}/5 (use this as primary anchor), Average question difficulty: ${avgDifficulty}/5\n\nMeasured delivery signal: ${confidenceSummary}\n\nTopic performance:\n${topicSummary}\n\nInterview highlights:\n${condensedTranscript}\n\nGenerate the overall assessment.`,
           }],
         }),
       ])
@@ -361,6 +381,8 @@ export async function POST(request: NextRequest) {
         per_question_json: feedback.per_question,
         communication_score: feedback.communication.score,
         communication_json: feedback.communication,
+        red_flags_json: feedback.red_flags ?? [],
+        standout_moments_json: feedback.standout_moments ?? [],
         report_text: feedback.summary,
         share_token: shareToken,
       }, { onConflict: 'session_id' }).select().single(),

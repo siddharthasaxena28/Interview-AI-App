@@ -9,12 +9,59 @@ const client = new Anthropic()
 
 const EVAL_SYSTEM_PROMPT = `You are a sharp, fair human interviewer conducting a live voice interview. You score the candidate's answer and decide how to react in the moment — exactly as a real person would.
 
-Score the answer on a scale of 1-5:
-1 = Very poor / No understanding
-2 = Basic / Incomplete
-3 = Adequate / Mostly correct
-4 = Good / Well-explained
-5 = Excellent / Demonstrates deep expertise
+--- SCORING RUBRIC ---
+Universal baseline (1-5):
+  1 = Very poor — no real understanding; off-topic or essentially no answer
+  2 = Basic / Incomplete — surface-level; key elements missing or incorrect
+  3 = Adequate — mostly correct; demonstrates understanding but lacks depth or specificity
+  4 = Good — well-explained with specifics; covers important dimensions
+  5 = Excellent — deep expertise; handles trade-offs, edge cases, and nuance fluently
+
+Apply these round-type refinements ON TOP of the universal baseline (round type is given in the user message):
+
+tech_l1 (Fundamentals):
+  5 = correct + clear complexity/edge-case reasoning + clean logic
+  4 = correct and explained; minor gap in edge cases or complexity
+  3 = correct but vague, OR partially correct with reasonable explanation
+  2 = basic awareness but core concept is wrong or too thin to be useful
+  1 = clearly wrong, confused, or no attempt
+
+tech_l2 (System Design / Architecture):
+  5 = structured breakdown, explicit assumptions, scalability + trade-offs named and justified, NFRs considered
+  4 = good structure and trade-offs; may miss one NFR or not fully justify a choice
+  3 = main design idea present but high-level; no real trade-off reasoning
+  2 = vague buzzwords ("use microservices", "add a cache") with no substance — polished delivery does NOT save this
+  1 = off-topic, fundamentally wrong design, or no attempt
+
+managerial (STAR Method — Situation, Task, Action, Result):
+  5 = all four STAR elements present, concrete metrics or named outcomes, genuine reflection
+  4 = clear S+T+A+R, good specificity; may lack measurable result or reflection
+  3 = partial STAR — story is clear but 1-2 elements are thin or vague
+  2 = vague or generic — not grounded in a real situation; STAR structure missing. Confident delivery of a vague answer still scores 2
+  1 = theoretical ("I would...") with no real example, or no attempt
+
+hr (Culture Fit / Behavioral / Motivation):
+  5 = authentic, specific narrative; genuine self-awareness or concrete company/role research
+  4 = specific and honest; good alignment; minor lack of depth
+  3 = reasonable but somewhat generic or surface-level; not formulaic
+  2 = clearly scripted/formulaic with no personal specificity, OR evasive on a direct question
+  1 = inappropriate, hostile, highly evasive, or no real answer
+  NOTE: Do NOT penalise naming actual salary expectations or notice periods — that is what HR rounds are for
+
+full_loop: infer the rubric from the topic_tag — tech_l1 tags → tech_l1 rubric; tech_l2 tags → tech_l2 rubric; managerial tags → managerial rubric; hr tags → hr rubric
+
+--- EXPERIENCE & DURATION CALIBRATION ---
+You will be told the candidate's years of experience and how long they spent on this answer.
+
+Experience calibration — hold senior candidates to a higher bar:
+  <2 years: lenient — give benefit of the doubt for decent attempts; depth is not yet expected
+  2-6 years: default rubric as written above
+  7+ years: stricter — expect depth, trade-offs, and domain fluency; "basically correct" earns 3 not 4
+
+Duration signal (do NOT make this the main driver — use it as supporting context):
+  <15 s for a complex question → check whether the answer was genuinely complete or just superficial
+  >180 s for a simple question → watch for signal-to-noise; verbosity is not depth
+  Do not penalise well-paced, thorough answers even if they are long
 
 --- SKIP DETECTION (check this FIRST) ---
 Set "candidate_wants_to_skip": true whenever the candidate signals — explicitly or implicitly — that they want to move on:
@@ -27,7 +74,7 @@ Implicit signals:
 
 When candidate_wants_to_skip is true:
   - ALWAYS set "needs_clarification": false, "probe": false and "probe_question": ""
-  - Score honestly, lean towards 2 if no real attempt
+  - Score by difficulty: question difficulty 1-2 → score 1; difficulty 3-5 → score 2
   - "spoken_response" must be brief, gracious, and FEEL DIFFERENT every time.
     React to the specific words the candidate used — if they said "I'll pass" react differently than if they said "I'm blanking on this one."
     NEVER use the same phrase twice in a conversation. Rotate naturally through responses like a real person would.
@@ -222,7 +269,7 @@ export async function POST(request: NextRequest) {
     // Verify session belongs to this user
     const { data: session } = await supabase
       .from('interview_sessions')
-      .select('id, round_type')
+      .select('id, round_type, experience_years')
       .eq('id', session_id)
       .eq('user_id', user.id)
       .single()
@@ -268,6 +315,7 @@ export async function POST(request: NextRequest) {
             (conversation_history && conversation_history.length > 0)
               ? `Recent conversation (${conversation_history.length} exchange${conversation_history.length > 1 ? 's' : ''}):\n${conversation_history.map(h => `Q: "${h.question}"\nA: "${h.answer.slice(0, 400)}" [Score: ${h.score}/5]`).join('\n\n')}`
               : '',
+            `Round type: ${session.round_type} | Candidate experience: ${session.experience_years ?? 0} yrs | Answer duration: ${durationSeconds}s`,
             `Already on a follow-up question: ${is_already_probe ? 'yes — do NOT probe again' : 'no'}`,
             answer_confidence ? `Speech pattern: ${answer_confidence}` : '',
             `Question (difficulty ${q.difficulty}/5, topic: ${q.topic_tag}):\n"${q.text}"`,

@@ -93,6 +93,11 @@ export interface CommunicationFeedback {
   filler_note?: string
 }
 
+export interface FeedbackSignal {
+  signal: string
+  detail: string
+}
+
 export interface FeedbackReport {
   id: string
   session_id: string
@@ -104,6 +109,8 @@ export interface FeedbackReport {
   communication_score: number
   communication_json: CommunicationFeedback | null
   selection_factors_json: string[] | null
+  red_flags_json: FeedbackSignal[] | null
+  standout_moments_json: FeedbackSignal[] | null
   report_text: string
   share_token: string
   emailed_at: string | null
@@ -117,6 +124,8 @@ export interface FeedbackJSON {
   gaps: GapItem[]
   per_question: PerQuestionFeedback[]
   communication: CommunicationFeedback
+  red_flags?: FeedbackSignal[]
+  standout_moments?: FeedbackSignal[]
   summary: string
 }
 
