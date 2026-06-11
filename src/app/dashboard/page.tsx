@@ -66,10 +66,10 @@ export default async function DashboardPage() {
       .limit(20),
     supabase
       .from('weak_areas')
-      .select('topic_tag, avg_score, session_count')
+      .select('topic_tag, avg_score, session_count, last_updated')
       .eq('user_id', authUser.id)
       .order('avg_score', { ascending: true })
-      .limit(3),
+      .limit(8),  // fetch 8, filter logistics topics client-side, display top 5
   ])
 
   const sessionIds = (sessions ?? []).map((s: InterviewSession) => s.id)
@@ -469,40 +469,82 @@ export default async function DashboardPage() {
         <StudyPlanWidget />
 
         {/* Weak areas / focus topics — with "Practice This" links */}
-        {weakAreas && weakAreas.length > 0 && (
-          <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl overflow-hidden mb-8 transition-all duration-200">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-2">
-              <Target className="w-4 h-4 text-amber-600" />
-              <h2 className="font-semibold text-gray-900">Focus Areas</h2>
-              <span className="text-xs text-gray-400 ml-1">topics to practice more</span>
-            </div>
-            <div className="px-6 py-4 flex flex-wrap gap-3">
-              {(weakAreas as Array<{topic_tag: string; avg_score: number; session_count: number}>).map((wa) => {
-                const pct = Math.round((wa.avg_score / 5) * 100)
-                const color = pct >= 60
-                  ? 'text-emerald-600 bg-emerald-50 border-emerald-200'
-                  : pct >= 40
-                    ? 'text-amber-600 bg-amber-50 border-amber-200'
-                    : 'text-red-600 bg-red-50 border-red-200'
-                const roundType = topicToRoundType(wa.topic_tag)
-                return (
-                  <div key={wa.topic_tag} className={`border rounded-xl px-4 py-3 flex items-center gap-4 ${color}`}>
-                    <div>
-                      <div className="font-medium text-sm capitalize">{wa.topic_tag.replace(/_/g, ' ')}</div>
-                      <div className="text-xs opacity-60">{wa.session_count} session{wa.session_count !== 1 ? 's' : ''} · {pct}%</div>
+        {(() => {
+          // Exclude HR logistics topics — low scores there reflect circumstances
+          // (long notice period, high salary expectation), not improvable skill gaps.
+          const NON_PRACTICE_TOPICS = new Set(['notice_period', 'salary_negotiation'])
+          type WeakArea = { topic_tag: string; avg_score: number; session_count: number; last_updated: string | null }
+          const practiceAreas = ((weakAreas ?? []) as WeakArea[])
+            .filter(wa => !NON_PRACTICE_TOPICS.has(wa.topic_tag))
+            .slice(0, 5)
+          if (practiceAreas.length === 0) return null
+          return (
+            <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl overflow-hidden mb-8 transition-all duration-200">
+              <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-2">
+                <Target className="w-4 h-4 text-amber-600" />
+                <h2 className="font-semibold text-gray-900">Focus Areas</h2>
+                <span className="text-xs text-gray-400 ml-1">topics to practice more</span>
+              </div>
+              <div className="px-6 py-4 flex flex-col gap-3">
+                {practiceAreas.map((wa) => {
+                  const pct = Math.round((wa.avg_score / 5) * 100)
+                  const isLowConfidence = wa.session_count <= 2
+                  const daysSinceUpdate = wa.last_updated
+                    ? Math.floor((Date.now() - new Date(wa.last_updated).getTime()) / 86_400_000)
+                    : null
+                  const isStale = daysSinceUpdate !== null && daysSinceUpdate >= 30
+                  const roundType = topicToRoundType(wa.topic_tag)
+                  const colorBg = pct >= 60
+                    ? 'bg-emerald-50 border-emerald-200'
+                    : pct >= 40
+                      ? 'bg-amber-50 border-amber-200'
+                      : 'bg-red-50 border-red-200'
+                  const scoreColor = pct >= 60 ? 'text-emerald-700' : pct >= 40 ? 'text-amber-700' : 'text-red-700'
+                  const metaColor = pct >= 60 ? 'text-emerald-500' : pct >= 40 ? 'text-amber-500' : 'text-red-400'
+                  return (
+                    <div key={wa.topic_tag} className={`border rounded-xl px-4 py-3 ${colorBg}`}>
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className={`font-semibold text-sm capitalize ${scoreColor}`}>
+                            {wa.topic_tag.replace(/_/g, ' ')}
+                          </div>
+                          <div className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5 text-xs ${metaColor}`}>
+                            <span className="font-medium">{wa.avg_score.toFixed(1)}/5</span>
+                            <span className="opacity-60">·</span>
+                            <span>{pct}% score</span>
+                            <span className="opacity-60">·</span>
+                            <span>{wa.session_count} session{wa.session_count !== 1 ? 's' : ''}</span>
+                            {isStale && (
+                              <>
+                                <span className="opacity-60">·</span>
+                                <span className="text-gray-400 italic">
+                                  last seen {daysSinceUpdate! >= 60
+                                    ? `${Math.floor(daysSinceUpdate! / 30)}mo ago`
+                                    : `${daysSinceUpdate}d ago`}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                          {isLowConfidence && (
+                            <p className="text-xs text-gray-400 mt-1">
+                              Based on {wa.session_count === 1 ? '1 session' : '2 sessions'} — practice more to confirm
+                            </p>
+                          )}
+                        </div>
+                        <Link
+                          href={`/interview/setup?round_type=${roundType}`}
+                          className={`flex-shrink-0 flex items-center gap-1 text-xs font-semibold bg-white/70 border ${scoreColor} border-current rounded-lg px-2.5 py-1.5 hover:bg-white transition-colors whitespace-nowrap`}
+                        >
+                          Practice <ArrowRight className="w-3 h-3" />
+                        </Link>
+                      </div>
                     </div>
-                    <Link
-                      href={`/interview/setup?round_type=${roundType}`}
-                      className="flex items-center gap-1 text-xs font-semibold bg-gray-100 border border-current rounded-lg px-2.5 py-1.5 hover:bg-gray-200 transition-colors whitespace-nowrap"
-                    >
-                      Practice <ArrowRight className="w-3 h-3" />
-                    </Link>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
 
         {/* Performance by Round — per-round-type avg score breakdown */}
         {roundPerfEntries.length > 0 && (
