@@ -132,6 +132,53 @@ export default async function DashboardPage() {
     full_loop: 'Full Loop',
   }
 
+  const roundBadgeStyle: Record<string, string> = {
+    tech_l1:    'bg-indigo-50 text-indigo-700 border-indigo-200',
+    tech_l2:    'bg-violet-50 text-violet-700 border-violet-200',
+    managerial: 'bg-blue-50 text-blue-700 border-blue-200',
+    hr:         'bg-emerald-50 text-emerald-700 border-emerald-200',
+    full_loop:  'bg-orange-50 text-orange-700 border-orange-200',
+  }
+
+  function relativeDate(dateStr: string | null): string {
+    if (!dateStr) return '—'
+    const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86_400_000)
+    if (diff === 0) return 'Today'
+    if (diff === 1) return 'Yesterday'
+    if (diff < 7)  return `${diff} days ago`
+    if (diff < 30) return `${Math.floor(diff / 7)}w ago`
+    return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+  }
+
+  // Recent avg: last 5 sessions with reports (chronological order, most recent at end)
+  const last5 = sessionsWithReports.slice(-5)
+  const recentAvgScore: number | null = last5.length > 0
+    ? Math.round(last5.reduce((a, s) => a + scoreOf(s), 0) / last5.length)
+    : null
+
+  // Per-round-type avg score aggregated from all sessions with reports
+  const roundPerf: Record<string, { totalScore: number; count: number }> = {}
+  for (const s of (sessions ?? []) as InterviewSession[]) {
+    const rp = reportMap.get(s.id) as { overall_score: number | null } | undefined
+    if (!rp || rp.overall_score == null) continue
+    if (!roundPerf[s.round_type]) roundPerf[s.round_type] = { totalScore: 0, count: 0 }
+    roundPerf[s.round_type].totalScore += rp.overall_score
+    roundPerf[s.round_type].count++
+  }
+  const roundPerfEntries = Object.entries(roundPerf)
+    .map(([rt, { totalScore, count }]) => ({ roundType: rt, avgScore: Math.round(totalScore / count), count }))
+    .sort((a, b) => b.count - a.count)
+
+  // Smart recommendation: weakest topic drives the recommended round type
+  const recommendedRound: RoundType | null =
+    weakAreas && weakAreas.length > 0
+      ? topicToRoundType((weakAreas as Array<{ topic_tag: string }>)[0].topic_tag)
+      : null
+  const recommendedTopic: string | null =
+    weakAreas && weakAreas.length > 0
+      ? (weakAreas as Array<{ topic_tag: string }>)[0].topic_tag.replace(/_/g, ' ')
+      : null
+
   return (
     <div className="min-h-screen bg-slate-50">
       <FingerprintCapture />
@@ -181,18 +228,25 @@ export default async function DashboardPage() {
             <h1 className="text-2xl font-bold text-gray-900">
               Welcome back, {authUser.user_metadata?.full_name?.split(' ')[0] ?? 'there'}
             </h1>
-            <p className="text-gray-600 text-sm mt-1">Ready for your next practice interview?</p>
+            <p className="text-gray-600 text-sm mt-1">
+              {recommendedRound
+                ? <>Recommended: <span className="font-semibold text-indigo-700">{roundLabels[recommendedRound]}</span> round</>
+                : 'Ready for your next practice interview?'}
+            </p>
+            {recommendedRound && recommendedTopic && (
+              <p className="text-xs text-indigo-500 mt-0.5">Improve your <span className="font-medium">{recommendedTopic}</span> score</p>
+            )}
             <div className="mt-3">
               <EnableReminders />
             </div>
           </div>
           {creditBalance > 0 ? (
             <Link
-              href="/interview/setup"
+              href={recommendedRound ? `/interview/setup?round_type=${recommendedRound}` : '/interview/setup'}
               className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl font-semibold transition-all duration-200 text-sm whitespace-nowrap"
             >
               <Plus className="w-4 h-4" />
-              Start New Interview
+              {recommendedRound ? `Practice ${roundLabels[recommendedRound]}` : 'Start New Interview'}
             </Link>
           ) : (
             <Link
@@ -279,14 +333,7 @@ export default async function DashboardPage() {
               <div>
                 <div className="flex items-end gap-1">
                   <div className="text-2xl font-bold text-gray-900">
-                    {reports && reports.length > 0
-                      ? (() => {
-                          const valid = (reports as Array<{overall_score: number | null}>).filter(r => r.overall_score !== null)
-                          return valid.length > 0
-                            ? Math.round(valid.reduce((a, r) => a + (r.overall_score as number), 0) / valid.length)
-                            : '—'
-                        })()
-                      : '—'}
+                    {recentAvgScore ?? '—'}
                   </div>
                   {progressDelta !== null && progressDelta !== 0 && (
                     <div className={`text-sm font-semibold mb-0.5 ${progressDelta > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
@@ -295,7 +342,7 @@ export default async function DashboardPage() {
                   )}
                 </div>
                 <div className="text-xs text-gray-500">
-                  Avg score
+                  Recent avg
                   {progressDelta !== null
                     ? ' · trend'
                     : sessionsUntilTrend !== null
@@ -360,9 +407,9 @@ export default async function DashboardPage() {
               )}
             </div>
             <svg
-              viewBox="0 0 300 60"
+              viewBox="0 0 300 80"
               width="100%"
-              height="60"
+              height="80"
               preserveAspectRatio="none"
               className="overflow-visible"
               role="img"
@@ -374,22 +421,22 @@ export default async function DashboardPage() {
                   <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
                 </linearGradient>
               </defs>
-              {[25, 50, 75].map((score) => {
-                const y = ((100 - score) / 100) * 52 + 4
+              {[0, 25, 50, 75, 100].map((score) => {
+                const y = ((100 - score) / 100) * 68 + 8
                 return (
                   <g key={score}>
-                    <line x1="0" y1={y} x2="290" y2={y} stroke="#e5e7eb" strokeWidth="1" />
-                    <text x="295" y={y + 3} fontSize="7" fill="#374151" textAnchor="start">{score}</text>
+                    <line x1="0" y1={y} x2="285" y2={y} stroke="#e5e7eb" strokeWidth="1" />
+                    <text x="290" y={score === 0 ? y - 2 : y + 3} fontSize="7" fill="#9ca3af" textAnchor="start">{score}</text>
                   </g>
                 )
               })}
               <polygon
                 fill="url(#chartFill)"
-                points={`0,60 ${chartData.map((d, i) => {
+                points={`0,80 ${chartData.map((d, i) => {
                   const x = (i / (chartData.length - 1)) * 300
-                  const y = ((100 - d.score) / 100) * 52 + 4
+                  const y = ((100 - d.score) / 100) * 68 + 8
                   return `${x},${y}`
-                }).join(' ')} 300,60`}
+                }).join(' ')} 300,80`}
               />
               <polyline
                 fill="none"
@@ -400,14 +447,14 @@ export default async function DashboardPage() {
                 points={chartData
                   .map((d, i) => {
                     const x = chartData.length === 1 ? 150 : (i / (chartData.length - 1)) * 300
-                    const y = ((100 - d.score) / 100) * 52 + 4
+                    const y = ((100 - d.score) / 100) * 68 + 8
                     return `${x},${y}`
                   })
                   .join(' ')}
               />
               {chartData.map((d, i) => {
                 const x = chartData.length === 1 ? 150 : (i / (chartData.length - 1)) * 300
-                const y = ((100 - d.score) / 100) * 52 + 4
+                const y = ((100 - d.score) / 100) * 68 + 8
                 return <circle key={i} cx={x} cy={y} r="3" fill="#6366f1" />
               })}
             </svg>
@@ -450,6 +497,50 @@ export default async function DashboardPage() {
                     >
                       Practice <ArrowRight className="w-3 h-3" />
                     </Link>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Performance by Round — per-round-type avg score breakdown */}
+        {roundPerfEntries.length > 0 && (
+          <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl overflow-hidden mb-8 transition-all duration-200">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-violet-600" />
+              <h2 className="font-semibold text-gray-900">Performance by Round</h2>
+              <span className="text-xs text-gray-400 ml-1">avg score per round type</span>
+            </div>
+            <div className="px-6 py-4 flex flex-col gap-3">
+              {roundPerfEntries.map(({ roundType, avgScore, count }) => {
+                const barColor: Record<string, string> = {
+                  tech_l1: 'bg-indigo-500', tech_l2: 'bg-violet-500',
+                  managerial: 'bg-blue-500', hr: 'bg-emerald-500', full_loop: 'bg-orange-500',
+                }
+                const labelColor: Record<string, string> = {
+                  tech_l1: 'text-indigo-700', tech_l2: 'text-violet-700',
+                  managerial: 'text-blue-700', hr: 'text-emerald-700', full_loop: 'text-orange-700',
+                }
+                return (
+                  <div key={roundType}>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs font-semibold ${labelColor[roundType] ?? 'text-gray-700'}`}>
+                          {roundLabels[roundType] ?? roundType}
+                        </span>
+                        <span className="text-xs text-gray-400">{count} session{count !== 1 ? 's' : ''}</span>
+                      </div>
+                      <span className={`text-sm font-bold ${avgScore >= 75 ? 'text-emerald-600' : avgScore >= 55 ? 'text-amber-600' : 'text-red-600'}`}>
+                        {avgScore}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-2">
+                      <div
+                        className={`${barColor[roundType] ?? 'bg-gray-400'} h-2 rounded-full transition-all duration-500`}
+                        style={{ width: `${avgScore}%` }}
+                      />
+                    </div>
                   </div>
                 )
               })}
@@ -519,20 +610,14 @@ export default async function DashboardPage() {
                       <div className="font-medium text-gray-900 text-sm">
                         {session.company} — {session.role}
                       </div>
-                      <div className="flex items-center gap-3 mt-0.5">
-                        <span className="text-xs text-gray-500">
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${roundBadgeStyle[session.round_type] ?? 'bg-gray-50 text-gray-600 border-gray-200'}`}>
                           {roundLabels[session.round_type] ?? session.round_type}
                         </span>
                         <span className="text-xs text-gray-400">•</span>
                         <span className="text-xs text-gray-500 flex items-center gap-1">
                           <Clock className="w-3 h-3" />
-                          {session.ended_at
-                            ? new Date(session.ended_at).toLocaleDateString('en-IN', {
-                                day: 'numeric',
-                                month: 'short',
-                                year: 'numeric',
-                              })
-                            : '—'}
+                          {relativeDate(session.ended_at)}
                         </span>
                       </div>
                     </div>
@@ -545,7 +630,11 @@ export default async function DashboardPage() {
                           }`}>
                             {(report as {overall_score: number}).overall_score}
                           </div>
-                          <div className="text-xs text-gray-400">score</div>
+                          <div className="text-xs text-gray-400">
+                            {(report as {selection_probability: number | null}).selection_probability != null
+                              ? `${(report as {selection_probability: number}).selection_probability}% select`
+                              : 'score'}
+                          </div>
                         </div>
                       )}
                       <Link
