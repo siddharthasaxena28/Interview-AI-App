@@ -367,6 +367,12 @@ export async function POST(request: NextRequest) {
     // Also suppress dynamic question when probing (probe already handles the follow-up)
     if (evaluation.probe) evaluation.suggested_next_question = ''
 
+    // Enforce skip scoring rule server-side regardless of what the LLM returned.
+    // The rubric says difficulty 1-2 → score 1, difficulty 3-5 → score 2.
+    if (evaluation.candidate_wants_to_skip) {
+      evaluation.score = q.difficulty <= 2 ? 1 : 2
+    }
+
     const score = Math.min(5, Math.max(1, evaluation.score ?? 3))
 
     // Candidate trailed off mid-answer — play a brief encouragement and stay on the

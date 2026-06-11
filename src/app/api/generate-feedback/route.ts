@@ -325,11 +325,22 @@ export async function POST(request: NextRequest) {
       try {
         const arrMatch = perQContent.text.match(/\[[\s\S]*\]/)
         perQuestionFeedback = JSON.parse(arrMatch ? arrMatch[0] : perQContent.text)
-        // Re-assign question_ids by position — safety net if Claude echoed IDs incorrectly
-        perQuestionFeedback = perQuestionFeedback.map((pq, i) => ({
-          ...pq,
-          question_id: orderedQuestions[i]?.id ?? pq.question_id,
-        }))
+        // Re-assign question_ids and pin scores to DB values by position.
+        // The per-question call is told to copy pre_scored scores unchanged, but
+        // pinning here guarantees per_question_json matches what actually fed the
+        // weighted-average anchor — so the displayed question scores are always
+        // internally consistent with the overall_score shown to the candidate.
+        perQuestionFeedback = perQuestionFeedback.map((pq, i) => {
+          const qItem = orderedQuestions[i]
+          const dbScore = qItem ? (answerMap.get(qItem.id)?.score ?? null) : null
+          return {
+            ...pq,
+            question_id: qItem?.id ?? pq.question_id,
+            score: dbScore != null
+              ? Math.min(5, Math.max(1, dbScore))
+              : Math.min(5, Math.max(1, Math.round(pq.score ?? 3))),
+          }
+        })
       } catch {
         console.error('Per-question parse failed. stop_reason:', perQMessage.stop_reason, '— output length:', perQContent.text.length)
         // Fall back: build minimal per-question from DB scores
