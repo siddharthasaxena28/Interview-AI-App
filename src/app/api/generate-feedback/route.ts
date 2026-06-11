@@ -384,20 +384,35 @@ export async function POST(request: NextRequest) {
           ...pq,
           score: Math.min(5, Math.max(1, Math.round(pq.score ?? 3))),
         })),
-        // All communication sub-scores must be 0-100. Clamp here because only
-        // overall_score and selection_probability were previously guarded — the
-        // communication object was written raw, allowing out-of-range values.
-        communication_score: Math.min(100, Math.max(0, Math.round(feedback.communication?.score ?? 0))),
-        communication_json: {
-          score:       Math.min(100, Math.max(0, Math.round(feedback.communication?.score       ?? 0))),
-          clarity:     Math.min(100, Math.max(0, Math.round(feedback.communication?.clarity     ?? 0))),
-          pacing:      Math.min(100, Math.max(0, Math.round(feedback.communication?.pacing      ?? 0))),
-          confidence:  Math.min(100, Math.max(0, Math.round(feedback.communication?.confidence  ?? 0))),
-          filler_words:Math.min(100, Math.max(0, Math.round(feedback.communication?.filler_words?? 0))),
-          clarity_note:      feedback.communication?.clarity_note      ?? '',
-          pacing_note:       feedback.communication?.pacing_note       ?? '',
-          confidence_note:   feedback.communication?.confidence_note   ?? '',
-          filler_note:       feedback.communication?.filler_note       ?? '',
+        // Communication sub-scores are clamped to 0-100 and the overall
+        // communication_score is computed as their straight average — NOT taken
+        // from the LLM's own "score" field. The LLM was free to contradict the
+        // sub-scores (e.g. Clarity 100, Pacing 95, Filler 95, Confidence 80 →
+        // overall 55) by penalising content quality inside a delivery metric.
+        // A deterministic average eliminates that class of inconsistency entirely.
+        communication_json: (() => {
+          const clarity      = Math.min(100, Math.max(0, Math.round(feedback.communication?.clarity      ?? 0)))
+          const pacing       = Math.min(100, Math.max(0, Math.round(feedback.communication?.pacing       ?? 0)))
+          const confidence   = Math.min(100, Math.max(0, Math.round(feedback.communication?.confidence   ?? 0)))
+          const filler_words = Math.min(100, Math.max(0, Math.round(feedback.communication?.filler_words ?? 0)))
+          const score        = Math.round((clarity + pacing + confidence + filler_words) / 4)
+          return {
+            score, clarity, pacing, confidence, filler_words,
+            clarity_note:    feedback.communication?.clarity_note    ?? '',
+            pacing_note:     feedback.communication?.pacing_note     ?? '',
+            confidence_note: feedback.communication?.confidence_note ?? '',
+            filler_note:     feedback.communication?.filler_note     ?? '',
+          }
+        })(),
+        // communication_score column mirrors communication_json.score (the same
+        // deterministic average) so both stay in sync.
+        get communication_score() {
+          const c = feedback.communication
+          const clarity      = Math.min(100, Math.max(0, Math.round(c?.clarity      ?? 0)))
+          const pacing       = Math.min(100, Math.max(0, Math.round(c?.pacing       ?? 0)))
+          const confidence   = Math.min(100, Math.max(0, Math.round(c?.confidence   ?? 0)))
+          const filler_words = Math.min(100, Math.max(0, Math.round(c?.filler_words ?? 0)))
+          return Math.round((clarity + pacing + confidence + filler_words) / 4)
         },
         red_flags_json: feedback.red_flags ?? [],
         standout_moments_json: feedback.standout_moments ?? [],
