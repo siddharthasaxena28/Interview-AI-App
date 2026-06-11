@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { scrubResumePII } from '@/lib/pii-scrub'
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024 // 5 MB
 
@@ -104,7 +105,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      return NextResponse.json({ text: text.slice(0, 8000) })
+      return NextResponse.json({ text: scrubResumePII(text).slice(0, 8000) })
     }
 
     // --- File upload mode (multipart/form-data) ---
@@ -145,7 +146,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    return NextResponse.json({ text: text.slice(0, 8000) })
+    return NextResponse.json({ text: scrubResumePII(text).slice(0, 8000) })
   } catch (error) {
     console.error('parse-resume error:', error)
     return NextResponse.json({ error: 'Failed to parse resume.' }, { status: 500 })

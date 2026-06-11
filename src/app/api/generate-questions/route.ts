@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { getQuestionCount } from '@/lib/personas'
+import { scrubResumePII } from '@/lib/pii-scrub'
 import type { RoundType } from '@/types'
 
 const client = new Anthropic()
@@ -13,6 +14,7 @@ Given a job description, company name, role, candidate experience level, round t
 Requirements:
 - Questions must reference the actual JD skills and technologies
 - If a résumé is provided, ground several questions in the candidate's ACTUAL projects, skills and experience — name their specific projects/technologies, just like a real interviewer who has read their CV. Mix these with JD-driven questions.
+- Personal contact information (name, email, phone number, address, social profile URLs) has been removed from the résumé before it reaches you. Use only technical skills, work experience, projects, and technologies when personalising questions — do not attempt to infer or reference the candidate's personal identity.
 - Research what the specified company typically asks — reference their known interview culture
 - Start at difficulty level 2 and escalate gradually, reaching difficulty 4-5 by roughly the final quarter of the set
 - Match the round type persona:
@@ -147,7 +149,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Résumé is optional and used only to personalise question generation (not stored).
-    const resume = (resume_text ?? '').trim().slice(0, 6000)
+    // Scrub PII (email, phone, social URLs) before the text reaches the LLM — covers
+    // both the file-upload path (already scrubbed in parse-resume) and manual text paste.
+    const resume = scrubResumePII((resume_text ?? '').trim()).slice(0, 6000)
 
     // full_loop spans all four sub-domains (tech_l1/tech_l2/managerial/hr), so it
     // needs more questions than a single focused round for comparable per-domain depth.
