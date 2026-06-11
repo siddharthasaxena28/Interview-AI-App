@@ -220,7 +220,7 @@ export default async function FeedbackPage({
   const selectionFactors: string[] = (r.selection_factors_json as string[] | null) ?? []
   const benchmarkLabel = benchmarkIsLive
     ? `Average across ${benchmarkSampleSize} InterviewAI candidates for ${getRoundLabel(s.round_type as RoundType)}:`
-    : `Estimated industry average for ${getRoundLabel(s.round_type as RoundType)}:`
+    : `InterviewAI platform baseline for ${getRoundLabel(s.round_type as RoundType)} (limited data):`
 
   return (
     <div className="min-h-screen bg-slate-50">

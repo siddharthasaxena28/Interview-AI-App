@@ -61,27 +61,31 @@ Candidate's answer:
     if (text.type !== 'text') throw new Error('Unexpected response')
 
     let result: { score: number; one_line: string; missing: string }
+    let parsedOk = true
     try {
       const m = text.text.match(/\{[\s\S]*\}/)
       result = JSON.parse(m ? m[0] : text.text)
     } catch {
-      result = { score: 3, one_line: 'Keep practicing!', missing: '' }
+      parsedOk = false
+      console.error('drill-evaluate parse error — raw:', text.text.slice(0, 200))
+      result = { score: 3, one_line: 'Feedback unavailable — please try again.', missing: '' }
     }
 
     const score = Math.min(5, Math.max(1, result.score ?? 3))
 
-    // Feed drill scores into weak_areas so personalization improves over time.
-    // Uses the atomic upsert_weak_area RPC (see upsert_weak_area_migration.sql)
-    // instead of a JS read-modify-write, which would race with concurrent
-    // session completions for the same user+topic.
-    const normalizedTag = normalizeTopic(topic_tag ?? '')
-    if (normalizedTag) {
-      const { error: upsertErr } = await supabase.rpc('upsert_weak_area', {
-        p_user_id: user.id,
-        p_topic_tag: normalizedTag,
-        p_session_avg: score,
-      })
-      if (upsertErr) console.error('drill weak_areas upsert error:', normalizedTag, upsertErr)
+    // Only update weak_areas when we have a genuine LLM score. A fallback score
+    // of 3 from a parse failure must not be written — it would corrupt the rolling
+    // average with synthetic data that doesn't reflect the candidate's actual answer.
+    if (parsedOk) {
+      const normalizedTag = normalizeTopic(topic_tag ?? '')
+      if (normalizedTag) {
+        const { error: upsertErr } = await supabase.rpc('upsert_weak_area', {
+          p_user_id: user.id,
+          p_topic_tag: normalizedTag,
+          p_session_avg: score,
+        })
+        if (upsertErr) console.error('drill weak_areas upsert error:', normalizedTag, upsertErr)
+      }
     }
 
     return NextResponse.json({

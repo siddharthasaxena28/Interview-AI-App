@@ -373,14 +373,32 @@ export async function POST(request: NextRequest) {
     const [{ data: report, error: reportError }] = await Promise.all([
       supabase.from('feedback_reports').upsert({
         session_id,
-        overall_score: Math.min(100, Math.max(0, feedback.overall_score)),
-        selection_probability: Math.min(100, Math.max(0, feedback.selection_probability)),
+        overall_score: Math.min(100, Math.max(0, Math.round(feedback.overall_score ?? 0))),
+        selection_probability: Math.min(100, Math.max(0, Math.round(feedback.selection_probability ?? 0))),
         selection_factors_json: feedback.selection_factors,
         strengths_json: feedback.strengths,
         gaps_json: feedback.gaps,
-        per_question_json: feedback.per_question,
-        communication_score: feedback.communication.score,
-        communication_json: feedback.communication,
+        // Clamp every per-question score to 1-5. The per-question call is instructed
+        // to copy pre-scored values unchanged, but we validate defensively here.
+        per_question_json: (feedback.per_question ?? []).map(pq => ({
+          ...pq,
+          score: Math.min(5, Math.max(1, Math.round(pq.score ?? 3))),
+        })),
+        // All communication sub-scores must be 0-100. Clamp here because only
+        // overall_score and selection_probability were previously guarded — the
+        // communication object was written raw, allowing out-of-range values.
+        communication_score: Math.min(100, Math.max(0, Math.round(feedback.communication?.score ?? 0))),
+        communication_json: {
+          score:       Math.min(100, Math.max(0, Math.round(feedback.communication?.score       ?? 0))),
+          clarity:     Math.min(100, Math.max(0, Math.round(feedback.communication?.clarity     ?? 0))),
+          pacing:      Math.min(100, Math.max(0, Math.round(feedback.communication?.pacing      ?? 0))),
+          confidence:  Math.min(100, Math.max(0, Math.round(feedback.communication?.confidence  ?? 0))),
+          filler_words:Math.min(100, Math.max(0, Math.round(feedback.communication?.filler_words?? 0))),
+          clarity_note:      feedback.communication?.clarity_note      ?? '',
+          pacing_note:       feedback.communication?.pacing_note       ?? '',
+          confidence_note:   feedback.communication?.confidence_note   ?? '',
+          filler_note:       feedback.communication?.filler_note       ?? '',
+        },
         red_flags_json: feedback.red_flags ?? [],
         standout_moments_json: feedback.standout_moments ?? [],
         report_text: feedback.summary,

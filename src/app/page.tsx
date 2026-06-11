@@ -20,7 +20,7 @@ export default async function LandingPage() {
   const completedCount = sessionCount ?? 0
   const displayCount = completedCount >= 1000
     ? `${Math.floor(completedCount / 1000)}k+`
-    : completedCount > 0 ? `${completedCount}+` : '1,000+'
+    : `${completedCount}+`
 
   const dashboardHref = '/dashboard'
   const signupHref = '/auth/login'
