@@ -470,9 +470,6 @@ function SetupPageInner() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-gray-900">Full Interview</span>
-                      <span className="text-xs font-semibold bg-indigo-600 text-white px-2 py-0.5 rounded-full">
-                        Recommended
-                      </span>
                       <span className="text-xs text-gray-500 ml-auto">26 questions · ~60 min · 1 credit</span>
                     </div>
                     <p className="text-sm text-gray-600 mt-1 leading-relaxed">
