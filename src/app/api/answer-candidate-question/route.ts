@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { checkRateLimit } from '@/lib/rate-limit'
 import { PERSONA_SPEECH_STYLE } from '@/lib/personas'
 import type { RoundType } from '@/types'
 
@@ -25,6 +26,11 @@ export async function POST(request: NextRequest) {
 
     if (!question || !session_id) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+
+    // Candidates ask a handful of questions per interview at most.
+    if (!await checkRateLimit(`candidate-q:${user.id}`, 30, 3_600_000)) {
+      return NextResponse.json({ error: 'Rate limit exceeded. Try again later.' }, { status: 429 })
     }
 
     const { data: session } = await supabase

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { waitUntil } from '@vercel/functions'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { checkRateLimit } from '@/lib/rate-limit'
 import { PERSONA_SPEECH_STYLE } from '@/lib/personas'
 import type { Question, RoundType } from '@/types'
 
@@ -259,6 +260,12 @@ export async function POST(request: NextRequest) {
 
     if (!transcript || !question_id || !session_id) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+
+    // A full_loop interview is ~26 questions + probes + clarifications; 80/hr
+    // covers two full sessions while capping replay abuse on this (expensive) route.
+    if (!await checkRateLimit(`eval:${user.id}`, 80, 3_600_000)) {
+      return NextResponse.json({ error: 'Rate limit exceeded. Try again later.' }, { status: 429 })
     }
 
     // Cap what we send to the model to ~3 min of speech — prevents prompt

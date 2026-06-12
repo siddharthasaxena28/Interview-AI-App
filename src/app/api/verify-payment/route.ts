@@ -83,8 +83,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Payment verification failed' }, { status: 500 })
     }
 
-    // First time for this payment — grant the credits atomically.
-    await svc.rpc('increment_user_credits', { p_user_id: user.id, p_amount: credits })
+    // First time for this payment — grant the credits. If the balance bump
+    // fails, release the idempotency lock (delete the txn row) so a retry can
+    // re-attempt the grant; otherwise the retry would hit the unique index and
+    // report "alreadyCredited" without the balance ever having been updated.
+    const { error: balErr } = await svc.rpc('increment_user_credits', { p_user_id: user.id, p_amount: credits })
+    if (balErr) {
+      console.error('verify-payment credit grant failed — rolling back txn row:', balErr)
+      await svc.from('credit_transactions').delete().eq('razorpay_payment_id', razorpay_payment_id)
+      return NextResponse.json({ error: 'Payment verification failed — please retry' }, { status: 500 })
+    }
     await svc.from('users').update({ plan: 'payg' }).eq('id', user.id)
 
     return NextResponse.json({ success: true, credits_granted: credits })

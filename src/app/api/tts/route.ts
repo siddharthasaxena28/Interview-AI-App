@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { checkRateLimit } from '@/lib/rate-limit'
 import type { RoundType } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -78,6 +79,12 @@ export async function POST(request: NextRequest) {
     const supabase = await createServerSupabaseClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    // A full interview uses ~40-60 TTS calls; 200/hr leaves generous headroom
+    // while capping the ElevenLabs spend a single account can generate.
+    if (!await checkRateLimit(`tts:${user.id}`, 200, 3_600_000)) {
+      return NextResponse.json({ error: 'Rate limit exceeded. Try again later.' }, { status: 429 })
+    }
 
     const { text: rawText, round_type, gender, voice_id } = await request.json() as {
       text: string

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { checkRateLimit } from '@/lib/rate-limit'
 import { PERSONA_SPEECH_STYLE } from '@/lib/personas'
 import type { RoundType } from '@/types'
 
@@ -22,6 +23,12 @@ export async function POST(request: NextRequest) {
     const supabase = await createServerSupabaseClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    // Two intro exchanges per session; the empty-spoken fallback means the
+    // client's scripted line takes over, so the interview never stalls.
+    if (!await checkRateLimit(`intro:${user.id}`, 20, 3_600_000)) {
+      return NextResponse.json({ spoken: '' })
+    }
 
     const { step, transcript, round_type, role, company } = await request.json() as {
       step: 1 | 3

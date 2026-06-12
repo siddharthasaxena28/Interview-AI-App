@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { checkRateLimit } from '@/lib/rate-limit'
 
 const client = new Anthropic()
 
@@ -9,6 +10,12 @@ export async function POST(request: NextRequest) {
     const supabase = await createServerSupabaseClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ should_interrupt: false })
+
+    // Fires during long answers — a full interview triggers at most a few dozen.
+    // Failing quietly (no interrupt) keeps the interview flowing.
+    if (!await checkRateLimit(`mid-check:${user.id}`, 120, 3_600_000)) {
+      return NextResponse.json({ should_interrupt: false })
+    }
 
     const { partial_transcript, question, session_id } = await request.json() as {
       partial_transcript: string

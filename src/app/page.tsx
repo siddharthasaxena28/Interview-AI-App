@@ -10,8 +10,10 @@ export const dynamic = 'force-dynamic'
 
 export default async function LandingPage() {
   const supabase = await createServerSupabaseClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const isLoggedIn = !!user
+  // getSession() reads the cookie locally — no network round-trip like getUser().
+  // This only personalises the nav button; real auth enforcement is in middleware.
+  const { data: { session: authSession } } = await supabase.auth.getSession()
+  const isLoggedIn = !!authSession
 
   const { count: sessionCount } = await supabase
     .from('interview_sessions')

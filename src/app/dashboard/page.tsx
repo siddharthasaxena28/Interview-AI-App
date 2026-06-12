@@ -52,14 +52,16 @@ export default async function DashboardPage() {
   // parallel rather than in series to cut ~3 sequential round-trips down to 1.
   const [
     { data: userData },
-    { data: sessions },
+    { data: sessionRows },
     { data: weakAreas },
   ] = await Promise.all([
     supabase.from('users').select('*').eq('id', authUser.id).single(),
-    // Fetch more sessions so we can compute progress comparison
+    // Fetch more sessions so we can compute progress comparison.
+    // Column list deliberately excludes jd_text — at up to 6 KB per row × 20
+    // rows it would dominate the payload without being used anywhere here.
     supabase
       .from('interview_sessions')
-      .select('*')
+      .select('id, company, role, round_type, status, started_at, ended_at, experience_years, user_id')
       .eq('user_id', authUser.id)
       .eq('status', 'completed')
       .order('ended_at', { ascending: false })
@@ -72,7 +74,10 @@ export default async function DashboardPage() {
       .limit(8),  // fetch 8, filter logistics topics client-side, display top 5
   ])
 
-  const sessionIds = (sessions ?? []).map((s: InterviewSession) => s.id)
+  // jd_text is intentionally not selected; everything this page touches is present.
+  const sessions = (sessionRows ?? []) as unknown as InterviewSession[]
+
+  const sessionIds = sessions.map((s: InterviewSession) => s.id)
 
   const { data: reports } = sessionIds.length > 0
     ? await supabase

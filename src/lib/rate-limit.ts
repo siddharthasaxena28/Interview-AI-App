@@ -6,22 +6,28 @@
 import { Redis } from '@upstash/redis'
 import { Ratelimit } from '@upstash/ratelimit'
 
-let _limiter: Ratelimit | null = null
+// One limiter per (max, window) config. A single shared instance would lock
+// every route to whichever config happened to construct it first.
+const _limiters = new Map<string, Ratelimit>()
+let _redis: Redis | null = null
 
 function getLimiter(max: number, windowMs: number): Ratelimit | null {
   const url = process.env.UPSTASH_REDIS_REST_URL
   const token = process.env.UPSTASH_REDIS_REST_TOKEN
   if (!url || !token) return null
 
-  if (!_limiter) {
-    const redis = new Redis({ url, token })
-    _limiter = new Ratelimit({
-      redis,
+  const cfgKey = `${max}:${windowMs}`
+  let limiter = _limiters.get(cfgKey)
+  if (!limiter) {
+    _redis ??= new Redis({ url, token })
+    limiter = new Ratelimit({
+      redis: _redis,
       limiter: Ratelimit.slidingWindow(max, `${windowMs}ms`),
       prefix: 'rl',
     })
+    _limiters.set(cfgKey, limiter)
   }
-  return _limiter
+  return limiter
 }
 
 // In-process fallback (single-instance only).

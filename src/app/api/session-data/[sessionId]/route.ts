@@ -25,6 +25,15 @@ export async function GET(
       return NextResponse.json({ error: 'Session not found' }, { status: 404 })
     }
 
+    // A completed session already has a frozen feedback report — re-running the
+    // leftover questions would append answers the report never accounts for.
+    if (session.status === 'completed' || session.status === 'abandoned') {
+      return NextResponse.json(
+        { error: 'This interview has already ended. View your report from the dashboard.' },
+        { status: 409 }
+      )
+    }
+
     // Plan + balance gate. Credits are NOT deducted here — only when the interview
     // is successfully completed (generate-feedback). This ensures interrupted or
     // errored sessions don't waste a credit.

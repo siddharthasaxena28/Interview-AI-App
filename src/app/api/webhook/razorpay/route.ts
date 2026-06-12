@@ -49,7 +49,14 @@ export async function POST(request: NextRequest) {
         })
 
         if (!txnError) {
-          await supabase.rpc('increment_user_credits', { p_user_id: userId, p_amount: credits })
+          const { error: balErr } = await supabase.rpc('increment_user_credits', { p_user_id: userId, p_amount: credits })
+          if (balErr) {
+            // Release the idempotency lock so Razorpay's webhook redelivery can
+            // re-attempt the grant instead of being swallowed by the unique index.
+            console.error('webhook credit grant failed — rolling back txn row:', balErr)
+            await supabase.from('credit_transactions').delete().eq('razorpay_payment_id', payment.id)
+            return NextResponse.json({ error: 'Credit grant failed' }, { status: 500 })
+          }
           await supabase.from('users').update({ plan: 'payg' }).eq('id', userId)
         } else if (txnError.code !== '23505') {
           console.error('webhook payment.captured txn error:', txnError)

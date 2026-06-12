@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { checkRateLimit } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,6 +32,12 @@ export async function GET() {
     const supabase = await createServerSupabaseClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    // Each call mints a 2-hour scoped Deepgram key; one per session + a few
+    // reconnects is normal. 20/hr caps key-minting abuse from a single account.
+    if (!await checkRateLimit(`dg-token:${user.id}`, 20, 3_600_000)) {
+      return NextResponse.json({ error: 'Rate limit exceeded. Try again later.' }, { status: 429 })
+    }
 
     const apiKey = process.env.DEEPGRAM_API_KEY
     if (!apiKey) {
