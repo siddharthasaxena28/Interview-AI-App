@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { withAuth, apiError } from '@/lib/api-handler'
+import { tracedMessage } from '@/lib/llm-metrics'
 import { getQuestionCount } from '@/lib/personas'
 import { scrubResumePII } from '@/lib/pii-scrub'
 import type { RoundType } from '@/types'
@@ -162,7 +163,7 @@ ${jd_text}
 ${resume ? `\nCandidate Résumé:\n${resume}\n` : ''}
 Generate ${questionCount} interview questions for this ${round_type} round at ${company}.${resume ? ' Ground several questions in the candidate\'s actual résumé projects and experience.' : ''}`
 
-    const message = await client.messages.create({
+    const message = await tracedMessage('generate-questions', client, {
       model: 'claude-sonnet-4-6',
       max_tokens: 4096,
       system: [

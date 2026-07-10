@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { withAuth, apiError } from '@/lib/api-handler'
+import { tracedMessage } from '@/lib/llm-metrics'
 import { normalizeTopic } from '@/lib/utils'
 
 const client = new Anthropic()
@@ -33,7 +34,7 @@ export const POST = withAuth('drill-evaluate', async ({ request, user, supabase 
     return apiError('Missing required fields', 400)
   }
 
-  const message = await client.messages.create({
+  const message = await tracedMessage('drill-evaluate', client, {
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 250,
     system: [{ type: 'text', text: DRILL_SYSTEM, cache_control: { type: 'ephemeral' } }],

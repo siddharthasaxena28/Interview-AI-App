@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { withAuth } from '@/lib/api-handler'
+import { tracedMessage } from '@/lib/llm-metrics'
 import { checkRateLimit } from '@/lib/rate-limit'
 
 const client = new Anthropic()
@@ -41,7 +42,7 @@ export const POST = withAuth('mid-answer-check', async ({ request, user, supabas
     // Only consider interrupting on longer answers
     if (wordCount < 40) return NextResponse.json({ should_interrupt: false })
 
-    const message = await client.messages.create({
+    const message = await tracedMessage('mid-answer-check', client, {
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 80,
       messages: [{

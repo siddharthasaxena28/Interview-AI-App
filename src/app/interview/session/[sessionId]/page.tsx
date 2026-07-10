@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Mic, MicOff, PhoneOff, Volume2 } from 'lucide-react'
+import { Mic, MicOff, PhoneOff, Volume2, Keyboard } from 'lucide-react'
 import { useAudioStateMachine } from '@/hooks/useAudioStateMachine'
 import { useAnalytics } from '@/hooks/useAnalytics'
 import { formatDuration } from '@/lib/utils'
@@ -60,6 +60,10 @@ function SessionPageInner({ params }: SessionPageProps) {
   const [isDynamic, setIsDynamic] = useState(false)
   const [questionElapsed, setQuestionElapsed] = useState(0)
   const [answerLengthHint, setAnswerLengthHint] = useState<{ text: string; type: 'green' | 'amber' } | null>(null)
+  // Typed-answer fallback — the only way to answer for users who can't speak,
+  // and a rescue path when transcription is misbehaving.
+  const [showTypeInput, setShowTypeInput] = useState(false)
+  const [typedAnswer, setTypedAnswer] = useState('')
 
   const wsRef = useRef<WebSocket | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -267,13 +271,43 @@ function SessionPageInner({ params }: SessionPageProps) {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
         mediaStreamRef.current = stream
         setMicPermission('granted')
-      } catch {
+      } catch (err) {
+        analytics.capture('mic_permission_failed', {
+          stage: 'session',
+          error_name: err instanceof Error ? err.name : 'unknown',
+        })
         setMicPermission('denied')
         setError('Microphone access denied. Please allow microphone access and refresh.')
       }
     }
     requestMic()
+    // analytics ref is stable
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Keep the screen awake during the interview — on mobile, the screen locking
+  // suspends the AudioContext and silently kills the mic mid-answer. Re-acquire
+  // on visibilitychange because the lock auto-releases when the tab hides.
+  useEffect(() => {
+    if (!started) return
+    let lock: WakeLockSentinel | null = null
+    let released = false
+    async function acquire() {
+      try {
+        lock = await navigator.wakeLock?.request('screen') ?? null
+      } catch { /* unsupported or low battery — non-fatal */ }
+    }
+    acquire()
+    function onVisibility() {
+      if (document.visibilityState === 'visible' && !released) acquire()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      released = true
+      document.removeEventListener('visibilitychange', onVisibility)
+      lock?.release().catch(() => {})
+    }
+  }, [started])
 
   // Connect Deepgram WebSocket after the user clicks "Begin"
   // deepgramRetry is incremented to re-trigger this effect after a failed token fetch
@@ -295,7 +329,9 @@ function SessionPageInner({ params }: SessionPageProps) {
 
         let audioContext = audioContextRef.current
         if (!audioContext) {
-          audioContext = new AudioContext()
+          const AC = window.AudioContext
+            ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+          audioContext = new AC()
           audioContextRef.current = audioContext
         }
         if (audioContext.state === 'suspended') await audioContext.resume().catch(() => {})
@@ -762,6 +798,10 @@ function SessionPageInner({ params }: SessionPageProps) {
     } catch (err) {
       cancelSpeakRef.current = null
       console.error('[speakText] ElevenLabs TTS failed — using browser speech:', err)
+      analytics.capture('tts_fallback', {
+        session_id: sessionId,
+        error: err instanceof Error ? err.message.slice(0, 200) : 'unknown',
+      })
       // Browser speech as absolute last resort so the interview never goes silent
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         setTtsFallback(true)
@@ -1057,14 +1097,83 @@ function SessionPageInner({ params }: SessionPageProps) {
   }
 
   async function handleBegin() {
+    // iOS Safari only allows audio playback started from a user gesture, and
+    // the first interviewer line plays from ws.onopen — NOT a gesture. Playing
+    // a silent clip through the same <audio> element here, inside the click,
+    // "blesses" the element so later programmatic play() calls succeed.
+    if (audioRef.current) {
+      try {
+        audioRef.current.src =
+          'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA='
+        await audioRef.current.play().catch(() => {})
+        audioRef.current.pause()
+        audioRef.current.src = ''
+      } catch { /* unlock is best-effort */ }
+    }
+    // Same trick for the browser-speech fallback path.
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        const unlock = new SpeechSynthesisUtterance('')
+        unlock.volume = 0
+        window.speechSynthesis.speak(unlock)
+        window.speechSynthesis.cancel()
+      } catch { /* best-effort */ }
+    }
+
     try {
-      const ctx = new AudioContext({ sampleRate: 16000 })
+      // Older iOS exposes only the webkit-prefixed constructor.
+      const AC = window.AudioContext
+        ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+      const ctx = new AC({ sampleRate: 16000 })
       if (ctx.state === 'suspended') await ctx.resume()
       audioContextRef.current = ctx
     } catch {
       // setupAudioStreaming creates one as fallback
     }
     setStarted(true)
+  }
+
+  // Typed-answer path: routes the text exactly like a final spoken transcript
+  // from the UtteranceEnd handler — intro steps, candidate Q&A, or a normal
+  // answer — so the rest of the pipeline can't tell it wasn't spoken.
+  async function submitTypedAnswer() {
+    const text = typedAnswer.trim()
+    const sd = sessionData
+    if (!text || !sd || isProcessingRef.current || endingRef.current) return
+
+    isProcessingRef.current = true
+    setTypedAnswer('')
+    setShowTypeInput(false)
+    finalTranscriptRef.current = ''
+    liveTranscriptRef.current = ''
+    setFinalTranscript('')
+    setLiveTranscript('')
+    analytics.capture('typed_answer_submitted', { session_id: sessionId, phase: phaseRef.current })
+
+    if (phaseRef.current === 'intro') {
+      const step = introStepRef.current
+      if (step === 1) {
+        introStepRef.current = 3
+        setProcessing()
+        const fallback = `Good to know! Before we get started, could you give me a brief introduction — your background, your experience, and what drew you to apply for this ${sd.session.role} role at ${sd.session.company}?`
+        const spoken = await fetchIntroSpoken(1, text, fallback, sd)
+        await speakText(spoken)
+      } else if (step === 3) {
+        introTranscriptRef.current = text
+        phaseRef.current = 'interview'
+        setPhase('interview')
+        setProcessing()
+        const q = currentQuestionRef.current
+        const fallback = `Thanks for sharing that! Alright, let's get into it`
+        const spoken = await fetchIntroSpoken(3, text, fallback, sd)
+        await speakText(q ? `${spoken}... ${q.text}` : spoken)
+      }
+    } else if (phaseRef.current === 'candidate_questions') {
+      handleCandidateQuestionRef.current(text)
+    } else {
+      evalAutoRetriedRef.current = false
+      handleAnswerCompleteRef.current(text)
+    }
   }
 
   function endInterview(abandoned = false) {
@@ -1366,9 +1475,13 @@ function SessionPageInner({ params }: SessionPageProps) {
 
       {/* Main area */}
       <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-6 py-5 sm:py-8 gap-6 sm:gap-10 overflow-y-auto">
-        {/* Status indicator */}
-        <div className="flex items-center gap-2 sm:gap-3 bg-white/[0.04] border border-white/[0.08] rounded-full px-4 py-2">
-          <div className={`w-2 h-2 rounded-full ${stateColor[state]} ${state !== 'IDLE' ? 'animate-pulse' : ''}`} />
+        {/* Status indicator — aria-live so screen readers announce turn changes */}
+        <div
+          className="flex items-center gap-2 sm:gap-3 bg-white/[0.04] border border-white/[0.08] rounded-full px-4 py-2"
+          role="status"
+          aria-live="polite"
+        >
+          <div className={`w-2 h-2 rounded-full ${stateColor[state]} ${state !== 'IDLE' ? 'animate-pulse' : ''}`} aria-hidden="true" />
           <span className="text-gray-300 text-xs sm:text-sm font-medium">{stateLabel[state]}</span>
         </div>
 
@@ -1519,7 +1632,12 @@ function SessionPageInner({ params }: SessionPageProps) {
 
         {/* Live transcript */}
         {(liveTranscript || finalTranscript) && (
-          <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 sm:p-4 max-w-2xl w-full max-h-28 sm:max-h-none overflow-y-auto">
+          <div
+            className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 sm:p-4 max-w-2xl w-full max-h-28 sm:max-h-none overflow-y-auto"
+            role="log"
+            aria-live="polite"
+            aria-label="Live transcript of your answer"
+          >
             <div className="text-xs text-gray-500 mb-1.5 uppercase tracking-wider">Live transcript</div>
             <p className="text-gray-300 text-xs sm:text-sm leading-relaxed">
               {finalTranscript}
@@ -1542,8 +1660,56 @@ function SessionPageInner({ params }: SessionPageProps) {
         </div>
       )}
 
+      {/* Typed-answer fallback panel */}
+      {showTypeInput && (state === 'LISTENING' || state === 'USER_SPEAKING') && (
+        <div className="px-4 sm:px-6 py-3 border-t border-white/[0.06] bg-white/[0.02]">
+          <div className="max-w-2xl mx-auto flex flex-col gap-2">
+            <label htmlFor="typed-answer" className="text-xs text-gray-500 uppercase tracking-wider">
+              Type your answer
+            </label>
+            <textarea
+              id="typed-answer"
+              value={typedAnswer}
+              onChange={(e) => setTypedAnswer(e.target.value)}
+              rows={3}
+              autoFocus
+              placeholder="Type your answer here, then press Submit (or Ctrl+Enter)…"
+              className="w-full bg-white/[0.04] border border-white/[0.10] rounded-xl px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-none"
+              onKeyDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') submitTypedAnswer()
+              }}
+            />
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => { setShowTypeInput(false); setTypedAnswer('') }}
+                className="text-xs text-gray-500 hover:text-gray-300 px-3 py-1.5 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitTypedAnswer}
+                disabled={!typedAnswer.trim()}
+                className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 disabled:bg-white/[0.06] disabled:text-gray-600 text-white px-4 py-1.5 rounded-lg transition-colors"
+              >
+                Submit Answer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Controls */}
       <div className="px-4 sm:px-6 py-4 sm:py-5 border-t border-white/[0.06] flex items-center justify-center gap-2 sm:gap-4">
+        {(state === 'LISTENING' || state === 'USER_SPEAKING') && !showTypeInput && (
+          <button
+            onClick={() => setShowTypeInput(true)}
+            className="flex flex-col items-center gap-1 sm:gap-1.5 px-3 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-white/[0.06] text-gray-400 hover:bg-white/[0.10] border border-white/[0.08] hover:text-gray-200 transition-all duration-200"
+            aria-label="Type your answer instead of speaking"
+          >
+            <Keyboard className="w-4 h-4 sm:w-5 sm:h-5" />
+            <span className="text-[10px] sm:text-xs font-medium">Type</span>
+          </button>
+        )}
         <button
           onClick={() => setMuted((m) => { mutedRef.current = !m; return !m })}
           className={`flex flex-col items-center gap-1 sm:gap-1.5 px-3 sm:px-5 py-2.5 sm:py-3 rounded-2xl transition-all duration-200 ${

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { withAuth, apiError } from '@/lib/api-handler'
+import { tracedMessage } from '@/lib/llm-metrics'
 import { PERSONA_SPEECH_STYLE } from '@/lib/personas'
 import type { RoundType } from '@/types'
 
@@ -32,7 +33,7 @@ export const POST = withAuth('answer-candidate-question', async ({ request, user
 
   const personaStyle = PERSONA_SPEECH_STYLE[round_type] ?? 'Professional and conversational.'
 
-  const message = await client.messages.create({
+  const message = await tracedMessage('answer-candidate-question', client, {
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 300,
     messages: [

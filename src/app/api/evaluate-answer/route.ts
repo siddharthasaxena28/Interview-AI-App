@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { waitUntil } from '@vercel/functions'
 import { withAuth, apiError } from '@/lib/api-handler'
+import { tracedMessage } from '@/lib/llm-metrics'
 import { PERSONA_SPEECH_STYLE } from '@/lib/personas'
 import type { Question, RoundType } from '@/types'
 
@@ -288,7 +289,7 @@ export const POST = withAuth('evaluate-answer', async ({ request, user, supabase
   const personaStyle = PERSONA_SPEECH_STYLE[session.round_type as RoundType] ?? 'Professional and conversational.'
 
   // Score the answer with Claude Haiku
-  const message = await client.messages.create({
+  const message = await tracedMessage('evaluate-answer', client, {
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 400,
     system: [

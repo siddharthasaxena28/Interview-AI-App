@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { withAuth, apiError } from '@/lib/api-handler'
+import { tracedMessage } from '@/lib/llm-metrics'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { PERSONA_SPEECH_STYLE } from '@/lib/personas'
 import type { RoundType } from '@/types'
@@ -62,7 +63,7 @@ Reply out loud:
 1. React genuinely to something SPECIFIC they just mentioned (a skill, a past company, their years of experience, their motivation) so they can tell you were actually listening.
 2. Then add a short, natural bridge into the interview (e.g. "let's dive in" / "let's get started"). Do NOT ask an interview question yourself — another question will follow immediately after you speak.`
 
-    const message = await client.messages.create({
+    const message = await tracedMessage('interview-intro', client, {
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 200,
       system: [{ type: 'text', text: INTRO_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],

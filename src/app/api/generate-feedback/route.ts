@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { waitUntil } from '@vercel/functions'
 import { withAuth, apiError } from '@/lib/api-handler'
+import { tracedMessage } from '@/lib/llm-metrics'
 import { Resend } from 'resend'
 import { generateShareToken } from '@/lib/utils'
 import type { Question, Answer, FeedbackJSON } from '@/types'
@@ -286,7 +287,7 @@ export const POST = withAuth('generate-feedback', async ({ request, user, supaba
 
       // ── Two parallel Claude calls — wall-clock ≈ max(A, B) instead of A + B ──
       const [perQMessage, overallMessage] = await Promise.all([
-        client.messages.create({
+        tracedMessage('generate-feedback:per-question', client, {
           model: 'claude-haiku-4-5-20251001',
           // Per-question: worst case ~220 tokens × 26 questions (score + feedback + ideal_answer_hint
           // bullets for low-scoring answers) ≈ 5700 tokens. 6144 gives comfortable headroom.
@@ -297,7 +298,7 @@ export const POST = withAuth('generate-feedback', async ({ request, user, supaba
             content: `Interview: ${session.company} — ${session.role} (${session.round_type}), ${session.experience_years} yrs experience\nQuestions: ${qCount}\n\n${perQTranscript}\n\nGenerate per-question feedback. Use each pre_scored value unchanged.`,
           }],
         }),
-        client.messages.create({
+        tracedMessage('generate-feedback:overall', client, {
           model: 'claude-haiku-4-5-20251001',
           // Overall: ~1800 tokens (no per_question array). 2048 has comfortable headroom.
           max_tokens: 2048,

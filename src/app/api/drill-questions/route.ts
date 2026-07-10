@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { withAuth } from '@/lib/api-handler'
+import { tracedMessage } from '@/lib/llm-metrics'
 import { getDailyDrillQuestions, type DrillRoundFilter } from '@/lib/drill-questions'
 import { checkRateLimit } from '@/lib/rate-limit'
 import type { RoundType } from '@/types'
@@ -92,7 +93,7 @@ Generate 3 targeted practice questions grounded in the role and JD above.
 If weak areas are listed, at least one question must directly address them.
 Questions must feel specific to this role — not generic textbook problems.`
 
-    const message = await client.messages.create({
+    const message = await tracedMessage('drill-questions', client, {
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 800,
       system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
