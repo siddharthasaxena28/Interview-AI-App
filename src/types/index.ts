@@ -62,26 +62,29 @@ export interface Answer {
   recorded_at: string
 }
 
-export interface StrengthItem {
+// NOTE: these JSON-column payload shapes are `type` aliases (not interfaces) on
+// purpose — type aliases get an implicit index signature, which makes them
+// assignable to the Supabase `Json` column type without casts.
+export type StrengthItem = {
   title: string
   example: string
   advice: string
 }
 
-export interface GapItem {
+export type GapItem = {
   title: string
   example: string
   advice: string
 }
 
-export interface PerQuestionFeedback {
+export type PerQuestionFeedback = {
   question_id: string
   score: number
   feedback: string
   ideal_answer_hint?: string
 }
 
-export interface CommunicationFeedback {
+export type CommunicationFeedback = {
   score: number
   clarity: number
   clarity_note?: string
@@ -93,7 +96,7 @@ export interface CommunicationFeedback {
   filler_note?: string
 }
 
-export interface FeedbackSignal {
+export type FeedbackSignal = {
   signal: string
   detail: string
 }
