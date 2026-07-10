@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { withAuth, apiError } from '@/lib/api-handler'
 import { getQuestionCount } from '@/lib/personas'
 import { scrubResumePII } from '@/lib/pii-scrub'
 import type { RoundType } from '@/types'
@@ -82,15 +82,11 @@ function normalizeTag(raw: string, roundType: string): string {
   return allowed[0]
 }
 
-export async function POST(request: NextRequest) {
+// The catch stays inline (rather than falling through to withAuth's generic 500)
+// so generation failures keep surfacing their specific error message to the client
+// (e.g. 'Failed to parse questions from AI response').
+export const POST = withAuth('generate-questions', async ({ request, user, supabase }) => {
   try {
-    const supabase = await createServerSupabaseClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
     const body = await request.json()
     const { jd_text, company, role, experience_years, round_type, resume_text } = body as {
       jd_text: string
@@ -102,25 +98,25 @@ export async function POST(request: NextRequest) {
     }
 
     if (!jd_text || !company || !role || !round_type) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+      return apiError('Missing required fields', 400)
     }
 
     // Input length caps — server-side guards match client-side validation
     const VALID_ROUND_TYPES = ['tech_l1', 'tech_l2', 'managerial', 'hr', 'full_loop']
     if (!VALID_ROUND_TYPES.includes(round_type)) {
-      return NextResponse.json({ error: 'Invalid round_type' }, { status: 400 })
+      return apiError('Invalid round_type', 400)
     }
     if (typeof experience_years !== 'number' || isNaN(experience_years) || experience_years < 0 || experience_years > 50) {
-      return NextResponse.json({ error: 'Invalid experience_years' }, { status: 400 })
+      return apiError('Invalid experience_years', 400)
     }
     if (jd_text.length > 6000) {
-      return NextResponse.json({ error: 'Job description too long (max 6000 characters)' }, { status: 400 })
+      return apiError('Job description too long (max 6000 characters)', 400)
     }
     if (company.length > 200) {
-      return NextResponse.json({ error: 'Company name too long' }, { status: 400 })
+      return apiError('Company name too long', 400)
     }
     if (role.length > 200) {
-      return NextResponse.json({ error: 'Role too long' }, { status: 400 })
+      return apiError('Role too long', 400)
     }
 
     // Gate the paid generation: a user with no credits can't run the interview anyway,
@@ -132,7 +128,7 @@ export async function POST(request: NextRequest) {
       .eq('id', user.id)
       .single()
     if ((gateUser?.credit_balance ?? 0) <= 0) {
-      return NextResponse.json({ error: 'No credits available' }, { status: 402 })
+      return apiError('No credits available', 402)
     }
 
     const oneHourAgo = new Date(Date.now() - 3_600_000).toISOString()
@@ -142,10 +138,7 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id)
       .gte('created_at', oneHourAgo)
     if ((recentSetups ?? 0) >= 10) {
-      return NextResponse.json(
-        { error: 'Rate limit exceeded. Please try again in a little while.' },
-        { status: 429 }
-      )
+      return apiError('Rate limit exceeded. Please try again in a little while.', 429)
     }
 
     // Résumé is optional and used only to personalise question generation (not stored).
@@ -223,7 +216,7 @@ Generate ${questionCount} interview questions for this ${round_type} round at ${
       .single()
 
     if (sessionError || !session) {
-      return NextResponse.json({ error: 'Failed to create session' }, { status: 500 })
+      return apiError('Failed to create session', 500)
     }
 
     // Save questions to Supabase
@@ -257,9 +250,6 @@ Generate ${questionCount} interview questions for this ${round_type} round at ${
     return NextResponse.json({ session_id: session.id, questions: questionsToInsert })
   } catch (error) {
     console.error('generate-questions error:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
-      { status: 500 }
-    )
+    return apiError(error instanceof Error ? error.message : 'Internal server error', 500)
   }
-}
+})

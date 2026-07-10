@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { NextResponse } from 'next/server'
+import { withAuth, apiError } from '@/lib/api-handler'
 import { scrubResumePII } from '@/lib/pii-scrub'
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024 // 5 MB
@@ -32,25 +32,20 @@ async function extractTextFromDocx(buffer: Buffer): Promise<string> {
   return result.value.trim()
 }
 
-export async function POST(request: NextRequest) {
+// The catch stays inline (rather than falling through to withAuth's generic 500)
+// so parse failures keep returning the user-facing 'Failed to parse resume.' message.
+export const POST = withAuth('parse-resume', async ({ request }) => {
   try {
-    const supabase = await createServerSupabaseClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
     const contentType = request.headers.get('content-type') ?? ''
 
     // --- Google Drive / URL mode ---
     if (contentType.includes('application/json')) {
       const { url } = await request.json() as { url?: string }
-      if (!url) return NextResponse.json({ error: 'Missing url' }, { status: 400 })
+      if (!url) return apiError('Missing url', 400)
 
       const parsed = extractGoogleDriveId(url)
       if (!parsed) {
-        return NextResponse.json(
-          { error: 'Unrecognised Google Drive URL. Share the file as "Anyone with the link" and paste the share URL.' },
-          { status: 400 }
-        )
+        return apiError('Unrecognised Google Drive URL. Share the file as "Anyone with the link" and paste the share URL.', 400)
       }
 
       let downloadUrl: string
@@ -67,23 +62,20 @@ export async function POST(request: NextRequest) {
         signal: AbortSignal.timeout(15_000),
       })
       if (!driveRes.ok) {
-        return NextResponse.json(
-          { error: 'Could not download file. Make sure the file is shared as "Anyone with the link can view".' },
-          { status: 400 }
-        )
+        return apiError('Could not download file. Make sure the file is shared as "Anyone with the link can view".', 400)
       }
 
       // Reject before buffering if Content-Length exceeds the limit
       const contentLength = Number(driveRes.headers.get('content-length') ?? 0)
       if (contentLength > MAX_FILE_BYTES) {
-        return NextResponse.json({ error: 'File too large (max 5 MB).' }, { status: 413 })
+        return apiError('File too large (max 5 MB).', 413)
       }
 
       const driveContentType = driveRes.headers.get('content-type') ?? ''
       const buffer = Buffer.from(await driveRes.arrayBuffer())
 
       if (buffer.byteLength > MAX_FILE_BYTES) {
-        return NextResponse.json({ error: 'File too large (max 5 MB).' }, { status: 413 })
+        return apiError('File too large (max 5 MB).', 413)
       }
 
       let text = ''
@@ -98,10 +90,7 @@ export async function POST(request: NextRequest) {
         try {
           text = await extractTextFromPdf(buffer)
         } catch {
-          return NextResponse.json(
-            { error: 'Could not parse the file. Try downloading and uploading it directly.' },
-            { status: 422 }
-          )
+          return apiError('Could not parse the file. Try downloading and uploading it directly.', 422)
         }
       }
 
@@ -112,7 +101,7 @@ export async function POST(request: NextRequest) {
     const form = await request.formData()
     const file = form.get('file') as File | null
 
-    if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 })
+    if (!file) return apiError('No file provided', 400)
 
     const fileName = file.name.toLowerCase()
     const isPdf = fileName.endsWith('.pdf')
@@ -120,14 +109,11 @@ export async function POST(request: NextRequest) {
     const isDoc = fileName.endsWith('.doc')
 
     if (!isPdf && !isDocx && !isDoc) {
-      return NextResponse.json(
-        { error: 'Only PDF and Word documents (.pdf, .doc, .docx) are supported.' },
-        { status: 400 }
-      )
+      return apiError('Only PDF and Word documents (.pdf, .doc, .docx) are supported.', 400)
     }
 
     if (file.size > MAX_FILE_BYTES) {
-      return NextResponse.json({ error: 'File too large (max 5 MB).' }, { status: 413 })
+      return apiError('File too large (max 5 MB).', 413)
     }
 
     const buffer = Buffer.from(await file.arrayBuffer())
@@ -140,15 +126,12 @@ export async function POST(request: NextRequest) {
     }
 
     if (!text) {
-      return NextResponse.json(
-        { error: 'Could not extract text from file. Try a different format or paste the text manually.' },
-        { status: 422 }
-      )
+      return apiError('Could not extract text from file. Try a different format or paste the text manually.', 422)
     }
 
     return NextResponse.json({ text: scrubResumePII(text).slice(0, 8000) })
   } catch (error) {
     console.error('parse-resume error:', error)
-    return NextResponse.json({ error: 'Failed to parse resume.' }, { status: 500 })
+    return apiError('Failed to parse resume.', 500)
   }
-}
+})

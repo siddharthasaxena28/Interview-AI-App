@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { waitUntil } from '@vercel/functions'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { withAuth, apiError } from '@/lib/api-handler'
 import { Resend } from 'resend'
 import { generateShareToken } from '@/lib/utils'
 import type { Question, Answer, FeedbackJSON } from '@/types'
@@ -136,15 +136,11 @@ When round_type is full_loop: your "summary" must include one sentence per domai
 noting the candidate's relative strength or weakness in that domain. This gives the candidate
 a clear cross-domain picture of where to focus next.`
 
-export async function POST(request: NextRequest) {
+// The catch stays inline (rather than falling through to withAuth's generic 500)
+// so generation failures keep surfacing their specific error message to the client
+// (e.g. 'Failed to parse overall feedback from AI').
+export const POST = withAuth('generate-feedback', async ({ request, user, supabase }) => {
   try {
-    const supabase = await createServerSupabaseClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
     const { session_id, charge } = await request.json() as { session_id: string; charge?: boolean }
 
     // Fetch session, questions, answers, existing report, and user plan in parallel.
@@ -163,7 +159,7 @@ export async function POST(request: NextRequest) {
     ])
 
     if (!session) {
-      return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+      return apiError('Session not found', 404)
     }
 
     // Dedup: if a report already exists (e.g. from background pre-generation that fires
@@ -439,7 +435,7 @@ export async function POST(request: NextRequest) {
       console.error('Report save error:', reportError)
       // Do not charge credits when the report failed to save — the user would
       // lose a credit without getting a readable report.
-      return NextResponse.json({ error: 'Failed to save report' }, { status: 500 })
+      return apiError('Failed to save report', 500)
     }
 
     // Credit deduction is fast (~300 ms) and must be reliable — keep it before response.
@@ -462,12 +458,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ report, feedback })
   } catch (error) {
     console.error('generate-feedback error:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
-      { status: 500 }
-    )
+    return apiError(error instanceof Error ? error.message : 'Internal server error', 500)
   }
-}
+})
 
 // ── Side-effect helpers ────────────────────────────────────────────────────
 

@@ -1,16 +1,15 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { withAuth } from '@/lib/api-handler'
 import { checkRateLimit } from '@/lib/rate-limit'
 
 const client = new Anthropic()
 
-export async function POST(request: NextRequest) {
+// Rate limiting and errors are handled inline (not via withAuth opts) because this
+// route fails SOFT: it returns a 200 with { should_interrupt: false } instead of
+// 429/500 so the interview keeps flowing no matter what goes wrong here.
+export const POST = withAuth('mid-answer-check', async ({ request, user, supabase }) => {
   try {
-    const supabase = await createServerSupabaseClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ should_interrupt: false })
-
     // Fires during long answers — a full interview triggers at most a few dozen.
     // Failing quietly (no interrupt) keeps the interview flowing.
     if (!await checkRateLimit(`mid-check:${user.id}`, 120, 3_600_000)) {
@@ -85,4 +84,4 @@ Return ONLY valid JSON: { "should_interrupt": false } or { "should_interrupt": t
     console.error('mid-answer-check error:', error)
     return NextResponse.json({ should_interrupt: false })
   }
-}
+})

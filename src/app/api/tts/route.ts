@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createHash } from 'crypto'
 import { waitUntil } from '@vercel/functions'
-import { createServerSupabaseClient, createServiceClient } from '@/lib/supabase-server'
-import { checkRateLimit } from '@/lib/rate-limit'
+import { createServiceClient } from '@/lib/supabase-server'
+import { withAuth, apiError } from '@/lib/api-handler'
 import type { RoundType } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -91,18 +91,10 @@ async function generateSpeech(voiceId: string, text: string, apiKey: string): Pr
   return { response: lastRes, model: MODELS[0] }
 }
 
-export async function POST(request: NextRequest) {
+// The catch stays inline (rather than falling through to withAuth's generic 500)
+// so unexpected failures keep returning the debugging `detail` field.
+export const POST = withAuth('tts', async ({ request }) => {
   try {
-    const supabase = await createServerSupabaseClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    // A full interview uses ~40-60 TTS calls; 200/hr leaves generous headroom
-    // while capping the ElevenLabs spend a single account can generate.
-    if (!await checkRateLimit(`tts:${user.id}`, 200, 3_600_000)) {
-      return NextResponse.json({ error: 'Rate limit exceeded. Try again later.' }, { status: 429 })
-    }
-
     const { text: rawText, round_type, gender, voice_id } = await request.json() as {
       text: string
       round_type?: RoundType
@@ -110,13 +102,13 @@ export async function POST(request: NextRequest) {
       voice_id?: string
     }
 
-    if (!rawText) return NextResponse.json({ error: 'Missing text' }, { status: 400 })
+    if (!rawText) return apiError('Missing text', 400)
     const text = rawText.slice(0, 2000)
 
     const apiKey = process.env.ELEVENLABS_API_KEY
     if (!apiKey) {
       console.error('[TTS] ELEVENLABS_API_KEY is not set')
-      return NextResponse.json({ error: 'TTS not configured', detail: 'ELEVENLABS_API_KEY missing' }, { status: 503 })
+      return apiError('TTS not configured', 503, { detail: 'ELEVENLABS_API_KEY missing' })
     }
 
     // Resolve voice ID — env vars only, no account lookup
@@ -127,7 +119,7 @@ export async function POST(request: NextRequest) {
     if (!voiceIdToUse) {
       const detail = `No voice configured for round_type="${round_type}" gender="${gender}". Set ELEVENLABS_VOICE_* env vars in Vercel.`
       console.error(`[TTS] ${detail}`)
-      return NextResponse.json({ error: 'TTS not configured', detail }, { status: 503 })
+      return apiError('TTS not configured', 503, { detail })
     }
 
     // Cache lookup before hitting ElevenLabs. Any storage error (bucket
@@ -161,7 +153,7 @@ export async function POST(request: NextRequest) {
       const body = await response.text()
       const detail = `ElevenLabs ${response.status} — voice=${voiceIdToUse}: ${body.slice(0, 300)}`
       console.error(`[TTS] Failed: ${detail}`)
-      return NextResponse.json({ error: 'TTS generation failed', detail }, { status: 502 })
+      return apiError('TTS generation failed', 502, { detail })
     }
 
     const audioBuffer = await response.arrayBuffer()
@@ -190,6 +182,10 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
     console.error('[TTS] Unexpected error:', msg, error)
-    return NextResponse.json({ error: 'Internal server error', detail: msg }, { status: 500 })
+    return apiError('Internal server error', 500, { detail: msg })
   }
-}
+}, {
+  // A full interview uses ~40-60 TTS calls; 200/hr leaves generous headroom
+  // while capping the ElevenLabs spend a single account can generate.
+  rateLimit: { prefix: 'tts', max: 200, windowMs: 3_600_000 },
+})

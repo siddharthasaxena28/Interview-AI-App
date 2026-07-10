@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { NextResponse } from 'next/server'
+import { withAuth, apiError } from '@/lib/api-handler'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,23 +21,17 @@ function isAllowedPushEndpoint(endpoint: string): boolean {
   }
 }
 
-export async function POST(request: NextRequest) {
-  const supabase = await createServerSupabaseClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
+export const POST = withAuth('push-subscribe', async ({ request, user, supabase }) => {
   const sub = await request.json().catch(() => null) as
     | { endpoint?: string; keys?: { p256dh?: string; auth?: string } }
     | null
 
   if (!sub?.endpoint || !sub.keys?.p256dh || !sub.keys?.auth) {
-    return NextResponse.json({ error: 'Invalid subscription' }, { status: 400 })
+    return apiError('Invalid subscription', 400)
   }
 
   if (!isAllowedPushEndpoint(sub.endpoint)) {
-    return NextResponse.json({ error: 'Invalid push endpoint' }, { status: 400 })
+    return apiError('Invalid push endpoint', 400)
   }
 
   const { error } = await supabase
@@ -53,8 +47,8 @@ export async function POST(request: NextRequest) {
     )
 
   if (error) {
-    return NextResponse.json({ error: 'Failed to save subscription' }, { status: 500 })
+    return apiError('Failed to save subscription', 500)
   }
 
   return NextResponse.json({ ok: true })
-}
+})
