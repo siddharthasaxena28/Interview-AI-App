@@ -14,8 +14,8 @@ const STEPS = [
   },
   {
     icon: CheckCircle2,
-    title: 'Press Done when finished',
-    desc: 'Speak your answer, then hit Done to submit it. Or just pause — silence detection auto-submits. Use Skip if you want to move on without answering.',
+    title: 'Just talk — it flows naturally',
+    desc: 'Speak your answer and pause when you\'re finished — the interviewer picks up on the silence and moves on, just like a real conversation. Want to skip a question? Simply say so.',
   },
   {
     icon: BarChart3,

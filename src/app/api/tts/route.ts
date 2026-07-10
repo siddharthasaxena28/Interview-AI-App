@@ -1,9 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { createHash } from 'crypto'
+import { waitUntil } from '@vercel/functions'
+import { createServerSupabaseClient, createServiceClient } from '@/lib/supabase-server'
 import { checkRateLimit } from '@/lib/rate-limit'
 import type { RoundType } from '@/types'
 
 export const dynamic = 'force-dynamic'
+
+// Storage-backed audio cache. Interviewer phrases repeat heavily across
+// sessions (intros, transitions, thinking-time prompts), so each unique
+// (voice, text) pair is synthesized on ElevenLabs exactly once and served
+// from Supabase Storage afterwards. Bump the version to invalidate the
+// cache if voice_settings in generateSpeech() ever change.
+const TTS_CACHE_BUCKET = 'tts-cache'
+const TTS_CACHE_VERSION = 'v1'
+
+function cachePath(voiceId: string, text: string): string {
+  const hash = createHash('sha256')
+    .update(`${TTS_CACHE_VERSION}|${voiceId}|${text}`)
+    .digest('hex')
+  return `${TTS_CACHE_VERSION}/${voiceId}/${hash}.mp3`
+}
 
 // Explicit voice IDs per round + gender — set these in Vercel env vars
 const ENV_VOICE_MAP: Record<string, { male: string | undefined; female: string | undefined }> = {
@@ -113,6 +130,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'TTS not configured', detail }, { status: 503 })
     }
 
+    // Cache lookup before hitting ElevenLabs. Any storage error (bucket
+    // missing, transient failure) falls through to live synthesis — the
+    // cache is an optimization, never a dependency.
+    const path = cachePath(voiceIdToUse, text)
+    const svc = await createServiceClient()
+    try {
+      const { data: cached } = await svc.storage.from(TTS_CACHE_BUCKET).download(path)
+      if (cached) {
+        const cachedBuffer = await cached.arrayBuffer()
+        if (cachedBuffer.byteLength > 0) {
+          return new NextResponse(cachedBuffer, {
+            status: 200,
+            headers: {
+              'Content-Type': 'audio/mpeg',
+              'Content-Length': cachedBuffer.byteLength.toString(),
+              'X-Voice-Id': voiceIdToUse,
+              'X-TTS-Cache': 'hit',
+            },
+          })
+        }
+      }
+    } catch (e) {
+      console.warn('[TTS] cache lookup failed (continuing to synthesis):', e instanceof Error ? e.message : e)
+    }
+
     const { response, model: modelUsed } = await generateSpeech(voiceIdToUse, text, apiKey)
 
     if (!response.ok) {
@@ -123,6 +165,18 @@ export async function POST(request: NextRequest) {
     }
 
     const audioBuffer = await response.arrayBuffer()
+
+    // Write-through after the response is sent — never delays playback.
+    waitUntil(
+      svc.storage
+        .from(TTS_CACHE_BUCKET)
+        .upload(path, audioBuffer, { contentType: 'audio/mpeg', upsert: true })
+        .then(({ error }) => {
+          if (error) console.warn('[TTS] cache write failed:', error.message)
+        })
+        .catch((e) => console.warn('[TTS] cache write failed:', e instanceof Error ? e.message : e))
+    )
+
     return new NextResponse(audioBuffer, {
       status: 200,
       headers: {
@@ -130,6 +184,7 @@ export async function POST(request: NextRequest) {
         'Content-Length': audioBuffer.byteLength.toString(),
         'X-Voice-Id': voiceIdToUse,
         'X-TTS-Model': modelUsed,
+        'X-TTS-Cache': 'miss',
       },
     })
   } catch (error) {
