@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { createServiceClient } from '@/lib/supabase-server'
+import { reportPaymentFailure } from '@/lib/api-handler'
 
 function safeEqualHex(a: string, b: string): boolean {
   const ba = Buffer.from(a, 'hex')
@@ -53,20 +54,27 @@ export async function POST(request: NextRequest) {
           if (balErr) {
             // Release the idempotency lock so Razorpay's webhook redelivery can
             // re-attempt the grant instead of being swallowed by the unique index.
-            console.error('webhook credit grant failed — rolling back txn row:', balErr)
+            reportPaymentFailure('webhook credit grant (rolled back txn row)', balErr, {
+              userId,
+              razorpay_payment_id: payment.id,
+              credits,
+            })
             await supabase.from('credit_transactions').delete().eq('razorpay_payment_id', payment.id)
             return NextResponse.json({ error: 'Credit grant failed' }, { status: 500 })
           }
           await supabase.from('users').update({ plan: 'payg' }).eq('id', userId)
         } else if (txnError.code !== '23505') {
-          console.error('webhook payment.captured txn error:', txnError)
+          reportPaymentFailure('webhook payment.captured txn insert', txnError, {
+            userId,
+            razorpay_payment_id: payment.id,
+          })
         }
       }
     }
 
     return NextResponse.json({ received: true })
   } catch (error) {
-    console.error('Razorpay webhook error:', error)
+    reportPaymentFailure('razorpay webhook unexpected error', error)
     return NextResponse.json({ error: 'Webhook processing failed' }, { status: 500 })
   }
 }

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import posthog from 'posthog-js'
 import { Mic, Play, CheckCircle, ChevronRight, Volume2, AlertTriangle, MicOff } from 'lucide-react'
 
 type Status = 'idle' | 'requesting' | 'recording' | 'playing' | 'done' | 'silent' | 'error'
@@ -51,7 +52,15 @@ export default function MicCheckGate({ sessionUrl }: { sessionUrl: string }) {
     let stream: MediaStream
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-    } catch {
+    } catch (err) {
+      // Permission denial here is the likeliest silent drop-off in the whole
+      // funnel — a user who can't get past the mic check never interviews.
+      try {
+        posthog.capture('mic_permission_failed', {
+          stage: 'mic_check',
+          error_name: err instanceof Error ? err.name : 'unknown',
+        })
+      } catch { /* posthog not initialized */ }
       setStatus('error')
       return
     }
@@ -84,6 +93,9 @@ export default function MicCheckGate({ sessionUrl }: { sessionUrl: string }) {
       // Verdict is based on whether the mic actually picked up sound — not on
       // mere completion. A muted/dead mic stays near zero and must NOT pass.
       if (peakRef.current < SOUND_THRESHOLD) {
+        try {
+          posthog.capture('mic_check_silent', { peak: peakRef.current })
+        } catch { /* posthog not initialized */ }
         setStatus('silent')
       } else {
         playback()

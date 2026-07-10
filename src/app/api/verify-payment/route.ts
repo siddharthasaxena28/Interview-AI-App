@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import Razorpay from 'razorpay'
 import { createServerSupabaseClient, createServiceClient } from '@/lib/supabase-server'
+import { reportPaymentFailure } from '@/lib/api-handler'
 
 // Constant-time compare of two hex signatures. Lengths must match or timingSafeEqual throws.
 function safeEqualHex(a: string, b: string): boolean {
@@ -79,7 +80,7 @@ export async function POST(request: NextRequest) {
       if (txnError.code === '23505') {
         return NextResponse.json({ success: true, alreadyCredited: true })
       }
-      console.error('verify-payment txn insert error:', txnError)
+      reportPaymentFailure('verify-payment txn insert', txnError, { userId: user.id, razorpay_payment_id })
       return NextResponse.json({ error: 'Payment verification failed' }, { status: 500 })
     }
 
@@ -89,7 +90,11 @@ export async function POST(request: NextRequest) {
     // report "alreadyCredited" without the balance ever having been updated.
     const { error: balErr } = await svc.rpc('increment_user_credits', { p_user_id: user.id, p_amount: credits })
     if (balErr) {
-      console.error('verify-payment credit grant failed — rolling back txn row:', balErr)
+      reportPaymentFailure('verify-payment credit grant (rolled back txn row)', balErr, {
+        userId: user.id,
+        razorpay_payment_id,
+        credits,
+      })
       await svc.from('credit_transactions').delete().eq('razorpay_payment_id', razorpay_payment_id)
       return NextResponse.json({ error: 'Payment verification failed — please retry' }, { status: 500 })
     }
@@ -97,7 +102,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, credits_granted: credits })
   } catch (error) {
-    console.error('verify-payment error:', error)
+    reportPaymentFailure('verify-payment unexpected error', error)
     return NextResponse.json({ error: 'Payment verification failed' }, { status: 500 })
   }
 }

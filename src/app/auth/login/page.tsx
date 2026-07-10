@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
+import posthog from 'posthog-js'
 import { Mic, CheckCircle } from 'lucide-react'
 
 export default function LoginPage() {
@@ -13,6 +14,7 @@ export default function LoginPage() {
   async function signInWithGoogle() {
     setLoading(true)
     setError(null)
+    try { posthog.capture('login_started', { provider: 'google' }) } catch { /* not initialized */ }
     try {
       // Persist referral code from URL query param across OAuth redirect
       const refCode = new URLSearchParams(window.location.search).get('ref')

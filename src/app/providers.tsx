@@ -5,6 +5,29 @@ import { PostHogProvider as PHProvider } from 'posthog-js/react'
 import { useEffect } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
+import { createClient } from '@/lib/supabase'
+
+// Ties every event to the logged-in user so funnels (signup → setup →
+// interview → paid) can be built per-user instead of per-device.
+function PostHogIdentify() {
+  useEffect(() => {
+    if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) return
+    const supabase = createClient()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      try {
+        if (session?.user) {
+          posthog.identify(session.user.id, { email: session.user.email })
+        } else if (event === 'SIGNED_OUT') {
+          posthog.reset()
+        }
+      } catch {
+        // posthog not initialized
+      }
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+  return null
+}
 
 function SentryInit() {
   useEffect(() => {
@@ -55,6 +78,7 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
   return (
     <PHProvider client={posthog}>
       <SentryInit />
+      <PostHogIdentify />
       <Suspense fallback={null}>
         <PostHogPageView />
       </Suspense>
