@@ -236,7 +236,22 @@ export interface Database {
           confidence?: string | null
           recorded_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: 'answers_question_id_fkey'
+            columns: ['question_id']
+            isOneToOne: false
+            referencedRelation: 'questions'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'answers_session_id_fkey'
+            columns: ['session_id']
+            isOneToOne: false
+            referencedRelation: 'interview_sessions'
+            referencedColumns: ['id']
+          },
+        ]
       }
       feedback_reports: {
         Row: {

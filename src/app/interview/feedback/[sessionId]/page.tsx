@@ -71,12 +71,22 @@ export default async function FeedbackPage({
     { data: answers },
     { data: benchmarkRows },
     priorReport,
+    { data: historyRows },
   ] = await Promise.all([
     supabase.from('feedback_reports').select('*').eq('session_id', sessionId).single(),
     supabase.from('questions').select('id, text, difficulty, topic_tag, expected_keywords').eq('session_id', sessionId).eq('asked', true).order('order_index'),
     supabase.from('answers').select('question_id, transcript_text, duration_seconds').eq('session_id', sessionId),
     supabase.rpc('get_selection_probability_benchmark', { p_round_type: session.round_type }),
     getPriorReport(supabase, user.id, session.round_type, sessionId),
+    // Per-topic history across ALL earlier completed sessions — powers the
+    // "was 2.5 last time" deltas in Performance by Topic.
+    supabase
+      .from('answers')
+      .select('score, questions!inner(topic_tag), interview_sessions!inner(user_id, status)')
+      .eq('interview_sessions.user_id', user.id)
+      .eq('interview_sessions.status', 'completed')
+      .neq('session_id', sessionId)
+      .not('score', 'is', null),
   ])
 
   const s = session as InterviewSession
@@ -181,8 +191,24 @@ export default async function FeedbackPage({
     const cur = topicPerf.get(q.topic_tag) ?? { total: 0, count: 0 }
     topicPerf.set(q.topic_tag, { total: cur.total + pq.score, count: cur.count + 1 })
   }
+  // Prior per-topic averages from every earlier completed session, so each
+  // topic row can show movement against the candidate's own history.
+  const priorTopicPerf = new Map<string, { total: number; count: number }>()
+  for (const row of (historyRows ?? []) as Array<{ score: number | null; questions: { topic_tag: string } }>) {
+    if (row.score == null || !row.questions?.topic_tag) continue
+    const cur = priorTopicPerf.get(row.questions.topic_tag) ?? { total: 0, count: 0 }
+    priorTopicPerf.set(row.questions.topic_tag, { total: cur.total + row.score, count: cur.count + 1 })
+  }
+
   const topicData = Array.from(topicPerf.entries())
-    .map(([tag, { total, count }]) => ({ tag, avg: total / count }))
+    .map(([tag, { total, count }]) => {
+      const prior = priorTopicPerf.get(tag)
+      return {
+        tag,
+        avg: total / count,
+        priorAvg: prior ? prior.total / prior.count : null,
+      }
+    })
     .sort((a, b) => b.avg - a.avg)
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
@@ -533,12 +559,24 @@ export default async function FeedbackPage({
                 <TrendingUp className="w-4 h-4 text-indigo-600" /> Performance by Topic
               </h2>
               <div className="space-y-3">
-                {topicData.map(({ tag, avg }, i) => {
+                {topicData.map(({ tag, avg, priorAvg }, i) => {
                   const pct = (avg / 5) * 100
+                  const delta = priorAvg != null ? avg - priorAvg : null
                   return (
                     <div key={tag}>
                       <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-sm text-gray-700 capitalize">{tag.replace(/_/g, ' ')}</span>
+                        <span className="text-sm text-gray-700 capitalize flex items-center gap-2">
+                          {tag.replace(/_/g, ' ')}
+                          {delta != null && Math.abs(delta) >= 0.3 && (
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${
+                              delta > 0
+                                ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                                : 'text-red-700 bg-red-50 border-red-200'
+                            }`}>
+                              {delta > 0 ? '↑' : '↓'} was {priorAvg!.toFixed(1)}
+                            </span>
+                          )}
+                        </span>
                         <span className={`text-xs font-semibold ${
                           avg >= 4 ? 'text-emerald-600' : avg >= 3 ? 'text-amber-600' : 'text-red-600'
                         }`}>

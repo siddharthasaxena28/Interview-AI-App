@@ -50,7 +50,12 @@ function SessionPageInner({ params }: SessionPageProps) {
   const [phase, setPhase] = useState<'intro' | 'interview' | 'candidate_questions'>('intro')
   const [started, setStarted] = useState(false)
   const [reconnecting, setReconnecting] = useState(false)
-  const [resumeInfo, setResumeInfo] = useState<{ questionIndex: number; currentQuestionId: string } | null>(null)
+  const [resumeInfo, setResumeInfo] = useState<{
+    questionIndex: number
+    currentQuestionId: string
+    conversationHistory?: { question: string; answer: string; score: number }[]
+    introTranscript?: string
+  } | null>(null)
   const [resumeDismissed, setResumeDismissed] = useState(false)
   const [ttsFallback, setTtsFallback] = useState(false)
   const [evalError, setEvalError] = useState<{ msg: string; retry: () => void } | null>(null)
@@ -113,6 +118,9 @@ function SessionPageInner({ params }: SessionPageProps) {
   const evalAutoRetriedRef = useRef(false)
   // Ensures TTS fallback announcement fires only once per session
   const ttsFallbackAnnouncedRef = useRef(false)
+  // Set by handleResume: question text to re-speak once the socket opens, so a
+  // resumed interview greets the user instead of showing a silent screen.
+  const resumeSpeakRef = useRef<string | null>(null)
   // Holds a resolve() callback for the currently-playing speakText promise so
   // stopAllAudio() can resolve it immediately from outside the function.
   const cancelSpeakRef = useRef<(() => void) | null>(null)
@@ -164,6 +172,10 @@ function SessionPageInner({ params }: SessionPageProps) {
         questionIndex,
         currentQuestionId: currentQuestion.id,
         savedAt: Date.now(),
+        // Cross-answer memory — without these, a resumed interview loses the
+        // interviewer's knowledge of everything said before the reload.
+        conversationHistory: conversationHistoryRef.current,
+        introTranscript: introTranscriptRef.current,
       }))
     } catch { /* storage full — silently skip */ }
   }, [currentQuestion, questionIndex, phase, ending, sessionId])
@@ -215,11 +227,22 @@ function SessionPageInner({ params }: SessionPageProps) {
         try {
           const saved = localStorage.getItem(`iai_progress_${sessionId}`)
           if (saved) {
-            const p = JSON.parse(saved) as { questionIndex: number; currentQuestionId: string; savedAt: number }
+            const p = JSON.parse(saved) as {
+              questionIndex: number
+              currentQuestionId: string
+              savedAt: number
+              conversationHistory?: { question: string; answer: string; score: number }[]
+              introTranscript?: string
+            }
             const age = Date.now() - p.savedAt
             // Only offer to resume if less than 2 hours old and they made it past Q1
             if (age < 7200000 && p.questionIndex > 0) {
-              setResumeInfo({ questionIndex: p.questionIndex, currentQuestionId: p.currentQuestionId })
+              setResumeInfo({
+                questionIndex: p.questionIndex,
+                currentQuestionId: p.currentQuestionId,
+                conversationHistory: p.conversationHistory,
+                introTranscript: p.introTranscript,
+              })
             }
           }
         } catch { /* ignore */ }
@@ -362,6 +385,12 @@ function SessionPageInner({ params }: SessionPageProps) {
             speakText(
               `Hi there! Welcome, and thanks for joining us today. I'm ${interviewerName}, and I'll be conducting your interview for the ${sd.session.role} position at ${sd.session.company}. It's great to have you here! How are you feeling today?`
             )
+          } else if (resumeSpeakRef.current) {
+            // Explicit resume after a reload — re-orient the candidate and
+            // re-ask the question they were on.
+            const questionText = resumeSpeakRef.current
+            resumeSpeakRef.current = null
+            speakText(`Welcome back! Let's pick up right where we left off. ${questionText}`)
           } else {
             // Reconnected mid-interview — resume listening state immediately
             setListening()
@@ -1087,10 +1116,17 @@ function SessionPageInner({ params }: SessionPageProps) {
     if (savedQ) {
       setCurrentQuestion(savedQ)
       setQuestionIndex(resumeInfo.questionIndex)
+      // Restore cross-answer memory so probes/evaluations still know what was
+      // said before the reload — otherwise the interviewer gets amnesia.
+      if (resumeInfo.conversationHistory) conversationHistoryRef.current = resumeInfo.conversationHistory
+      if (resumeInfo.introTranscript) introTranscriptRef.current = resumeInfo.introTranscript
       // Mark that we've already greeted so the intro is skipped
       hasGreetedRef.current = true
       phaseRef.current = 'interview'
       setPhase('interview')
+      // Queue a "welcome back" + question re-speak for when the socket opens,
+      // instead of dumping the user on a silent screen.
+      resumeSpeakRef.current = savedQ.text
     }
     setResumeInfo(null)
     localStorage.removeItem(`iai_progress_${sessionId}`)
