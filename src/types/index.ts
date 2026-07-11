@@ -58,29 +58,33 @@ export interface Answer {
   transcript_text: string
   duration_seconds: number
   score: number | null
+  confidence: 'confident' | 'hesitant' | null
   recorded_at: string
 }
 
-export interface StrengthItem {
+// NOTE: these JSON-column payload shapes are `type` aliases (not interfaces) on
+// purpose — type aliases get an implicit index signature, which makes them
+// assignable to the Supabase `Json` column type without casts.
+export type StrengthItem = {
   title: string
   example: string
   advice: string
 }
 
-export interface GapItem {
+export type GapItem = {
   title: string
   example: string
   advice: string
 }
 
-export interface PerQuestionFeedback {
+export type PerQuestionFeedback = {
   question_id: string
   score: number
   feedback: string
   ideal_answer_hint?: string
 }
 
-export interface CommunicationFeedback {
+export type CommunicationFeedback = {
   score: number
   clarity: number
   clarity_note?: string
@@ -90,6 +94,11 @@ export interface CommunicationFeedback {
   confidence_note?: string
   filler_words: number
   filler_note?: string
+}
+
+export type FeedbackSignal = {
+  signal: string
+  detail: string
 }
 
 export interface FeedbackReport {
@@ -102,6 +111,9 @@ export interface FeedbackReport {
   per_question_json: PerQuestionFeedback[]
   communication_score: number
   communication_json: CommunicationFeedback | null
+  selection_factors_json: string[] | null
+  red_flags_json: FeedbackSignal[] | null
+  standout_moments_json: FeedbackSignal[] | null
   report_text: string
   share_token: string
   emailed_at: string | null
@@ -110,10 +122,13 @@ export interface FeedbackReport {
 export interface FeedbackJSON {
   overall_score: number
   selection_probability: number
+  selection_factors: string[]
   strengths: StrengthItem[]
   gaps: GapItem[]
   per_question: PerQuestionFeedback[]
   communication: CommunicationFeedback
+  red_flags?: FeedbackSignal[]
+  standout_moments?: FeedbackSignal[]
   summary: string
 }
 

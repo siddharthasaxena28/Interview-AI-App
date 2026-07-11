@@ -48,22 +48,36 @@ export default async function DashboardPage() {
   const { data: { user: authUser } } = await supabase.auth.getUser()
   if (!authUser) redirect('/auth/login')
 
-  const { data: userData } = await supabase
-    .from('users')
-    .select('*')
-    .eq('id', authUser.id)
-    .single()
+  // users, sessions, and weak_areas all key off authUser.id only — fetch in
+  // parallel rather than in series to cut ~3 sequential round-trips down to 1.
+  const [
+    { data: userData },
+    { data: sessionRows },
+    { data: weakAreas },
+  ] = await Promise.all([
+    supabase.from('users').select('*').eq('id', authUser.id).single(),
+    // Fetch more sessions so we can compute progress comparison.
+    // Column list deliberately excludes jd_text — at up to 6 KB per row × 20
+    // rows it would dominate the payload without being used anywhere here.
+    supabase
+      .from('interview_sessions')
+      .select('id, company, role, round_type, status, started_at, ended_at, experience_years, user_id')
+      .eq('user_id', authUser.id)
+      .eq('status', 'completed')
+      .order('ended_at', { ascending: false })
+      .limit(20),
+    supabase
+      .from('weak_areas')
+      .select('topic_tag, avg_score, session_count, last_updated')
+      .eq('user_id', authUser.id)
+      .order('avg_score', { ascending: true })
+      .limit(8),  // fetch 8, filter logistics topics client-side, display top 5
+  ])
 
-  // Fetch more sessions so we can compute progress comparison
-  const { data: sessions } = await supabase
-    .from('interview_sessions')
-    .select('*')
-    .eq('user_id', authUser.id)
-    .eq('status', 'completed')
-    .order('ended_at', { ascending: false })
-    .limit(20)
+  // jd_text is intentionally not selected; everything this page touches is present.
+  const sessions = (sessionRows ?? []) as unknown as InterviewSession[]
 
-  const sessionIds = (sessions ?? []).map((s: InterviewSession) => s.id)
+  const sessionIds = sessions.map((s: InterviewSession) => s.id)
 
   const { data: reports } = sessionIds.length > 0
     ? await supabase
@@ -71,13 +85,6 @@ export default async function DashboardPage() {
         .select('session_id, overall_score, selection_probability')
         .in('session_id', sessionIds)
     : { data: [] }
-
-  const { data: weakAreas } = await supabase
-    .from('weak_areas')
-    .select('topic_tag, avg_score, session_count')
-    .eq('user_id', authUser.id)
-    .order('avg_score', { ascending: true })
-    .limit(3)
 
   const reportMap = new Map(
     (reports ?? []).map((r: Pick<FeedbackReport, 'session_id' | 'overall_score' | 'selection_probability'>) => [r.session_id, r])
@@ -108,12 +115,18 @@ export default async function DashboardPage() {
   // Requires >= 6 reports so the two windows never overlap.
   const scoreOf = (s: InterviewSession) => (reportMap.get(s.id) as { overall_score: number | null })?.overall_score ?? 0
   let progressDelta: number | null = null
+  // Below 6 reports the two comparison windows would overlap, so there's no
+  // trend to show yet — surface how many more sessions until there is one,
+  // rather than just hiding the indicator with no explanation.
+  let sessionsUntilTrend: number | null = null
   if (sessionsWithReports.length >= 6) {
     const first3 = sessionsWithReports.slice(0, 3)
     const last3 = sessionsWithReports.slice(-3)
     const avgFirst = first3.reduce((a, s) => a + scoreOf(s), 0) / 3
     const avgLast = last3.reduce((a, s) => a + scoreOf(s), 0) / 3
     progressDelta = Math.round(avgLast - avgFirst)
+  } else if (sessionsWithReports.length >= 1) {
+    sessionsUntilTrend = 6 - sessionsWithReports.length
   }
 
   const roundLabels: Record<string, string> = {
@@ -123,6 +136,53 @@ export default async function DashboardPage() {
     hr: 'HR',
     full_loop: 'Full Loop',
   }
+
+  const roundBadgeStyle: Record<string, string> = {
+    tech_l1:    'bg-indigo-50 text-indigo-700 border-indigo-200',
+    tech_l2:    'bg-violet-50 text-violet-700 border-violet-200',
+    managerial: 'bg-blue-50 text-blue-700 border-blue-200',
+    hr:         'bg-emerald-50 text-emerald-700 border-emerald-200',
+    full_loop:  'bg-orange-50 text-orange-700 border-orange-200',
+  }
+
+  function relativeDate(dateStr: string | null): string {
+    if (!dateStr) return '—'
+    const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86_400_000)
+    if (diff === 0) return 'Today'
+    if (diff === 1) return 'Yesterday'
+    if (diff < 7)  return `${diff} days ago`
+    if (diff < 30) return `${Math.floor(diff / 7)}w ago`
+    return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+  }
+
+  // Recent avg: last 5 sessions with reports (chronological order, most recent at end)
+  const last5 = sessionsWithReports.slice(-5)
+  const recentAvgScore: number | null = last5.length > 0
+    ? Math.round(last5.reduce((a, s) => a + scoreOf(s), 0) / last5.length)
+    : null
+
+  // Per-round-type avg score aggregated from all sessions with reports
+  const roundPerf: Record<string, { totalScore: number; count: number }> = {}
+  for (const s of (sessions ?? []) as InterviewSession[]) {
+    const rp = reportMap.get(s.id) as { overall_score: number | null } | undefined
+    if (!rp || rp.overall_score == null) continue
+    if (!roundPerf[s.round_type]) roundPerf[s.round_type] = { totalScore: 0, count: 0 }
+    roundPerf[s.round_type].totalScore += rp.overall_score
+    roundPerf[s.round_type].count++
+  }
+  const roundPerfEntries = Object.entries(roundPerf)
+    .map(([rt, { totalScore, count }]) => ({ roundType: rt, avgScore: Math.round(totalScore / count), count }))
+    .sort((a, b) => b.count - a.count)
+
+  // Smart recommendation: weakest topic drives the recommended round type
+  const recommendedRound: RoundType | null =
+    weakAreas && weakAreas.length > 0
+      ? topicToRoundType((weakAreas as Array<{ topic_tag: string }>)[0].topic_tag)
+      : null
+  const recommendedTopic: string | null =
+    weakAreas && weakAreas.length > 0
+      ? (weakAreas as Array<{ topic_tag: string }>)[0].topic_tag.replace(/_/g, ' ')
+      : null
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -173,18 +233,25 @@ export default async function DashboardPage() {
             <h1 className="text-2xl font-bold text-gray-900">
               Welcome back, {authUser.user_metadata?.full_name?.split(' ')[0] ?? 'there'}
             </h1>
-            <p className="text-gray-600 text-sm mt-1">Ready for your next practice interview?</p>
+            <p className="text-gray-600 text-sm mt-1">
+              {recommendedRound
+                ? <>Recommended: <span className="font-semibold text-indigo-700">{roundLabels[recommendedRound]}</span> round</>
+                : 'Ready for your next practice interview?'}
+            </p>
+            {recommendedRound && recommendedTopic && (
+              <p className="text-xs text-indigo-500 mt-0.5">Improve your <span className="font-medium">{recommendedTopic}</span> score</p>
+            )}
             <div className="mt-3">
               <EnableReminders />
             </div>
           </div>
           {creditBalance > 0 ? (
             <Link
-              href="/interview/setup"
+              href={recommendedRound ? `/interview/setup?round_type=${recommendedRound}` : '/interview/setup'}
               className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl font-semibold transition-all duration-200 text-sm whitespace-nowrap"
             >
               <Plus className="w-4 h-4" />
-              Start New Interview
+              {recommendedRound ? `Practice ${roundLabels[recommendedRound]}` : 'Start New Interview'}
             </Link>
           ) : (
             <Link
@@ -271,14 +338,7 @@ export default async function DashboardPage() {
               <div>
                 <div className="flex items-end gap-1">
                   <div className="text-2xl font-bold text-gray-900">
-                    {reports && reports.length > 0
-                      ? (() => {
-                          const valid = (reports as Array<{overall_score: number | null}>).filter(r => r.overall_score !== null)
-                          return valid.length > 0
-                            ? Math.round(valid.reduce((a, r) => a + (r.overall_score as number), 0) / valid.length)
-                            : '—'
-                        })()
-                      : '—'}
+                    {recentAvgScore ?? '—'}
                   </div>
                   {progressDelta !== null && progressDelta !== 0 && (
                     <div className={`text-sm font-semibold mb-0.5 ${progressDelta > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
@@ -287,7 +347,12 @@ export default async function DashboardPage() {
                   )}
                 </div>
                 <div className="text-xs text-gray-500">
-                  Avg score{progressDelta !== null ? ' · trend' : ''}
+                  Recent avg
+                  {progressDelta !== null
+                    ? ' · trend'
+                    : sessionsUntilTrend !== null
+                      ? ` · ${sessionsUntilTrend} more session${sessionsUntilTrend === 1 ? '' : 's'} for trend`
+                      : ''}
                 </div>
               </div>
             </div>
@@ -330,7 +395,7 @@ export default async function DashboardPage() {
               <h2 className="font-semibold text-gray-900 flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-indigo-600" /> Score Trend
               </h2>
-              {progressDelta !== null && (
+              {progressDelta !== null ? (
                 <span className={`text-sm font-semibold px-2.5 py-1 rounded-full ${
                   progressDelta > 0
                     ? 'text-emerald-600 bg-emerald-50 border border-emerald-200'
@@ -340,14 +405,20 @@ export default async function DashboardPage() {
                 }`}>
                   {progressDelta > 0 ? `↑ +${progressDelta} pts improved` : progressDelta < 0 ? `↓ ${progressDelta} pts` : 'Holding steady'}
                 </span>
+              ) : sessionsUntilTrend !== null && (
+                <span className="text-sm font-medium px-2.5 py-1 rounded-full text-gray-500 bg-gray-100 border border-gray-100">
+                  Building your baseline · {sessionsUntilTrend} more to go
+                </span>
               )}
             </div>
             <svg
-              viewBox="0 0 300 60"
+              viewBox="0 0 300 80"
               width="100%"
-              height="60"
+              height="80"
               preserveAspectRatio="none"
               className="overflow-visible"
+              role="img"
+              aria-label={`Score trend across your last ${chartData.length} interviews, from ${chartData[0].score} on ${chartData[0].label} to ${chartData[chartData.length - 1].score} on ${chartData[chartData.length - 1].label}`}
             >
               <defs>
                 <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
@@ -355,22 +426,22 @@ export default async function DashboardPage() {
                   <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
                 </linearGradient>
               </defs>
-              {[25, 50, 75].map((score) => {
-                const y = ((100 - score) / 100) * 52 + 4
+              {[0, 25, 50, 75, 100].map((score) => {
+                const y = ((100 - score) / 100) * 68 + 8
                 return (
                   <g key={score}>
-                    <line x1="0" y1={y} x2="290" y2={y} stroke="#e5e7eb" strokeWidth="1" />
-                    <text x="295" y={y + 3} fontSize="7" fill="#374151" textAnchor="start">{score}</text>
+                    <line x1="0" y1={y} x2="285" y2={y} stroke="#e5e7eb" strokeWidth="1" />
+                    <text x="290" y={score === 0 ? y - 2 : y + 3} fontSize="7" fill="#9ca3af" textAnchor="start">{score}</text>
                   </g>
                 )
               })}
               <polygon
                 fill="url(#chartFill)"
-                points={`0,60 ${chartData.map((d, i) => {
+                points={`0,80 ${chartData.map((d, i) => {
                   const x = (i / (chartData.length - 1)) * 300
-                  const y = ((100 - d.score) / 100) * 52 + 4
+                  const y = ((100 - d.score) / 100) * 68 + 8
                   return `${x},${y}`
-                }).join(' ')} 300,60`}
+                }).join(' ')} 300,80`}
               />
               <polyline
                 fill="none"
@@ -381,14 +452,14 @@ export default async function DashboardPage() {
                 points={chartData
                   .map((d, i) => {
                     const x = chartData.length === 1 ? 150 : (i / (chartData.length - 1)) * 300
-                    const y = ((100 - d.score) / 100) * 52 + 4
+                    const y = ((100 - d.score) / 100) * 68 + 8
                     return `${x},${y}`
                   })
                   .join(' ')}
               />
               {chartData.map((d, i) => {
                 const x = chartData.length === 1 ? 150 : (i / (chartData.length - 1)) * 300
-                const y = ((100 - d.score) / 100) * 52 + 4
+                const y = ((100 - d.score) / 100) * 68 + 8
                 return <circle key={i} cx={x} cy={y} r="3" fill="#6366f1" />
               })}
             </svg>
@@ -403,34 +474,120 @@ export default async function DashboardPage() {
         <StudyPlanWidget />
 
         {/* Weak areas / focus topics — with "Practice This" links */}
-        {weakAreas && weakAreas.length > 0 && (
+        {(() => {
+          // Exclude HR logistics topics — low scores there reflect circumstances
+          // (long notice period, high salary expectation), not improvable skill gaps.
+          const NON_PRACTICE_TOPICS = new Set(['notice_period', 'salary_negotiation'])
+          type WeakArea = { topic_tag: string; avg_score: number; session_count: number; last_updated: string | null }
+          const practiceAreas = ((weakAreas ?? []) as WeakArea[])
+            .filter(wa => !NON_PRACTICE_TOPICS.has(wa.topic_tag))
+            .slice(0, 5)
+          if (practiceAreas.length === 0) return null
+          return (
+            <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl overflow-hidden mb-8 transition-all duration-200">
+              <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-2">
+                <Target className="w-4 h-4 text-amber-600" />
+                <h2 className="font-semibold text-gray-900">Focus Areas</h2>
+                <span className="text-xs text-gray-400 ml-1">topics to practice more</span>
+              </div>
+              <div className="px-6 py-4 flex flex-col gap-3">
+                {practiceAreas.map((wa) => {
+                  const pct = Math.round((wa.avg_score / 5) * 100)
+                  const isLowConfidence = wa.session_count <= 2
+                  const daysSinceUpdate = wa.last_updated
+                    ? Math.floor((Date.now() - new Date(wa.last_updated).getTime()) / 86_400_000)
+                    : null
+                  const isStale = daysSinceUpdate !== null && daysSinceUpdate >= 30
+                  const roundType = topicToRoundType(wa.topic_tag)
+                  const colorBg = pct >= 60
+                    ? 'bg-emerald-50 border-emerald-200'
+                    : pct >= 40
+                      ? 'bg-amber-50 border-amber-200'
+                      : 'bg-red-50 border-red-200'
+                  const scoreColor = pct >= 60 ? 'text-emerald-700' : pct >= 40 ? 'text-amber-700' : 'text-red-700'
+                  const metaColor = pct >= 60 ? 'text-emerald-500' : pct >= 40 ? 'text-amber-500' : 'text-red-400'
+                  return (
+                    <div key={wa.topic_tag} className={`border rounded-xl px-4 py-3 ${colorBg}`}>
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className={`font-semibold text-sm capitalize ${scoreColor}`}>
+                            {wa.topic_tag.replace(/_/g, ' ')}
+                          </div>
+                          <div className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5 text-xs ${metaColor}`}>
+                            <span className="font-medium">{wa.avg_score.toFixed(1)}/5</span>
+                            <span className="opacity-60">·</span>
+                            <span>{pct}% score</span>
+                            <span className="opacity-60">·</span>
+                            <span>{wa.session_count} session{wa.session_count !== 1 ? 's' : ''}</span>
+                            {isStale && (
+                              <>
+                                <span className="opacity-60">·</span>
+                                <span className="text-gray-400 italic">
+                                  last seen {daysSinceUpdate! >= 60
+                                    ? `${Math.floor(daysSinceUpdate! / 30)}mo ago`
+                                    : `${daysSinceUpdate}d ago`}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                          {isLowConfidence && (
+                            <p className="text-xs text-gray-400 mt-1">
+                              Based on {wa.session_count === 1 ? '1 session' : '2 sessions'} — practice more to confirm
+                            </p>
+                          )}
+                        </div>
+                        <Link
+                          href={`/interview/setup?round_type=${roundType}`}
+                          className={`flex-shrink-0 flex items-center gap-1 text-xs font-semibold bg-white/70 border ${scoreColor} border-current rounded-lg px-2.5 py-1.5 hover:bg-white transition-colors whitespace-nowrap`}
+                        >
+                          Practice <ArrowRight className="w-3 h-3" />
+                        </Link>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* Performance by Round — per-round-type avg score breakdown */}
+        {roundPerfEntries.length > 0 && (
           <div className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl overflow-hidden mb-8 transition-all duration-200">
             <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-2">
-              <Target className="w-4 h-4 text-amber-600" />
-              <h2 className="font-semibold text-gray-900">Focus Areas</h2>
-              <span className="text-xs text-gray-400 ml-1">topics to practice more</span>
+              <TrendingUp className="w-4 h-4 text-violet-600" />
+              <h2 className="font-semibold text-gray-900">Performance by Round</h2>
+              <span className="text-xs text-gray-400 ml-1">avg score per round type</span>
             </div>
-            <div className="px-6 py-4 flex flex-wrap gap-3">
-              {(weakAreas as Array<{topic_tag: string; avg_score: number; session_count: number}>).map((wa) => {
-                const pct = Math.round((wa.avg_score / 5) * 100)
-                const color = pct >= 60
-                  ? 'text-emerald-600 bg-emerald-50 border-emerald-200'
-                  : pct >= 40
-                    ? 'text-amber-600 bg-amber-50 border-amber-200'
-                    : 'text-red-600 bg-red-50 border-red-200'
-                const roundType = topicToRoundType(wa.topic_tag)
+            <div className="px-6 py-4 flex flex-col gap-3">
+              {roundPerfEntries.map(({ roundType, avgScore, count }) => {
+                const barColor: Record<string, string> = {
+                  tech_l1: 'bg-indigo-500', tech_l2: 'bg-violet-500',
+                  managerial: 'bg-blue-500', hr: 'bg-emerald-500', full_loop: 'bg-orange-500',
+                }
+                const labelColor: Record<string, string> = {
+                  tech_l1: 'text-indigo-700', tech_l2: 'text-violet-700',
+                  managerial: 'text-blue-700', hr: 'text-emerald-700', full_loop: 'text-orange-700',
+                }
                 return (
-                  <div key={wa.topic_tag} className={`border rounded-xl px-4 py-3 flex items-center gap-4 ${color}`}>
-                    <div>
-                      <div className="font-medium text-sm capitalize">{wa.topic_tag.replace(/_/g, ' ')}</div>
-                      <div className="text-xs opacity-60">{wa.session_count} session{wa.session_count !== 1 ? 's' : ''} · {pct}%</div>
+                  <div key={roundType}>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs font-semibold ${labelColor[roundType] ?? 'text-gray-700'}`}>
+                          {roundLabels[roundType] ?? roundType}
+                        </span>
+                        <span className="text-xs text-gray-400">{count} session{count !== 1 ? 's' : ''}</span>
+                      </div>
+                      <span className={`text-sm font-bold ${avgScore >= 75 ? 'text-emerald-600' : avgScore >= 55 ? 'text-amber-600' : 'text-red-600'}`}>
+                        {avgScore}
+                      </span>
                     </div>
-                    <Link
-                      href={`/interview/setup?round_type=${roundType}`}
-                      className="flex items-center gap-1 text-xs font-semibold bg-gray-100 border border-current rounded-lg px-2.5 py-1.5 hover:bg-gray-200 transition-colors whitespace-nowrap"
-                    >
-                      Practice <ArrowRight className="w-3 h-3" />
-                    </Link>
+                    <div className="w-full bg-gray-100 rounded-full h-2">
+                      <div
+                        className={`${barColor[roundType] ?? 'bg-gray-400'} h-2 rounded-full transition-all duration-500`}
+                        style={{ width: `${avgScore}%` }}
+                      />
+                    </div>
                   </div>
                 )
               })}
@@ -500,20 +657,14 @@ export default async function DashboardPage() {
                       <div className="font-medium text-gray-900 text-sm">
                         {session.company} — {session.role}
                       </div>
-                      <div className="flex items-center gap-3 mt-0.5">
-                        <span className="text-xs text-gray-500">
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${roundBadgeStyle[session.round_type] ?? 'bg-gray-50 text-gray-600 border-gray-200'}`}>
                           {roundLabels[session.round_type] ?? session.round_type}
                         </span>
                         <span className="text-xs text-gray-400">•</span>
                         <span className="text-xs text-gray-500 flex items-center gap-1">
                           <Clock className="w-3 h-3" />
-                          {session.ended_at
-                            ? new Date(session.ended_at).toLocaleDateString('en-IN', {
-                                day: 'numeric',
-                                month: 'short',
-                                year: 'numeric',
-                              })
-                            : '—'}
+                          {relativeDate(session.ended_at)}
                         </span>
                       </div>
                     </div>
@@ -526,7 +677,11 @@ export default async function DashboardPage() {
                           }`}>
                             {(report as {overall_score: number}).overall_score}
                           </div>
-                          <div className="text-xs text-gray-400">score</div>
+                          <div className="text-xs text-gray-400">
+                            {(report as {selection_probability: number | null}).selection_probability != null
+                              ? `${(report as {selection_probability: number}).selection_probability}% select`
+                              : 'score'}
+                          </div>
                         </div>
                       )}
                       <Link

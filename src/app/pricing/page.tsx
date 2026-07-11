@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { CheckCircle, Mic, ArrowRight, Zap, Clock, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
 import { useAnalytics } from '@/hooks/useAnalytics'
@@ -77,6 +77,12 @@ type PackKey = 'single' | 'starter' | 'serious'
 export default function PricingPage() {
   const [loadingPack, setLoadingPack] = useState<PackKey | null>(null)
   const analytics = useAnalytics()
+
+  // Top of the payment funnel: without this, drop-off between "saw the
+  // prices" and payment_initiated is invisible.
+  useEffect(() => {
+    analytics.capture('pricing_viewed')
+  }, [analytics])
 
   async function handlePurchase(pack: PackKey, amount: number) {
     setLoadingPack(pack)

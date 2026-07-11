@@ -1,8 +1,26 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { NextResponse } from 'next/server'
+import { createHash } from 'crypto'
+import { waitUntil } from '@vercel/functions'
+import { createServiceClient } from '@/lib/supabase-server'
+import { withAuth, apiError } from '@/lib/api-handler'
 import type { RoundType } from '@/types'
 
 export const dynamic = 'force-dynamic'
+
+// Storage-backed audio cache. Interviewer phrases repeat heavily across
+// sessions (intros, transitions, thinking-time prompts), so each unique
+// (voice, text) pair is synthesized on ElevenLabs exactly once and served
+// from Supabase Storage afterwards. Bump the version to invalidate the
+// cache if voice_settings in generateSpeech() ever change.
+const TTS_CACHE_BUCKET = 'tts-cache'
+const TTS_CACHE_VERSION = 'v1'
+
+function cachePath(voiceId: string, text: string): string {
+  const hash = createHash('sha256')
+    .update(`${TTS_CACHE_VERSION}|${voiceId}|${text}`)
+    .digest('hex')
+  return `${TTS_CACHE_VERSION}/${voiceId}/${hash}.mp3`
+}
 
 // Explicit voice IDs per round + gender — set these in Vercel env vars
 const ENV_VOICE_MAP: Record<string, { male: string | undefined; female: string | undefined }> = {
@@ -73,12 +91,10 @@ async function generateSpeech(voiceId: string, text: string, apiKey: string): Pr
   return { response: lastRes, model: MODELS[0] }
 }
 
-export async function POST(request: NextRequest) {
+// The catch stays inline (rather than falling through to withAuth's generic 500)
+// so unexpected failures keep returning the debugging `detail` field.
+export const POST = withAuth('tts', async ({ request }) => {
   try {
-    const supabase = await createServerSupabaseClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
     const { text: rawText, round_type, gender, voice_id } = await request.json() as {
       text: string
       round_type?: RoundType
@@ -86,13 +102,13 @@ export async function POST(request: NextRequest) {
       voice_id?: string
     }
 
-    if (!rawText) return NextResponse.json({ error: 'Missing text' }, { status: 400 })
+    if (!rawText) return apiError('Missing text', 400)
     const text = rawText.slice(0, 2000)
 
     const apiKey = process.env.ELEVENLABS_API_KEY
     if (!apiKey) {
       console.error('[TTS] ELEVENLABS_API_KEY is not set')
-      return NextResponse.json({ error: 'TTS not configured', detail: 'ELEVENLABS_API_KEY missing' }, { status: 503 })
+      return apiError('TTS not configured', 503, { detail: 'ELEVENLABS_API_KEY missing' })
     }
 
     // Resolve voice ID — env vars only, no account lookup
@@ -103,7 +119,32 @@ export async function POST(request: NextRequest) {
     if (!voiceIdToUse) {
       const detail = `No voice configured for round_type="${round_type}" gender="${gender}". Set ELEVENLABS_VOICE_* env vars in Vercel.`
       console.error(`[TTS] ${detail}`)
-      return NextResponse.json({ error: 'TTS not configured', detail }, { status: 503 })
+      return apiError('TTS not configured', 503, { detail })
+    }
+
+    // Cache lookup before hitting ElevenLabs. Any storage error (bucket
+    // missing, transient failure) falls through to live synthesis — the
+    // cache is an optimization, never a dependency.
+    const path = cachePath(voiceIdToUse, text)
+    const svc = await createServiceClient()
+    try {
+      const { data: cached } = await svc.storage.from(TTS_CACHE_BUCKET).download(path)
+      if (cached) {
+        const cachedBuffer = await cached.arrayBuffer()
+        if (cachedBuffer.byteLength > 0) {
+          return new NextResponse(cachedBuffer, {
+            status: 200,
+            headers: {
+              'Content-Type': 'audio/mpeg',
+              'Content-Length': cachedBuffer.byteLength.toString(),
+              'X-Voice-Id': voiceIdToUse,
+              'X-TTS-Cache': 'hit',
+            },
+          })
+        }
+      }
+    } catch (e) {
+      console.warn('[TTS] cache lookup failed (continuing to synthesis):', e instanceof Error ? e.message : e)
     }
 
     const { response, model: modelUsed } = await generateSpeech(voiceIdToUse, text, apiKey)
@@ -112,10 +153,22 @@ export async function POST(request: NextRequest) {
       const body = await response.text()
       const detail = `ElevenLabs ${response.status} — voice=${voiceIdToUse}: ${body.slice(0, 300)}`
       console.error(`[TTS] Failed: ${detail}`)
-      return NextResponse.json({ error: 'TTS generation failed', detail }, { status: 502 })
+      return apiError('TTS generation failed', 502, { detail })
     }
 
     const audioBuffer = await response.arrayBuffer()
+
+    // Write-through after the response is sent — never delays playback.
+    waitUntil(
+      svc.storage
+        .from(TTS_CACHE_BUCKET)
+        .upload(path, audioBuffer, { contentType: 'audio/mpeg', upsert: true })
+        .then(({ error }) => {
+          if (error) console.warn('[TTS] cache write failed:', error.message)
+        })
+        .catch((e) => console.warn('[TTS] cache write failed:', e instanceof Error ? e.message : e))
+    )
+
     return new NextResponse(audioBuffer, {
       status: 200,
       headers: {
@@ -123,11 +176,16 @@ export async function POST(request: NextRequest) {
         'Content-Length': audioBuffer.byteLength.toString(),
         'X-Voice-Id': voiceIdToUse,
         'X-TTS-Model': modelUsed,
+        'X-TTS-Cache': 'miss',
       },
     })
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
     console.error('[TTS] Unexpected error:', msg, error)
-    return NextResponse.json({ error: 'Internal server error', detail: msg }, { status: 500 })
+    return apiError('Internal server error', 500, { detail: msg })
   }
-}
+}, {
+  // A full interview uses ~40-60 TTS calls; 200/hr leaves generous headroom
+  // while capping the ElevenLabs spend a single account can generate.
+  rateLimit: { prefix: 'tts', max: 200, windowMs: 3_600_000 },
+})

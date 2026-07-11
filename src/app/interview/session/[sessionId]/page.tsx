@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Mic, MicOff, PhoneOff, Volume2 } from 'lucide-react'
+import { Mic, MicOff, PhoneOff, Volume2, Keyboard } from 'lucide-react'
 import { useAudioStateMachine } from '@/hooks/useAudioStateMachine'
 import { useAnalytics } from '@/hooks/useAnalytics'
 import { formatDuration } from '@/lib/utils'
@@ -50,7 +50,12 @@ function SessionPageInner({ params }: SessionPageProps) {
   const [phase, setPhase] = useState<'intro' | 'interview' | 'candidate_questions'>('intro')
   const [started, setStarted] = useState(false)
   const [reconnecting, setReconnecting] = useState(false)
-  const [resumeInfo, setResumeInfo] = useState<{ questionIndex: number; currentQuestionId: string } | null>(null)
+  const [resumeInfo, setResumeInfo] = useState<{
+    questionIndex: number
+    currentQuestionId: string
+    conversationHistory?: { question: string; answer: string; score: number }[]
+    introTranscript?: string
+  } | null>(null)
   const [resumeDismissed, setResumeDismissed] = useState(false)
   const [ttsFallback, setTtsFallback] = useState(false)
   const [evalError, setEvalError] = useState<{ msg: string; retry: () => void } | null>(null)
@@ -60,6 +65,10 @@ function SessionPageInner({ params }: SessionPageProps) {
   const [isDynamic, setIsDynamic] = useState(false)
   const [questionElapsed, setQuestionElapsed] = useState(0)
   const [answerLengthHint, setAnswerLengthHint] = useState<{ text: string; type: 'green' | 'amber' } | null>(null)
+  // Typed-answer fallback — the only way to answer for users who can't speak,
+  // and a rescue path when transcription is misbehaving.
+  const [showTypeInput, setShowTypeInput] = useState(false)
+  const [typedAnswer, setTypedAnswer] = useState('')
 
   const wsRef = useRef<WebSocket | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -91,11 +100,6 @@ function SessionPageInner({ params }: SessionPageProps) {
   // Tracks encouragement prompts per question — capped at 1 so the AI doesn't
   // keep saying "go on" indefinitely if the candidate is genuinely done.
   const encourageAttemptsRef = useRef<Record<string, number>>({})
-  // Pre-fetched short filler audio clips that loop continuously from answer submission
-  // until speakText() interrupts with the real response — eliminates dead silence.
-  const fillerQueueRef = useRef<string[]>([])
-  const fillerIndexRef = useRef(0)
-  const fillerChainActiveRef = useRef(false)
   // Rolling log of the last 4 Q&A exchanges passed to Claude for cross-answer memory.
   const conversationHistoryRef = useRef<{ question: string; answer: string; score: number }[]>([])
   // Self-introduction transcript — passed to evaluate-answer so Claude can reference
@@ -105,10 +109,18 @@ function SessionPageInner({ params }: SessionPageProps) {
   const candidateQuestionsCountRef = useRef(0)
   // Mirror of handleCandidateQuestion so the ws.onmessage closure gets the latest.
   const handleCandidateQuestionRef = useRef<(t: string) => Promise<void>>(async () => {})
+  // Mid-answer interruption — one interruption max per question; guards prevent
+  // concurrent checks; interruptionActive ensures we don't submit during playback.
+  const hasInterruptedRef = useRef<Record<string, boolean>>({})
+  const midAnswerCheckScheduledRef = useRef(false)
+  const interruptionActiveRef = useRef(false)
   // Auto-retry tracking for answer evaluation API failures
   const evalAutoRetriedRef = useRef(false)
   // Ensures TTS fallback announcement fires only once per session
   const ttsFallbackAnnouncedRef = useRef(false)
+  // Set by handleResume: question text to re-speak once the socket opens, so a
+  // resumed interview greets the user instead of showing a silent screen.
+  const resumeSpeakRef = useRef<string | null>(null)
   // Holds a resolve() callback for the currently-playing speakText promise so
   // stopAllAudio() can resolve it immediately from outside the function.
   const cancelSpeakRef = useRef<(() => void) | null>(null)
@@ -152,28 +164,6 @@ function SessionPageInner({ params }: SessionPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, phase])
 
-  // Pre-fetch short filler audio clips when the interview phase begins so they play
-  // instantly from cache (hiding the 2–5 s evaluate-answer API latency).
-  useEffect(() => {
-    if (phase !== 'interview' || !sessionData || fillerQueueRef.current.length > 0) return
-    const phrases = ["Mm-hmm.", "Let me think about that.", "I see.", "Interesting.", "Right, okay."]
-    Promise.all(phrases.map(async (text) => {
-      try {
-        const res = await fetch('/api/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, round_type: sessionData.session.round_type, gender: genderParam }),
-        })
-        if (!res.ok) return null
-        const blob = await res.blob()
-        return URL.createObjectURL(blob)
-      } catch { return null }
-    })).then(urls => {
-      fillerQueueRef.current = urls.filter(Boolean) as string[]
-    })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, sessionData])
-
   // Persist progress so the user can resume if they accidentally navigate away
   useEffect(() => {
     if ((phase !== 'interview' && phase !== 'candidate_questions') || !currentQuestion || ending) return
@@ -182,6 +172,10 @@ function SessionPageInner({ params }: SessionPageProps) {
         questionIndex,
         currentQuestionId: currentQuestion.id,
         savedAt: Date.now(),
+        // Cross-answer memory — without these, a resumed interview loses the
+        // interviewer's knowledge of everything said before the reload.
+        conversationHistory: conversationHistoryRef.current,
+        introTranscript: introTranscriptRef.current,
       }))
     } catch { /* storage full — silently skip */ }
   }, [currentQuestion, questionIndex, phase, ending, sessionId])
@@ -233,11 +227,22 @@ function SessionPageInner({ params }: SessionPageProps) {
         try {
           const saved = localStorage.getItem(`iai_progress_${sessionId}`)
           if (saved) {
-            const p = JSON.parse(saved) as { questionIndex: number; currentQuestionId: string; savedAt: number }
+            const p = JSON.parse(saved) as {
+              questionIndex: number
+              currentQuestionId: string
+              savedAt: number
+              conversationHistory?: { question: string; answer: string; score: number }[]
+              introTranscript?: string
+            }
             const age = Date.now() - p.savedAt
             // Only offer to resume if less than 2 hours old and they made it past Q1
             if (age < 7200000 && p.questionIndex > 0) {
-              setResumeInfo({ questionIndex: p.questionIndex, currentQuestionId: p.currentQuestionId })
+              setResumeInfo({
+                questionIndex: p.questionIndex,
+                currentQuestionId: p.currentQuestionId,
+                conversationHistory: p.conversationHistory,
+                introTranscript: p.introTranscript,
+              })
             }
           }
         } catch { /* ignore */ }
@@ -289,13 +294,43 @@ function SessionPageInner({ params }: SessionPageProps) {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
         mediaStreamRef.current = stream
         setMicPermission('granted')
-      } catch {
+      } catch (err) {
+        analytics.capture('mic_permission_failed', {
+          stage: 'session',
+          error_name: err instanceof Error ? err.name : 'unknown',
+        })
         setMicPermission('denied')
         setError('Microphone access denied. Please allow microphone access and refresh.')
       }
     }
     requestMic()
+    // analytics ref is stable
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Keep the screen awake during the interview — on mobile, the screen locking
+  // suspends the AudioContext and silently kills the mic mid-answer. Re-acquire
+  // on visibilitychange because the lock auto-releases when the tab hides.
+  useEffect(() => {
+    if (!started) return
+    let lock: WakeLockSentinel | null = null
+    let released = false
+    async function acquire() {
+      try {
+        lock = await navigator.wakeLock?.request('screen') ?? null
+      } catch { /* unsupported or low battery — non-fatal */ }
+    }
+    acquire()
+    function onVisibility() {
+      if (document.visibilityState === 'visible' && !released) acquire()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      released = true
+      document.removeEventListener('visibilitychange', onVisibility)
+      lock?.release().catch(() => {})
+    }
+  }, [started])
 
   // Connect Deepgram WebSocket after the user clicks "Begin"
   // deepgramRetry is incremented to re-trigger this effect after a failed token fetch
@@ -317,7 +352,9 @@ function SessionPageInner({ params }: SessionPageProps) {
 
         let audioContext = audioContextRef.current
         if (!audioContext) {
-          audioContext = new AudioContext()
+          const AC = window.AudioContext
+            ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+          audioContext = new AC()
           audioContextRef.current = audioContext
         }
         if (audioContext.state === 'suspended') await audioContext.resume().catch(() => {})
@@ -348,6 +385,12 @@ function SessionPageInner({ params }: SessionPageProps) {
             speakText(
               `Hi there! Welcome, and thanks for joining us today. I'm ${interviewerName}, and I'll be conducting your interview for the ${sd.session.role} position at ${sd.session.company}. It's great to have you here! How are you feeling today?`
             )
+          } else if (resumeSpeakRef.current) {
+            // Explicit resume after a reload — re-orient the candidate and
+            // re-ask the question they were on.
+            const questionText = resumeSpeakRef.current
+            resumeSpeakRef.current = null
+            speakText(`Welcome back! Let's pick up right where we left off. ${questionText}`)
           } else {
             // Reconnected mid-interview — resume listening state immediately
             setListening()
@@ -359,7 +402,25 @@ function SessionPageInner({ params }: SessionPageProps) {
           try {
             const msg = JSON.parse(event.data)
 
-            if (systemMutedRef.current) return
+            if (systemMutedRef.current) {
+              // While AI is speaking, a SpeechStarted from Deepgram means the
+              // candidate is talking — stop the AI and let them take the floor.
+              // Restricted to interview phases so the opening greeting can play
+              // uninterrupted. AEC (echoCancellation: true on the MediaStream)
+              // filters out the AI's own audio, so false positives are rare.
+              if (
+                msg.type === 'SpeechStarted' &&
+                !endingRef.current &&
+                (phaseRef.current === 'interview' || phaseRef.current === 'candidate_questions')
+              ) {
+                stopAllAudio()               // resolves speakText/speakInterruption promise
+                systemMutedRef.current = false
+                isProcessingRef.current = false
+                interruptionActiveRef.current = false
+                // speakText cleanup will call setListening(); next SpeechStarted → USER_SPEAKING
+              }
+              return
+            }
 
             if (msg.type === 'SpeechStarted') {
               setUserSpeaking()
@@ -373,6 +434,23 @@ function SessionPageInner({ params }: SessionPageProps) {
                   liveTranscriptRef.current = ''
                   setFinalTranscript(finalTranscriptRef.current)
                   setLiveTranscript('')
+
+                  // Schedule a mid-answer interruption check once the candidate has
+                  // spoken enough to warrant a clarifying question. The 500ms delay
+                  // lets the final token settle and avoids firing on a stutter.
+                  if (
+                    phaseRef.current === 'interview' &&
+                    !isProcessingRef.current &&
+                    !interruptionActiveRef.current &&
+                    currentQuestionRef.current &&
+                    !hasInterruptedRef.current[currentQuestionRef.current.id]
+                  ) {
+                    const wc = finalTranscriptRef.current.trim().split(/\s+/).filter(Boolean).length
+                    if (wc >= 40 && !midAnswerCheckScheduledRef.current) {
+                      midAnswerCheckScheduledRef.current = true
+                      setTimeout(checkMidAnswerInterruption, 500)
+                    }
+                  }
                 } else {
                   liveTranscriptRef.current = transcript
                   setLiveTranscript(transcript)
@@ -587,39 +665,6 @@ function SessionPageInner({ params }: SessionPageProps) {
     })
   }
 
-  // Plays pre-fetched filler clips in a loop from the moment the candidate finishes
-  // speaking until speakText() sets a new src on audioRef — creating continuous audio
-  // coverage across the full evaluate-answer API round-trip. speakText naturally
-  // interrupts the chain by overwriting audioRef.current.src.
-  async function playFillerChain() {
-    const urls = fillerQueueRef.current
-    if (!urls.length || !audioRef.current) return
-    fillerChainActiveRef.current = true
-    let i = fillerIndexRef.current
-    while (fillerChainActiveRef.current) {
-      const el = audioRef.current
-      if (!el) break
-      const url = urls[i % urls.length]
-      i++
-      el.onended = null
-      el.onerror = null
-      el.pause()
-      el.src = url
-      await new Promise<void>(resolve => {
-        el.onended = () => resolve()
-        el.onerror = () => resolve()
-        el.play().catch(() => resolve())
-        // 5s ceiling per clip — guards against a hung audio element
-        setTimeout(resolve, 5000)
-      })
-    }
-    fillerIndexRef.current = i
-  }
-
-  function stopFillerChain() {
-    fillerChainActiveRef.current = false
-  }
-
   // Proxy for prosodic confidence — counts filler words as a fraction of total words.
   // High filler density → hesitant; low → confident. Used to warm/cool Claude's tone.
   function analyzeAnswerConfidence(transcript: string): 'confident' | 'hesitant' {
@@ -634,7 +679,6 @@ function SessionPageInner({ params }: SessionPageProps) {
   // speech synthesis, and resolves the pending speakText promise so callers
   // awaiting it unblock right away.
   function stopAllAudio() {
-    stopFillerChain()
     cancelSpeakRef.current?.()
     cancelSpeakRef.current = null
     if (audioRef.current) {
@@ -647,6 +691,47 @@ function SessionPageInner({ params }: SessionPageProps) {
     }
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel()
+    }
+  }
+
+  // Plays a brief mid-answer interruption WITHOUT clearing the accumulated transcript.
+  // Mutes Deepgram while speaking so the AI's own audio doesn't get transcribed,
+  // then unmutes and returns to LISTENING so the candidate can continue answering.
+  async function speakInterruption(text: string): Promise<void> {
+    if (!audioRef.current || !sessionData) return
+    interruptionActiveRef.current = true
+    const savedTranscript = finalTranscriptRef.current
+    systemMutedRef.current = true
+
+    try {
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, round_type: sessionData.session.round_type, gender: genderParam }),
+      })
+      if (!res.ok) return
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const el = audioRef.current
+      el.onended = null
+      el.onerror = null
+      el.pause()
+      el.src = url
+      await new Promise<void>(resolve => {
+        cancelSpeakRef.current = resolve
+        el.onended = () => resolve()
+        el.onerror = () => resolve()
+        el.play().catch(() => resolve())
+        setTimeout(resolve, 8000)
+      })
+      cancelSpeakRef.current = null
+      URL.revokeObjectURL(url)
+    } catch { /* silent fail — candidate keeps going uninterrupted */ } finally {
+      // Restore accumulated transcript so the answer submission still gets full text
+      finalTranscriptRef.current = savedTranscript
+      systemMutedRef.current = false
+      interruptionActiveRef.current = false
+      setListening()
     }
   }
 
@@ -676,7 +761,6 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   async function speakText(text: string, startListening = true): Promise<void> {
     if (!sessionData) return
-    stopFillerChain() // stop any running filler chain before taking over audioRef
     setAiSpeaking()
     systemMutedRef.current = true
     setFinalTranscript('')
@@ -743,6 +827,10 @@ function SessionPageInner({ params }: SessionPageProps) {
     } catch (err) {
       cancelSpeakRef.current = null
       console.error('[speakText] ElevenLabs TTS failed — using browser speech:', err)
+      analytics.capture('tts_fallback', {
+        session_id: sessionId,
+        error: err instanceof Error ? err.message.slice(0, 200) : 'unknown',
+      })
       // Browser speech as absolute last resort so the interview never goes silent
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         setTtsFallback(true)
@@ -787,16 +875,49 @@ function SessionPageInner({ params }: SessionPageProps) {
     }
   }
 
+  // Called ~500ms after the candidate has spoken 40+ words. Asks Claude if a
+  // brief clarifying interruption would help. Fires at most once per question.
+  async function checkMidAnswerInterruption() {
+    midAnswerCheckScheduledRef.current = false
+    const q = currentQuestionRef.current
+    if (!q || !sessionData) return
+    if (isProcessingRef.current) return
+    if (interruptionActiveRef.current) return
+    if (hasInterruptedRef.current[q.id]) return
+
+    const partial = finalTranscriptRef.current.trim()
+    const wordCount = partial.split(/\s+/).filter(Boolean).length
+    if (wordCount < 40) return
+
+    try {
+      const res = await fetch('/api/mid-answer-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          partial_transcript: partial,
+          question: q.text,
+          session_id: sessionId,
+        }),
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      if (data.should_interrupt && data.interruption) {
+        // Re-check guards — answer submission may have fired while we awaited
+        if (isProcessingRef.current || interruptionActiveRef.current || hasInterruptedRef.current[q.id]) return
+        hasInterruptedRef.current[q.id] = true
+        await speakInterruption(data.interruption)
+      }
+    } catch { /* silent — never disrupt interview on error */ }
+  }
+
   const handleAnswerComplete = useCallback(async (transcript: string) => {
     if (!currentQuestion || !sessionData) return
     evalAutoRetriedRef.current = false
+    midAnswerCheckScheduledRef.current = false
     setEvalError(null)
     setProcessing()
     setFinalTranscript('')
     stopAnswerRecording(currentQuestion.id)
-
-    // Loop filler clips continuously until speakText() takes over audioRef.
-    void playFillerChain()
 
     const answerConfidence = analyzeAnswerConfidence(transcript)
 
@@ -913,7 +1034,6 @@ function SessionPageInner({ params }: SessionPageProps) {
         await speakText(bridge)
       }
     } catch {
-      stopFillerChain()
       if (!evalAutoRetriedRef.current) {
         // First failure: retry silently after a brief pause.
         evalAutoRetriedRef.current = true
@@ -941,7 +1061,6 @@ function SessionPageInner({ params }: SessionPageProps) {
   const handleCandidateQuestion = useCallback(async (transcript: string) => {
     if (!sessionData || endingRef.current) return
     setProcessing()
-    void playFillerChain()
 
     candidateQuestionsCountRef.current++
     const count = candidateQuestionsCountRef.current
@@ -990,50 +1109,6 @@ function SessionPageInner({ params }: SessionPageProps) {
 
   useEffect(() => { handleCandidateQuestionRef.current = handleCandidateQuestion }, [handleCandidateQuestion])
 
-  async function handleSkip() {
-    if (isProcessingRef.current || !currentQuestion || !sessionData || ending) return
-    if (phase !== 'interview') return
-    isProcessingRef.current = true
-    setEvalError(null)
-    setProcessing()
-    finalTranscriptRef.current = ''
-    liveTranscriptRef.current = ''
-    setFinalTranscript('')
-    setLiveTranscript('')
-    evalAutoRetriedRef.current = false
-    stopAnswerRecording(currentQuestion.id)
-
-    try {
-      // Route through evaluate-answer so the question is marked as asked and
-      // recorded with a score — the API's skip detection handles [skip] naturally
-      // and returns a varied gracious response instead of a hardcoded string.
-      const res = await fetch('/api/evaluate-answer', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          transcript: '[skip]',
-          question_id: currentQuestion.id,
-          session_id: sessionId,
-          start_time: answerStartRef.current,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Skip failed')
-
-      if (data.next_question && data.questions_remaining > 0) {
-        setCurrentQuestion(data.next_question)
-        if (!data.is_probe) setQuestionIndex((i) => i + 1)
-        const spoken = (data.spoken_response ?? '').trim()
-        await speakText(spoken ? `${spoken}... ${data.next_question.text}` : data.next_question.text)
-      } else {
-        await endInterview()
-      }
-    } catch {
-      isProcessingRef.current = false
-      setListening()
-    }
-  }
-
   function handleResume() {
     if (!resumeInfo || !sessionData) return
     // Find the saved question in the loaded question list
@@ -1041,24 +1116,100 @@ function SessionPageInner({ params }: SessionPageProps) {
     if (savedQ) {
       setCurrentQuestion(savedQ)
       setQuestionIndex(resumeInfo.questionIndex)
+      // Restore cross-answer memory so probes/evaluations still know what was
+      // said before the reload — otherwise the interviewer gets amnesia.
+      if (resumeInfo.conversationHistory) conversationHistoryRef.current = resumeInfo.conversationHistory
+      if (resumeInfo.introTranscript) introTranscriptRef.current = resumeInfo.introTranscript
       // Mark that we've already greeted so the intro is skipped
       hasGreetedRef.current = true
       phaseRef.current = 'interview'
       setPhase('interview')
+      // Queue a "welcome back" + question re-speak for when the socket opens,
+      // instead of dumping the user on a silent screen.
+      resumeSpeakRef.current = savedQ.text
     }
     setResumeInfo(null)
     localStorage.removeItem(`iai_progress_${sessionId}`)
   }
 
   async function handleBegin() {
+    // iOS Safari only allows audio playback started from a user gesture, and
+    // the first interviewer line plays from ws.onopen — NOT a gesture. Playing
+    // a silent clip through the same <audio> element here, inside the click,
+    // "blesses" the element so later programmatic play() calls succeed.
+    if (audioRef.current) {
+      try {
+        audioRef.current.src =
+          'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA='
+        await audioRef.current.play().catch(() => {})
+        audioRef.current.pause()
+        audioRef.current.src = ''
+      } catch { /* unlock is best-effort */ }
+    }
+    // Same trick for the browser-speech fallback path.
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        const unlock = new SpeechSynthesisUtterance('')
+        unlock.volume = 0
+        window.speechSynthesis.speak(unlock)
+        window.speechSynthesis.cancel()
+      } catch { /* best-effort */ }
+    }
+
     try {
-      const ctx = new AudioContext({ sampleRate: 16000 })
+      // Older iOS exposes only the webkit-prefixed constructor.
+      const AC = window.AudioContext
+        ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+      const ctx = new AC({ sampleRate: 16000 })
       if (ctx.state === 'suspended') await ctx.resume()
       audioContextRef.current = ctx
     } catch {
       // setupAudioStreaming creates one as fallback
     }
     setStarted(true)
+  }
+
+  // Typed-answer path: routes the text exactly like a final spoken transcript
+  // from the UtteranceEnd handler — intro steps, candidate Q&A, or a normal
+  // answer — so the rest of the pipeline can't tell it wasn't spoken.
+  async function submitTypedAnswer() {
+    const text = typedAnswer.trim()
+    const sd = sessionData
+    if (!text || !sd || isProcessingRef.current || endingRef.current) return
+
+    isProcessingRef.current = true
+    setTypedAnswer('')
+    setShowTypeInput(false)
+    finalTranscriptRef.current = ''
+    liveTranscriptRef.current = ''
+    setFinalTranscript('')
+    setLiveTranscript('')
+    analytics.capture('typed_answer_submitted', { session_id: sessionId, phase: phaseRef.current })
+
+    if (phaseRef.current === 'intro') {
+      const step = introStepRef.current
+      if (step === 1) {
+        introStepRef.current = 3
+        setProcessing()
+        const fallback = `Good to know! Before we get started, could you give me a brief introduction — your background, your experience, and what drew you to apply for this ${sd.session.role} role at ${sd.session.company}?`
+        const spoken = await fetchIntroSpoken(1, text, fallback, sd)
+        await speakText(spoken)
+      } else if (step === 3) {
+        introTranscriptRef.current = text
+        phaseRef.current = 'interview'
+        setPhase('interview')
+        setProcessing()
+        const q = currentQuestionRef.current
+        const fallback = `Thanks for sharing that! Alright, let's get into it`
+        const spoken = await fetchIntroSpoken(3, text, fallback, sd)
+        await speakText(q ? `${spoken}... ${q.text}` : spoken)
+      }
+    } else if (phaseRef.current === 'candidate_questions') {
+      handleCandidateQuestionRef.current(text)
+    } else {
+      evalAutoRetriedRef.current = false
+      handleAnswerCompleteRef.current(text)
+    }
   }
 
   function endInterview(abandoned = false) {
@@ -1360,9 +1511,13 @@ function SessionPageInner({ params }: SessionPageProps) {
 
       {/* Main area */}
       <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-6 py-5 sm:py-8 gap-6 sm:gap-10 overflow-y-auto">
-        {/* Status indicator */}
-        <div className="flex items-center gap-2 sm:gap-3 bg-white/[0.04] border border-white/[0.08] rounded-full px-4 py-2">
-          <div className={`w-2 h-2 rounded-full ${stateColor[state]} ${state !== 'IDLE' ? 'animate-pulse' : ''}`} />
+        {/* Status indicator — aria-live so screen readers announce turn changes */}
+        <div
+          className="flex items-center gap-2 sm:gap-3 bg-white/[0.04] border border-white/[0.08] rounded-full px-4 py-2"
+          role="status"
+          aria-live="polite"
+        >
+          <div className={`w-2 h-2 rounded-full ${stateColor[state]} ${state !== 'IDLE' ? 'animate-pulse' : ''}`} aria-hidden="true" />
           <span className="text-gray-300 text-xs sm:text-sm font-medium">{stateLabel[state]}</span>
         </div>
 
@@ -1513,7 +1668,12 @@ function SessionPageInner({ params }: SessionPageProps) {
 
         {/* Live transcript */}
         {(liveTranscript || finalTranscript) && (
-          <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 sm:p-4 max-w-2xl w-full max-h-28 sm:max-h-none overflow-y-auto">
+          <div
+            className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 sm:p-4 max-w-2xl w-full max-h-28 sm:max-h-none overflow-y-auto"
+            role="log"
+            aria-live="polite"
+            aria-label="Live transcript of your answer"
+          >
             <div className="text-xs text-gray-500 mb-1.5 uppercase tracking-wider">Live transcript</div>
             <p className="text-gray-300 text-xs sm:text-sm leading-relaxed">
               {finalTranscript}
@@ -1536,8 +1696,56 @@ function SessionPageInner({ params }: SessionPageProps) {
         </div>
       )}
 
+      {/* Typed-answer fallback panel */}
+      {showTypeInput && (state === 'LISTENING' || state === 'USER_SPEAKING') && (
+        <div className="px-4 sm:px-6 py-3 border-t border-white/[0.06] bg-white/[0.02]">
+          <div className="max-w-2xl mx-auto flex flex-col gap-2">
+            <label htmlFor="typed-answer" className="text-xs text-gray-500 uppercase tracking-wider">
+              Type your answer
+            </label>
+            <textarea
+              id="typed-answer"
+              value={typedAnswer}
+              onChange={(e) => setTypedAnswer(e.target.value)}
+              rows={3}
+              autoFocus
+              placeholder="Type your answer here, then press Submit (or Ctrl+Enter)…"
+              className="w-full bg-white/[0.04] border border-white/[0.10] rounded-xl px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-none"
+              onKeyDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') submitTypedAnswer()
+              }}
+            />
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => { setShowTypeInput(false); setTypedAnswer('') }}
+                className="text-xs text-gray-500 hover:text-gray-300 px-3 py-1.5 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitTypedAnswer}
+                disabled={!typedAnswer.trim()}
+                className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 disabled:bg-white/[0.06] disabled:text-gray-600 text-white px-4 py-1.5 rounded-lg transition-colors"
+              >
+                Submit Answer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Controls */}
       <div className="px-4 sm:px-6 py-4 sm:py-5 border-t border-white/[0.06] flex items-center justify-center gap-2 sm:gap-4">
+        {(state === 'LISTENING' || state === 'USER_SPEAKING') && !showTypeInput && (
+          <button
+            onClick={() => setShowTypeInput(true)}
+            className="flex flex-col items-center gap-1 sm:gap-1.5 px-3 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-white/[0.06] text-gray-400 hover:bg-white/[0.10] border border-white/[0.08] hover:text-gray-200 transition-all duration-200"
+            aria-label="Type your answer instead of speaking"
+          >
+            <Keyboard className="w-4 h-4 sm:w-5 sm:h-5" />
+            <span className="text-[10px] sm:text-xs font-medium">Type</span>
+          </button>
+        )}
         <button
           onClick={() => setMuted((m) => { mutedRef.current = !m; return !m })}
           className={`flex flex-col items-center gap-1 sm:gap-1.5 px-3 sm:px-5 py-2.5 sm:py-3 rounded-2xl transition-all duration-200 ${
@@ -1549,15 +1757,6 @@ function SessionPageInner({ params }: SessionPageProps) {
           {muted ? <MicOff className="w-4 h-4 sm:w-5 sm:h-5" /> : <Mic className="w-4 h-4 sm:w-5 sm:h-5" />}
           <span className="text-[10px] sm:text-xs font-medium">{muted ? 'Unmute' : 'Mute'}</span>
         </button>
-
-        {(state === 'LISTENING' || state === 'USER_SPEAKING') && phase === 'interview' && (
-          <button
-            onClick={handleSkip}
-            className="text-xs text-gray-600 hover:text-gray-400 transition-colors underline underline-offset-2 px-2 py-1"
-          >
-            Pass on this question
-          </button>
-        )}
 
         {(state === 'LISTENING' || state === 'USER_SPEAKING') && phase === 'candidate_questions' && (
           <button

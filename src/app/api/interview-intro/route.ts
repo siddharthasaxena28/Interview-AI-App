@@ -1,6 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { withAuth, apiError } from '@/lib/api-handler'
+import { tracedMessage } from '@/lib/llm-metrics'
+import { checkRateLimit } from '@/lib/rate-limit'
 import { PERSONA_SPEECH_STYLE } from '@/lib/personas'
 import type { RoundType } from '@/types'
 
@@ -17,11 +19,17 @@ Hard rules:
 
 Return ONLY a JSON object: { "spoken": "<your spoken reply>" }`
 
-export async function POST(request: NextRequest) {
+// Rate limiting and errors are handled inline (not via withAuth opts) because this
+// route fails SOFT: on rate limit or any error it returns a 200 with an empty
+// "spoken" string so the client's scripted line takes over and the interview
+// never stalls.
+export const POST = withAuth('interview-intro', async ({ request, user }) => {
   try {
-    const supabase = await createServerSupabaseClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Two intro exchanges per session; the empty-spoken fallback means the
+    // client's scripted line takes over, so the interview never stalls.
+    if (!await checkRateLimit(`intro:${user.id}`, 20, 3_600_000)) {
+      return NextResponse.json({ spoken: '' })
+    }
 
     const { step, transcript, round_type, role, company } = await request.json() as {
       step: 1 | 3
@@ -32,7 +40,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (step !== 1 && step !== 3) {
-      return NextResponse.json({ error: 'Missing or invalid fields' }, { status: 400 })
+      return apiError('Missing or invalid fields', 400)
     }
 
     const personaStyle = PERSONA_SPEECH_STYLE[round_type] ?? 'Professional and conversational.'
@@ -55,7 +63,7 @@ Reply out loud:
 1. React genuinely to something SPECIFIC they just mentioned (a skill, a past company, their years of experience, their motivation) so they can tell you were actually listening.
 2. Then add a short, natural bridge into the interview (e.g. "let's dive in" / "let's get started"). Do NOT ask an interview question yourself — another question will follow immediately after you speak.`
 
-    const message = await client.messages.create({
+    const message = await tracedMessage('interview-intro', client, {
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 200,
       system: [{ type: 'text', text: INTRO_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
@@ -80,4 +88,4 @@ Reply out loud:
     // Non-fatal: the client falls back to a scripted line so the interview never stalls.
     return NextResponse.json({ spoken: '' })
   }
-}
+})

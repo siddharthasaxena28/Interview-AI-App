@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
-import { checkRateLimit } from '@/lib/rate-limit'
+import { withAuth, apiError } from '@/lib/api-handler'
+import { tracedMessage } from '@/lib/llm-metrics'
 
 const client = new Anthropic()
 
@@ -40,49 +40,40 @@ interface StudyDay {
   roundType: string
 }
 
-export async function POST(request: NextRequest) {
-  try {
-    const supabase = await createServerSupabaseClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+export const POST = withAuth('study-plan', async ({ request, user, supabase }) => {
+  const { interview_date } = await request.json() as { interview_date?: string }
 
-    if (!await checkRateLimit(`study-plan:${user.id}`, 10, 3_600_000)) {
-      return NextResponse.json({ error: 'Rate limit exceeded. Try again later.' }, { status: 429 })
-    }
+  // Load context
+  const [
+    { data: weakAreas },
+    { data: recentSessions },
+    { data: userData },
+    { data: latestSession },
+  ] = await Promise.all([
+    supabase.from('weak_areas').select('topic_tag, avg_score').eq('user_id', user.id).order('avg_score', { ascending: true }).limit(5),
+    supabase.from('interview_sessions').select('round_type, ended_at').eq('user_id', user.id).eq('status', 'completed').order('ended_at', { ascending: false }).limit(5),
+    supabase.from('users').select('name, current_streak').eq('id', user.id).single(),
+    supabase.from('interview_sessions').select('role, company, experience_years, round_type').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+  ])
 
-    const { interview_date } = await request.json() as { interview_date?: string }
+  const parsedDate = interview_date ? new Date(interview_date) : null
+  const daysUntil = parsedDate && !isNaN(parsedDate.getTime())
+    ? Math.max(1, Math.ceil((parsedDate.getTime() - Date.now()) / 86400000))
+    : 7
+  const planDays = Math.min(daysUntil, 7)
 
-    // Load context
-    const [
-      { data: weakAreas },
-      { data: recentSessions },
-      { data: userData },
-      { data: latestSession },
-    ] = await Promise.all([
-      supabase.from('weak_areas').select('topic_tag, avg_score').eq('user_id', user.id).order('avg_score', { ascending: true }).limit(5),
-      supabase.from('interview_sessions').select('round_type, ended_at').eq('user_id', user.id).eq('status', 'completed').order('ended_at', { ascending: false }).limit(5),
-      supabase.from('users').select('name, current_streak').eq('id', user.id).single(),
-      supabase.from('interview_sessions').select('role, company, experience_years, round_type').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
-    ])
+  const weakContext = (weakAreas ?? []).map(w =>
+    `- ${w.topic_tag.replace(/_/g, ' ')} (avg score ${(w.avg_score ?? 0).toFixed(1)}/5)`
+  ).join('\n') || '- No weak areas identified yet'
 
-    const parsedDate = interview_date ? new Date(interview_date) : null
-    const daysUntil = parsedDate && !isNaN(parsedDate.getTime())
-      ? Math.max(1, Math.ceil((parsedDate.getTime() - Date.now()) / 86400000))
-      : 7
-    const planDays = Math.min(daysUntil, 7)
+  const recentContext = Array.from(new Set((recentSessions ?? []).map(s => s.round_type))).join(', ') || 'none yet'
 
-    const weakContext = (weakAreas ?? []).map(w =>
-      `- ${w.topic_tag.replace(/_/g, ' ')} (avg score ${(w.avg_score ?? 0).toFixed(1)}/5)`
-    ).join('\n') || '- No weak areas identified yet'
-
-    const recentContext = Array.from(new Set((recentSessions ?? []).map(s => s.round_type))).join(', ') || 'none yet'
-
-    const roleContext = latestSession?.role && latestSession?.company
-      ? `- Target role: ${latestSession.role} at ${latestSession.company}${latestSession.experience_years ? ` (${latestSession.experience_years} years experience)` : ''}
+  const roleContext = latestSession?.role && latestSession?.company
+    ? `- Target role: ${latestSession.role} at ${latestSession.company}${latestSession.experience_years ? ` (${latestSession.experience_years} years experience)` : ''}
 - Primary round to prepare for: ${latestSession.round_type}`
-      : '- Target role: Not specified (general software engineering prep)'
+    : '- Target role: Not specified (general software engineering prep)'
 
-    const prompt = `Create a ${planDays}-day study plan for this candidate.
+  const prompt = `Create a ${planDays}-day study plan for this candidate.
 
 Candidate context:
 ${roleContext}
@@ -92,34 +83,32 @@ ${weakContext}
 - Current streak: ${userData?.current_streak ?? 0} days
 - Days until interview: ${daysUntil}`
 
-    const message = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1500,
-      system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
-      messages: [{ role: 'user', content: prompt }],
-    })
+  const message = await tracedMessage('study-plan', client, {
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 1500,
+    system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
+    messages: [{ role: 'user', content: prompt }],
+  })
 
-    const text = message.content[0]
-    if (text.type !== 'text') throw new Error('Unexpected response')
+  const text = message.content[0]
+  if (text.type !== 'text') throw new Error('Unexpected response')
 
-    let days: StudyDay[]
-    try {
-      const m = text.text.match(/\[[\s\S]*\]/)
-      days = JSON.parse(m ? m[0] : text.text)
-      if (!Array.isArray(days) || days.length === 0) throw new Error('Empty plan')
-    } catch {
-      return NextResponse.json({ error: 'Failed to parse plan' }, { status: 500 })
-    }
-
-    return NextResponse.json({
-      days,
-      generated_at: new Date().toISOString(),
-      context: latestSession?.role && latestSession?.company
-        ? { role: latestSession.role, company: latestSession.company }
-        : undefined,
-    })
-  } catch (error) {
-    console.error('study-plan error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  let days: StudyDay[]
+  try {
+    const m = text.text.match(/\[[\s\S]*\]/)
+    days = JSON.parse(m ? m[0] : text.text)
+    if (!Array.isArray(days) || days.length === 0) throw new Error('Empty plan')
+  } catch {
+    return apiError('Failed to parse plan', 500)
   }
-}
+
+  return NextResponse.json({
+    days,
+    generated_at: new Date().toISOString(),
+    context: latestSession?.role && latestSession?.company
+      ? { role: latestSession.role, company: latestSession.company }
+      : undefined,
+  })
+}, {
+  rateLimit: { prefix: 'study-plan', max: 10, windowMs: 3_600_000 },
+})

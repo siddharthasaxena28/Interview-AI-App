@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS public.answers (
   transcript_text text NOT NULL DEFAULT '',
   duration_seconds integer NOT NULL DEFAULT 0,
   score integer CHECK (score BETWEEN 1 AND 5),
+  confidence text CHECK (confidence IN ('confident', 'hesitant')),
   recorded_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -110,6 +111,8 @@ CREATE TABLE IF NOT EXISTS public.feedback_reports (
   gaps_json jsonb NOT NULL DEFAULT '[]',
   per_question_json jsonb NOT NULL DEFAULT '[]',
   communication_score integer NOT NULL DEFAULT 0 CHECK (communication_score BETWEEN 0 AND 100),
+  red_flags_json jsonb,
+  standout_moments_json jsonb,
   report_text text NOT NULL DEFAULT '',
   share_token text UNIQUE NOT NULL DEFAULT gen_random_uuid()::text,
   emailed_at timestamptz,

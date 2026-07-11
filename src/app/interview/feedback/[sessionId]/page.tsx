@@ -4,7 +4,7 @@ import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { getProbabilityLabel } from '@/lib/utils'
 import { getRoundLabel } from '@/lib/personas'
 import { CheckCircle, AlertCircle, Share2, RotateCcw, Mic, TrendingUp, ArrowLeft } from 'lucide-react'
-import type { FeedbackReport, InterviewSession, StrengthItem, GapItem, PerQuestionFeedback, CommunicationFeedback, RoundType } from '@/types'
+import type { FeedbackReport, InterviewSession, StrengthItem, GapItem, PerQuestionFeedback, CommunicationFeedback, RoundType, FeedbackSignal } from '@/types'
 import FeedbackClient from './FeedbackClient'
 import GeneratingBanner from './GeneratingBanner'
 import ScoreCard from './ScoreCard'
@@ -13,6 +13,37 @@ import FeedbackPerQuestion from './FeedbackPerQuestion'
 import AppFeedbackWidget from './AppFeedbackWidget'
 import CoachChat from './CoachChat'
 import FullTranscript from './FullTranscript'
+
+// Finds the candidate's most recent prior *completed* session of the same round
+// type and returns its report's headline scores, so the report can show progress
+// against their own history rather than just a one-off snapshot.
+async function getPriorReport(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  userId: string,
+  roundType: string,
+  excludeSessionId: string
+) {
+  const { data: priorSession } = await supabase
+    .from('interview_sessions')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('round_type', roundType)
+    .eq('status', 'completed')
+    .neq('id', excludeSessionId)
+    .order('ended_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (!priorSession) return null
+
+  const { data: priorReport } = await supabase
+    .from('feedback_reports')
+    .select('overall_score, selection_probability, communication_score')
+    .eq('session_id', priorSession.id)
+    .maybeSingle()
+
+  return priorReport as Pick<FeedbackReport, 'overall_score' | 'selection_probability' | 'communication_score'> | null
+}
 
 export default async function FeedbackPage({
   params,
@@ -38,10 +69,24 @@ export default async function FeedbackPage({
     { data: report },
     { data: questions },
     { data: answers },
+    { data: benchmarkRows },
+    priorReport,
+    { data: historyRows },
   ] = await Promise.all([
     supabase.from('feedback_reports').select('*').eq('session_id', sessionId).single(),
     supabase.from('questions').select('id, text, difficulty, topic_tag, expected_keywords').eq('session_id', sessionId).eq('asked', true).order('order_index'),
     supabase.from('answers').select('question_id, transcript_text, duration_seconds').eq('session_id', sessionId),
+    supabase.rpc('get_selection_probability_benchmark', { p_round_type: session.round_type }),
+    getPriorReport(supabase, user.id, session.round_type, sessionId),
+    // Per-topic history across ALL earlier completed sessions — powers the
+    // "was 2.5 last time" deltas in Performance by Topic.
+    supabase
+      .from('answers')
+      .select('score, questions!inner(topic_tag), interview_sessions!inner(user_id, status)')
+      .eq('interview_sessions.user_id', user.id)
+      .eq('interview_sessions.status', 'completed')
+      .neq('session_id', sessionId)
+      .not('score', 'is', null),
   ])
 
   const s = session as InterviewSession
@@ -132,6 +177,8 @@ export default async function FeedbackPage({
   const gaps: GapItem[] = (r.gaps_json as GapItem[]) ?? []
   const perQuestion: PerQuestionFeedback[] = (r.per_question_json as PerQuestionFeedback[]) ?? []
   const commJson: CommunicationFeedback | null = (r.communication_json as CommunicationFeedback | null) ?? null
+  const redFlags: FeedbackSignal[] = (r.red_flags_json as FeedbackSignal[] | null) ?? []
+  const standoutMoments: FeedbackSignal[] = (r.standout_moments_json as FeedbackSignal[] | null) ?? []
 
   const questionList = (questions ?? []) as Array<{ id: string; text: string; difficulty: number; topic_tag: string; expected_keywords?: string[] }>
   const answerList = (answers ?? []) as Array<{ question_id: string; transcript_text: string; duration_seconds: number }>
@@ -144,8 +191,24 @@ export default async function FeedbackPage({
     const cur = topicPerf.get(q.topic_tag) ?? { total: 0, count: 0 }
     topicPerf.set(q.topic_tag, { total: cur.total + pq.score, count: cur.count + 1 })
   }
+  // Prior per-topic averages from every earlier completed session, so each
+  // topic row can show movement against the candidate's own history.
+  const priorTopicPerf = new Map<string, { total: number; count: number }>()
+  for (const row of (historyRows ?? []) as Array<{ score: number | null; questions: { topic_tag: string } }>) {
+    if (row.score == null || !row.questions?.topic_tag) continue
+    const cur = priorTopicPerf.get(row.questions.topic_tag) ?? { total: 0, count: 0 }
+    priorTopicPerf.set(row.questions.topic_tag, { total: cur.total + row.score, count: cur.count + 1 })
+  }
+
   const topicData = Array.from(topicPerf.entries())
-    .map(([tag, { total, count }]) => ({ tag, avg: total / count }))
+    .map(([tag, { total, count }]) => {
+      const prior = priorTopicPerf.get(tag)
+      return {
+        tag,
+        avg: total / count,
+        priorAvg: prior ? prior.total / prior.count : null,
+      }
+    })
     .sort((a, b) => b.avg - a.avg)
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
@@ -164,11 +227,26 @@ export default async function FeedbackPage({
       ]
     : null
 
-  const benchmark: Record<string, number> = {
+  // Real cross-user average from feedback_reports (via SECURITY DEFINER RPC — see
+  // selection_probability_benchmark_migration.sql). Below a minimum sample size the
+  // number is too noisy to call an "industry average", so we fall back to a labeled
+  // estimate instead of presenting a thin sample as representative.
+  const MIN_BENCHMARK_SAMPLE = 20
+  const benchmarkRow = benchmarkRows?.[0] as { avg_probability: number | null; sample_size: number | string } | undefined
+  const benchmarkSampleSize = benchmarkRow ? Number(benchmarkRow.sample_size) : 0
+  const benchmarkIsLive = benchmarkSampleSize >= MIN_BENCHMARK_SAMPLE && benchmarkRow?.avg_probability != null
+
+  const ESTIMATED_BENCHMARK: Record<string, number> = {
     tech_l1: 55, tech_l2: 52, managerial: 54, hr: 62, full_loop: 53,
   }
-  const benchmarkAvg = benchmark[s.round_type as string] ?? 55
+  const benchmarkAvg = benchmarkIsLive
+    ? Math.round(Number(benchmarkRow!.avg_probability))
+    : (ESTIMATED_BENCHMARK[s.round_type as string] ?? 55)
   const benchmarkDiff = r.selection_probability - benchmarkAvg
+  const selectionFactors: string[] = (r.selection_factors_json as string[] | null) ?? []
+  const benchmarkLabel = benchmarkIsLive
+    ? `Average across ${benchmarkSampleSize} InterviewAI candidates for ${getRoundLabel(s.round_type as RoundType)}:`
+    : `InterviewAI platform baseline for ${getRoundLabel(s.round_type as RoundType)} (limited data):`
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -239,9 +317,38 @@ export default async function FeedbackPage({
             />
           </div>
 
-          <div className="mt-6 pt-5 border-t border-gray-200 flex flex-wrap items-center justify-center gap-2">
+          {/* Progress vs the candidate's own history — makes practice feel like
+              improvement, not just a one-off grade against a faceless benchmark. */}
+          {priorReport && (
+            <div className="mt-6 pt-5 border-t border-gray-200 flex flex-wrap items-center justify-center gap-2">
+              <TrendingUp className="w-3.5 h-3.5 text-gray-400" />
+              <span className="text-xs text-gray-500">
+                Since your last {getRoundLabel(s.round_type as RoundType)} interview:
+              </span>
+              {([
+                ['Overall', r.overall_score - priorReport.overall_score],
+                ['Selection chance', r.selection_probability - priorReport.selection_probability],
+                ['Communication', r.communication_score - priorReport.communication_score],
+              ] as const).map(([label, diff]) => (
+                <span
+                  key={label}
+                  className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${
+                    diff > 0
+                      ? 'bg-emerald-50 text-emerald-600'
+                      : diff < 0
+                        ? 'bg-amber-50 text-amber-600'
+                        : 'bg-gray-100 text-gray-500'
+                  }`}
+                >
+                  {label} {diff > 0 ? `↑ +${diff}` : diff < 0 ? `↓ ${diff}` : '— no change'}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div className={`pt-5 flex flex-wrap items-center justify-center gap-2 ${priorReport ? 'mt-4 border-t border-gray-100' : 'mt-6 border-t border-gray-200'}`}>
             <span className="text-xs text-gray-500">
-              Industry average for {getRoundLabel(s.round_type as RoundType)}:
+              {benchmarkLabel}
             </span>
             <span className="text-xs font-semibold text-gray-700">{benchmarkAvg}%</span>
             <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${
@@ -254,6 +361,22 @@ export default async function FeedbackPage({
                 : `↓ ${benchmarkDiff}% below average`}
             </span>
           </div>
+
+          {/* Why this number — grounds the selection probability in concrete factors
+              instead of presenting a bare percentage as an opaque measurement. */}
+          {selectionFactors.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <p className="text-xs font-semibold text-gray-500 mb-2">Why this estimate</p>
+              <ul className="space-y-1.5">
+                {selectionFactors.map((factor, i) => (
+                  <li key={i} className="flex gap-2 text-xs text-gray-600 leading-relaxed">
+                    <span className="text-indigo-400 flex-shrink-0">•</span>
+                    <span>{factor}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         {/* Overall assessment */}
@@ -264,6 +387,58 @@ export default async function FeedbackPage({
             <p className="text-gray-600 text-sm leading-7 whitespace-pre-wrap">{r.report_text}</p>
           </div>
         </div>
+
+        {/* Key Signals — red flags and standout moments (only rendered when non-empty) */}
+        {(redFlags.length > 0 || standoutMoments.length > 0) && (
+          <div className="grid md:grid-cols-2 gap-5">
+            {redFlags.length > 0 && (
+              <div className="bg-white border border-red-200 rounded-2xl overflow-hidden">
+                <div className="h-px bg-gradient-to-r from-red-500/60 to-rose-500/60" />
+                <div className="p-5">
+                  <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-500" /> Watch Out For
+                  </h2>
+                  <div className="space-y-3">
+                    {redFlags.map((rf, i) => (
+                      <div key={i} className="flex gap-3 p-3.5 rounded-xl bg-red-50 border border-red-200">
+                        <div className="w-5 h-5 rounded-full bg-red-100 text-red-600 text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+                          !
+                        </div>
+                        <div>
+                          <div className="font-semibold text-red-700 text-sm mb-0.5">{rf.signal}</div>
+                          <p className="text-red-600 text-xs leading-relaxed">{rf.detail}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+            {standoutMoments.length > 0 && (
+              <div className="bg-white border border-indigo-200 rounded-2xl overflow-hidden">
+                <div className="h-px bg-gradient-to-r from-indigo-500/60 to-violet-500/60" />
+                <div className="p-5">
+                  <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-indigo-600" /> Standout Moments
+                  </h2>
+                  <div className="space-y-3">
+                    {standoutMoments.map((sm, i) => (
+                      <div key={i} className="flex gap-3 p-3.5 rounded-xl bg-indigo-50 border border-indigo-200">
+                        <div className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-600 text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+                          ★
+                        </div>
+                        <div>
+                          <div className="font-semibold text-indigo-700 text-sm mb-0.5">{sm.signal}</div>
+                          <p className="text-indigo-600 text-xs leading-relaxed">{sm.detail}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Strengths + Focus Areas */}
         <div className="grid md:grid-cols-2 gap-5">
@@ -384,12 +559,24 @@ export default async function FeedbackPage({
                 <TrendingUp className="w-4 h-4 text-indigo-600" /> Performance by Topic
               </h2>
               <div className="space-y-3">
-                {topicData.map(({ tag, avg }, i) => {
+                {topicData.map(({ tag, avg, priorAvg }, i) => {
                   const pct = (avg / 5) * 100
+                  const delta = priorAvg != null ? avg - priorAvg : null
                   return (
                     <div key={tag}>
                       <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-sm text-gray-700 capitalize">{tag.replace(/_/g, ' ')}</span>
+                        <span className="text-sm text-gray-700 capitalize flex items-center gap-2">
+                          {tag.replace(/_/g, ' ')}
+                          {delta != null && Math.abs(delta) >= 0.3 && (
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${
+                              delta > 0
+                                ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                                : 'text-red-700 bg-red-50 border-red-200'
+                            }`}>
+                              {delta > 0 ? '↑' : '↓'} was {priorAvg!.toFixed(1)}
+                            </span>
+                          )}
+                        </span>
                         <span className={`text-xs font-semibold ${
                           avg >= 4 ? 'text-emerald-600' : avg >= 3 ? 'text-amber-600' : 'text-red-600'
                         }`}>

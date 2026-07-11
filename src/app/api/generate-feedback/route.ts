@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { waitUntil } from '@vercel/functions'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { withAuth, apiError } from '@/lib/api-handler'
+import { tracedMessage } from '@/lib/llm-metrics'
 import { Resend } from 'resend'
 import { generateShareToken } from '@/lib/utils'
 import type { Question, Answer, FeedbackJSON } from '@/types'
@@ -16,8 +17,8 @@ const client = new Anthropic()
 // we only need enough text for Claude to write specific feedback. Shorter answers =
 // smaller prompts = faster generation. Long interviews get the most aggressive cut.
 function answerMaxChars(questionCount: number): number {
-  if (questionCount >= 15) return 500   // full_loop (~20 q) — be aggressive
-  if (questionCount >= 10) return 750   // medium interview
+  if (questionCount > 15) return 500   // full_loop (~26 q) — be aggressive
+  if (questionCount >= 10) return 750   // individual rounds (15 q) and medium sessions
   return 1200                           // short interview — keep most detail
 }
 
@@ -47,10 +48,43 @@ Rules:
 
 const OVERALL_SYSTEM_PROMPT = `You are an expert interview coach generating an overall interview performance assessment.
 
+--- SCORING ANCHOR (read before assigning overall_score) ---
+You will be given both the simple average and the difficulty-weighted average of per-question
+scores (each already graded 1-5 by a real-time evaluator). Use the WEIGHTED average as your
+primary anchor — it credits candidates who performed well on harder questions. Convert to
+overall_score using this baseline band, then adjust by at most ±8 points for communication
+quality, depth/specificity beyond the raw number, and consistency:
+  weighted avg 4.5-5.0 → baseline ~88-96
+  weighted avg 4.0-4.4 → baseline ~78-87
+  weighted avg 3.5-3.9 → baseline ~68-77
+  weighted avg 3.0-3.4 → baseline ~58-67
+  weighted avg 2.5-2.9 → baseline ~46-57
+  weighted avg 2.0-2.4 → baseline ~34-45
+  weighted avg below 2.0 → baseline ~15-33
+The candidate can see their individual question scores, so overall_score must stay inside (or
+very close to) the band implied by the weighted average — a number that contradicts the visible
+per-question scores will feel arbitrary and erode trust.
+
+--- SELECTION PROBABILITY ANCHOR ---
+Use overall_score as your starting point for selection_probability, then adjust using the
+specific selection_factors you identify (a single standout strength or dealbreaker can shift it
+meaningfully):
+  overall_score 85+  → roughly 60-85%
+  overall_score 70-84 → roughly 35-60%
+  overall_score 50-69 → roughly 15-35%
+  overall_score below 50 → roughly 2-15%
+These bands are loose guides, not hard rules — but stay broadly consistent with them so the
+number feels principled rather than arbitrary across different candidates and sessions.
+
 Return ONLY a valid JSON object (no per_question array):
 {
-  "overall_score": <0-100, weighted average considering depth, accuracy, and communication>,
-  "selection_probability": <0-100, honest realistic estimate of advancing to the next round>,
+  "overall_score": <0-100, derived from the scoring anchor above — see rules>,
+  "selection_probability": <0-100, derived from the selection probability anchor above — see rules>,
+  "selection_factors": [
+    "the single biggest thing that helped or hurt their chances, stated concretely — e.g. 'Strong, structured answer on the system design question' or 'Vague on conflict-resolution — no concrete example given'",
+    "second most influential factor, equally concrete",
+    "optional third factor if there's a clear one — omit rather than pad to 3"
+  ],
   "strengths": [
     {"title": "strength name", "example": "quote or specific reference from their answers", "advice": "how to leverage this in future interviews"}
   ],
@@ -68,25 +102,46 @@ Return ONLY a valid JSON object (no per_question array):
     "filler_words": <0-100, where 100=no fillers at all>,
     "filler_note": "one concise sentence assessment"
   },
+  "red_flags": [
+    {"signal": "brief label for the disqualifying pattern", "detail": "specific evidence from the interview — exact question or quote"}
+  ],
+  "standout_moments": [
+    {"signal": "brief label for the impressive moment", "detail": "specific evidence — exact question or quote that demonstrated it"}
+  ],
   "summary": "2-3 paragraph honest narrative assessment of the overall interview performance"
 }
 
 Rules:
 - strengths: exactly 3, grounded in actual things they demonstrated
 - gaps: exactly 3, grounded in what was weak or missing
+- selection_factors: 2-3 concrete factors that explain WHY you landed on that probability — these are shown to the candidate so they can see your reasoning, not just a bare number. Each must trace to something specific in the transcript.
+- red_flags: 0-3 items. Include ONLY genuine disqualifying or seriously concerning patterns — e.g. "Cannot explain items on own resume", "Zero concrete examples across all behavioral questions", "Fundamental error on a core concept for this role". Empty array if nothing is disqualifying. Do NOT pad.
+- standout_moments: 0-2 items. Include ONLY genuinely impressive moments worth calling out — e.g. correctly naming and justifying a non-obvious trade-off, depth well beyond what the question required. Empty array if nothing stands out. Do NOT pad.
 - Be honest and constructive — generic praise hurts candidates
 - Use topic performance patterns to identify themes
-- overall_score must reflect true performance, not a confidence boost`
+- overall_score must reflect true performance, not a confidence boost
 
-export async function POST(request: NextRequest) {
+--- MEASURED DELIVERY SIGNAL (ground truth — do not contradict) ---
+You will be given a measured delivery signal computed directly from each answer's actual
+filler-word density (not inferred from a text impression): how many answers came across as
+"confident" vs "hesitant/filler-heavy". Treat this as ground truth for "confidence" and
+"filler_words" — set those two sub-scores so they are consistent with the measured ratio
+(e.g. if most answers measured hesitant/filler-heavy, "filler_words" and "confidence" must be
+on the lower end, regardless of how polished the transcript text reads). You may still use the
+transcript content to inform "clarity" and "pacing" and to write the *_note explanations —
+just make sure confidence_note/filler_note reference what was actually measured.
+
+--- FULL_LOOP SESSIONS ---
+When round_type is full_loop: your "summary" must include one sentence per domain covered
+(Technical L1 fundamentals, Technical L2 system design, Managerial/leadership, HR/behavioral)
+noting the candidate's relative strength or weakness in that domain. This gives the candidate
+a clear cross-domain picture of where to focus next.`
+
+// The catch stays inline (rather than falling through to withAuth's generic 500)
+// so generation failures keep surfacing their specific error message to the client
+// (e.g. 'Failed to parse overall feedback from AI').
+export const POST = withAuth('generate-feedback', async ({ request, user, supabase }) => {
   try {
-    const supabase = await createServerSupabaseClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
     const { session_id, charge } = await request.json() as { session_id: string; charge?: boolean }
 
     // Fetch session, questions, answers, existing report, and user plan in parallel.
@@ -105,7 +160,7 @@ export async function POST(request: NextRequest) {
     ])
 
     if (!session) {
-      return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+      return apiError('Session not found', 404)
     }
 
     // Dedup: if a report already exists (e.g. from background pre-generation that fires
@@ -128,6 +183,7 @@ export async function POST(request: NextRequest) {
       feedback = {
         overall_score: 0,
         selection_probability: 0,
+        selection_factors: [],
         strengths: [
           { title: 'Showed up', example: 'Candidate initiated an interview session', advice: 'Complete the full interview to receive meaningful strengths feedback' },
           { title: 'N/A', example: '', advice: '' },
@@ -194,26 +250,62 @@ export async function POST(request: NextRequest) {
           .reduce((a, b) => a + b, 0) / qCount
       ).toFixed(1)
 
+      // Average difficulty — context for the overall-assessment call.
+      const avgDifficulty = (
+        orderedQuestions.reduce((a, q) => a + q.difficulty, 0) / qCount
+      ).toFixed(1)
+
+      // Difficulty-weighted average score: Σ(score × difficulty) / Σ(difficulty).
+      // Questions where the candidate scored well on hard content count more than
+      // the same score on easy questions, making the anchor fairer across sessions
+      // where the adaptive engine pushed to harder or easier questions.
+      const totalDifficultyWeight = orderedQuestions.reduce((a, q) => a + q.difficulty, 0)
+      const weightedAvgScore = (
+        orderedQuestions
+          .map(q => (answerMap.get(q.id)?.score ?? 0) * q.difficulty)
+          .reduce((a, b) => a + b, 0) / Math.max(1, totalDifficultyWeight)
+      ).toFixed(2)
+
+      // Measured delivery signal — aggregates the real per-answer filler-word-density
+      // classification (persisted from analyzeAnswerConfidence on the client) so the
+      // communication sub-scores are grounded in actual measurement rather than an
+      // LLM's text impression of tone from truncated transcript snippets.
+      const confidenceCounts = orderedQuestions.reduce(
+        (acc, q) => {
+          const c = answerMap.get(q.id)?.confidence
+          if (c === 'confident') acc.confident++
+          else if (c === 'hesitant') acc.hesitant++
+          return acc
+        },
+        { confident: 0, hesitant: 0 }
+      )
+      const measuredCount = confidenceCounts.confident + confidenceCounts.hesitant
+      const unmeasuredCount = qCount - measuredCount
+      const confidenceSummary = measuredCount > 0
+        ? `Of ${qCount} total answers, ${measuredCount} have measured delivery data: ${confidenceCounts.confident} measured "confident" (low filler-word density); ${confidenceCounts.hesitant} measured "hesitant" (filler-word density above 12%). ${unmeasuredCount > 0 ? `${unmeasuredCount} answer${unmeasuredCount > 1 ? 's have' : ' has'} no measurement — do not assume unmeasured answers match the measured distribution.` : 'All answers have measured data.'}`
+        : 'No measured delivery data available for this session — base communication sub-scores on transcript content alone.'
+
       // ── Two parallel Claude calls — wall-clock ≈ max(A, B) instead of A + B ──
       const [perQMessage, overallMessage] = await Promise.all([
-        client.messages.create({
+        tracedMessage('generate-feedback:per-question', client, {
           model: 'claude-haiku-4-5-20251001',
-          // Per-question: ~150 tokens × n questions. 4096 is safe up to ~27 questions.
-          max_tokens: 4096,
+          // Per-question: worst case ~220 tokens × 26 questions (score + feedback + ideal_answer_hint
+          // bullets for low-scoring answers) ≈ 5700 tokens. 6144 gives comfortable headroom.
+          max_tokens: 6144,
           system: [{ type: 'text', text: PER_QUESTION_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
           messages: [{
             role: 'user',
             content: `Interview: ${session.company} — ${session.role} (${session.round_type}), ${session.experience_years} yrs experience\nQuestions: ${qCount}\n\n${perQTranscript}\n\nGenerate per-question feedback. Use each pre_scored value unchanged.`,
           }],
         }),
-        client.messages.create({
+        tracedMessage('generate-feedback:overall', client, {
           model: 'claude-haiku-4-5-20251001',
           // Overall: ~1800 tokens (no per_question array). 2048 has comfortable headroom.
           max_tokens: 2048,
           system: [{ type: 'text', text: OVERALL_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
           messages: [{
             role: 'user',
-            content: `Interview: ${session.company} — ${session.role} (${session.round_type}), ${session.experience_years} yrs experience\nQuestions answered: ${qCount}, Average score: ${avgScore}/5\n\nTopic performance:\n${topicSummary}\n\nInterview highlights:\n${condensedTranscript}\n\nGenerate the overall assessment.`,
+            content: `Interview: ${session.company} — ${session.role} (${session.round_type}), ${session.experience_years} yrs experience\nQuestions answered: ${qCount}, Simple avg score: ${avgScore}/5, Difficulty-weighted avg score: ${weightedAvgScore}/5 (use this as primary anchor), Average question difficulty: ${avgDifficulty}/5\n\nMeasured delivery signal: ${confidenceSummary}\n\nTopic performance:\n${topicSummary}\n\nInterview highlights:\n${condensedTranscript}\n\nGenerate the overall assessment.`,
           }],
         }),
       ])
@@ -222,15 +314,30 @@ export async function POST(request: NextRequest) {
       const perQContent = perQMessage.content[0]
       if (perQContent.type !== 'text') throw new Error('Unexpected per-question response type')
 
+      if (perQMessage.stop_reason === 'max_tokens') {
+        console.error('Per-question Haiku call hit max_tokens — increase max_tokens if this recurs')
+      }
+
       let perQuestionFeedback: FeedbackJSON['per_question'] = []
       try {
         const arrMatch = perQContent.text.match(/\[[\s\S]*\]/)
         perQuestionFeedback = JSON.parse(arrMatch ? arrMatch[0] : perQContent.text)
-        // Re-assign question_ids by position — safety net if Claude echoed IDs incorrectly
-        perQuestionFeedback = perQuestionFeedback.map((pq, i) => ({
-          ...pq,
-          question_id: orderedQuestions[i]?.id ?? pq.question_id,
-        }))
+        // Re-assign question_ids and pin scores to DB values by position.
+        // The per-question call is told to copy pre_scored scores unchanged, but
+        // pinning here guarantees per_question_json matches what actually fed the
+        // weighted-average anchor — so the displayed question scores are always
+        // internally consistent with the overall_score shown to the candidate.
+        perQuestionFeedback = perQuestionFeedback.map((pq, i) => {
+          const qItem = orderedQuestions[i]
+          const dbScore = qItem ? (answerMap.get(qItem.id)?.score ?? null) : null
+          return {
+            ...pq,
+            question_id: qItem?.id ?? pq.question_id,
+            score: dbScore != null
+              ? Math.min(5, Math.max(1, dbScore))
+              : Math.min(5, Math.max(1, Math.round(pq.score ?? 3))),
+          }
+        })
       } catch {
         console.error('Per-question parse failed. stop_reason:', perQMessage.stop_reason, '— output length:', perQContent.text.length)
         // Fall back: build minimal per-question from DB scores
@@ -263,6 +370,9 @@ export async function POST(request: NextRequest) {
         ...overallFeedback,
         per_question: perQuestionFeedback,
       } as FeedbackJSON
+
+      // Safety net — older prompt versions / odd Haiku output might omit this field
+      if (!Array.isArray(feedback.selection_factors)) feedback.selection_factors = []
     }
 
     const shareToken = generateShareToken()
@@ -271,13 +381,49 @@ export async function POST(request: NextRequest) {
     const [{ data: report, error: reportError }] = await Promise.all([
       supabase.from('feedback_reports').upsert({
         session_id,
-        overall_score: Math.min(100, Math.max(0, feedback.overall_score)),
-        selection_probability: Math.min(100, Math.max(0, feedback.selection_probability)),
+        overall_score: Math.min(100, Math.max(0, Math.round(feedback.overall_score ?? 0))),
+        selection_probability: Math.min(100, Math.max(0, Math.round(feedback.selection_probability ?? 0))),
+        selection_factors_json: feedback.selection_factors,
         strengths_json: feedback.strengths,
         gaps_json: feedback.gaps,
-        per_question_json: feedback.per_question,
-        communication_score: feedback.communication.score,
-        communication_json: feedback.communication,
+        // Clamp every per-question score to 1-5. The per-question call is instructed
+        // to copy pre-scored values unchanged, but we validate defensively here.
+        per_question_json: (feedback.per_question ?? []).map(pq => ({
+          ...pq,
+          score: Math.min(5, Math.max(1, Math.round(pq.score ?? 3))),
+        })),
+        // Communication sub-scores are clamped to 0-100 and the overall
+        // communication_score is computed as their straight average — NOT taken
+        // from the LLM's own "score" field. The LLM was free to contradict the
+        // sub-scores (e.g. Clarity 100, Pacing 95, Filler 95, Confidence 80 →
+        // overall 55) by penalising content quality inside a delivery metric.
+        // A deterministic average eliminates that class of inconsistency entirely.
+        communication_json: (() => {
+          const clarity      = Math.min(100, Math.max(0, Math.round(feedback.communication?.clarity      ?? 0)))
+          const pacing       = Math.min(100, Math.max(0, Math.round(feedback.communication?.pacing       ?? 0)))
+          const confidence   = Math.min(100, Math.max(0, Math.round(feedback.communication?.confidence   ?? 0)))
+          const filler_words = Math.min(100, Math.max(0, Math.round(feedback.communication?.filler_words ?? 0)))
+          const score        = Math.round((clarity + pacing + confidence + filler_words) / 4)
+          return {
+            score, clarity, pacing, confidence, filler_words,
+            clarity_note:    feedback.communication?.clarity_note    ?? '',
+            pacing_note:     feedback.communication?.pacing_note     ?? '',
+            confidence_note: feedback.communication?.confidence_note ?? '',
+            filler_note:     feedback.communication?.filler_note     ?? '',
+          }
+        })(),
+        // communication_score column mirrors communication_json.score (the same
+        // deterministic average) so both stay in sync.
+        get communication_score() {
+          const c = feedback.communication
+          const clarity      = Math.min(100, Math.max(0, Math.round(c?.clarity      ?? 0)))
+          const pacing       = Math.min(100, Math.max(0, Math.round(c?.pacing       ?? 0)))
+          const confidence   = Math.min(100, Math.max(0, Math.round(c?.confidence   ?? 0)))
+          const filler_words = Math.min(100, Math.max(0, Math.round(c?.filler_words ?? 0)))
+          return Math.round((clarity + pacing + confidence + filler_words) / 4)
+        },
+        red_flags_json: feedback.red_flags ?? [],
+        standout_moments_json: feedback.standout_moments ?? [],
         report_text: feedback.summary,
         share_token: shareToken,
       }, { onConflict: 'session_id' }).select().single(),
@@ -290,7 +436,7 @@ export async function POST(request: NextRequest) {
       console.error('Report save error:', reportError)
       // Do not charge credits when the report failed to save — the user would
       // lose a credit without getting a readable report.
-      return NextResponse.json({ error: 'Failed to save report' }, { status: 500 })
+      return apiError('Failed to save report', 500)
     }
 
     // Credit deduction is fast (~300 ms) and must be reliable — keep it before response.
@@ -313,12 +459,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ report, feedback })
   } catch (error) {
     console.error('generate-feedback error:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
-      { status: 500 }
-    )
+    return apiError(error instanceof Error ? error.message : 'Internal server error', 500)
   }
-}
+})
 
 // ── Side-effect helpers ────────────────────────────────────────────────────
 
@@ -393,21 +536,16 @@ async function updateWeakAreas(
       topicGroups.set(q.topic_tag, arr)
     }
   }
+  // Atomic upsert via RPC (see upsert_weak_area_migration.sql) — folds the
+  // read-modify-write of the rolling average into a single DB statement so
+  // concurrent session completions for the same topic can't clobber each other.
   await Promise.all(Array.from(topicGroups.entries()).map(async ([topicTag, scores]) => {
     const sessionAvg = scores.reduce((a, b) => a + b, 0) / scores.length
-    const { data: existing } = await supabase
-      .from('weak_areas')
-      .select('avg_score, session_count')
-      .eq('user_id', userId)
-      .eq('topic_tag', topicTag)
-      .single()
-    const existingCount = existing?.session_count ?? 0
-    const newCount = existingCount + 1
-    const newAvg = ((existing?.avg_score ?? 0) * existingCount + sessionAvg) / newCount
-    const { error: upsertErr } = await supabase.from('weak_areas').upsert(
-      { user_id: userId, topic_tag: topicTag, avg_score: Math.round(newAvg * 100) / 100, session_count: newCount, last_updated: new Date().toISOString() },
-      { onConflict: 'user_id,topic_tag' }
-    )
+    const { error: upsertErr } = await supabase.rpc('upsert_weak_area', {
+      p_user_id: userId,
+      p_topic_tag: topicTag,
+      p_session_avg: sessionAvg,
+    })
     if (upsertErr) console.error('weak_areas upsert error:', topicTag, upsertErr)
   }))
 }
@@ -419,34 +557,12 @@ async function completeReferral(
   const { createServiceClient } = await import('@/lib/supabase-server')
   const svc = await createServiceClient()
 
-  const { data: referral } = await svc
-    .from('referrals')
-    .select('id, referrer_id')
-    .eq('referee_id', userId)
-    .eq('status', 'pending')
-    .single()
-  if (!referral) return
-
-  const { data: claimed } = await svc.from('referrals')
-    .update({ status: 'completed', completed_at: new Date().toISOString() })
-    .eq('id', referral.id)
-    .eq('status', 'pending')
-    .select('id')
-    .maybeSingle()
-  if (!claimed) return
-
-  await Promise.all([
-    creditReferralBonus(svc, referral.referrer_id),
-    creditReferralBonus(svc, userId),
-  ])
-}
-
-async function creditReferralBonus(
-  svc: Awaited<ReturnType<typeof import('@/lib/supabase-server').createServiceClient>>,
-  id: string,
-) {
-  await svc.rpc('increment_user_credits', { p_user_id: id, p_amount: 1 })
-  await svc.from('credit_transactions').insert({ user_id: id, amount: 1, type: 'referral' })
+  // Atomic claim + crediting (see complete_referral_migration.sql) — the
+  // referral status flip and both credit grants happen in a single
+  // transaction, so a partial failure can't mark the referral completed
+  // without paying out the bonus.
+  const { error } = await svc.rpc('complete_referral', { p_referee_id: userId })
+  if (error) console.error('complete_referral error:', error)
 }
 
 async function sendFeedbackEmail(

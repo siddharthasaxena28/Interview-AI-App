@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { withAuth } from '@/lib/api-handler'
+import { tracedMessage } from '@/lib/llm-metrics'
 import { getDailyDrillQuestions, type DrillRoundFilter } from '@/lib/drill-questions'
 import { checkRateLimit } from '@/lib/rate-limit'
 import type { RoundType } from '@/types'
@@ -21,22 +22,23 @@ Return ONLY a JSON array with exactly 3 objects, no markdown, no extra text:
 
 Each question should take 2-3 minutes to answer verbally. Make them feel like real interview questions, not textbook problems.`
 
-export async function POST(request: NextRequest) {
+// Rate limiting and errors are handled inline (not via withAuth opts) because this
+// route fails SOFT: instead of a 429/500 it serves the static daily question bank,
+// so the drill always works.
+export const POST = withAuth('drill-questions', async ({ request, user, supabase }) => {
   let filter: DrillRoundFilter = 'mixed'
+  let hasHistory = false
   const today = new Date().toISOString().split('T')[0]
 
   try {
     const body = await request.json() as { filter?: DrillRoundFilter }
     filter = body.filter ?? 'mixed'
 
-    const supabase = await createServerSupabaseClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
     if (!await checkRateLimit(`drill-questions:${user.id}`, 10, 3_600_000)) {
       return NextResponse.json({
         questions: getDailyDrillQuestions(today, filter),
         personalized: false,
+        reason: 'rate_limited',
       })
     }
 
@@ -56,6 +58,8 @@ export async function POST(request: NextRequest) {
         .order('avg_score', { ascending: true })
         .limit(3),
     ])
+
+    hasHistory = !!latestSession || (weakAreas?.length ?? 0) > 0
 
     const role = latestSession?.role ?? null
     const company = latestSession?.company ?? null
@@ -89,7 +93,7 @@ Generate 3 targeted practice questions grounded in the role and JD above.
 If weak areas are listed, at least one question must directly address them.
 Questions must feel specific to this role — not generic textbook problems.`
 
-    const message = await client.messages.create({
+    const message = await tracedMessage('drill-questions', client, {
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 800,
       system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
@@ -108,6 +112,7 @@ Questions must feel specific to this role — not generic textbook problems.`
       return NextResponse.json({
         questions: getDailyDrillQuestions(today, filter),
         personalized: false,
+        reason: hasHistory ? 'parse_failed' : 'no_history',
       })
     }
 
@@ -123,12 +128,14 @@ Questions must feel specific to this role — not generic textbook problems.`
       questions,
       personalized: !!(role && company),
       context: role && company ? { role, company } : undefined,
+      reason: 'ok',
     })
   } catch (error) {
     console.error('drill-questions error:', error)
     return NextResponse.json({
       questions: getDailyDrillQuestions(today, filter),
       personalized: false,
+      reason: hasHistory ? 'error' : 'no_history',
     })
   }
-}
+})

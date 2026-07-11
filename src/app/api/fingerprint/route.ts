@@ -1,23 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient, createServiceClient } from '@/lib/supabase-server'
+import { NextResponse } from 'next/server'
+import { createServiceClient } from '@/lib/supabase-server'
+import { withAuth } from '@/lib/api-handler'
 
-export async function POST(request: NextRequest) {
-  try {
-    const supabase = await createServerSupabaseClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ ok: false }, { status: 401 })
+export const POST = withAuth('fingerprint', async ({ request, user }) => {
+  const { visitorId } = await request.json() as { visitorId?: string }
+  if (!visitorId) return NextResponse.json({ ok: false }, { status: 400 })
 
-    const { visitorId } = await request.json() as { visitorId?: string }
-    if (!visitorId) return NextResponse.json({ ok: false }, { status: 400 })
+  const svc = await createServiceClient()
+  await svc
+    .from('users')
+    .update({ device_fingerprint: visitorId })
+    .eq('id', user.id)
 
-    const svc = await createServiceClient()
-    await svc
-      .from('users')
-      .update({ device_fingerprint: visitorId })
-      .eq('id', user.id)
-
-    return NextResponse.json({ ok: true })
-  } catch {
-    return NextResponse.json({ ok: false }, { status: 500 })
-  }
-}
+  return NextResponse.json({ ok: true })
+})

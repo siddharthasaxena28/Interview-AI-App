@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
-import { checkRateLimit } from '@/lib/rate-limit'
+import { withAuth, apiError } from '@/lib/api-handler'
+import { tracedMessage } from '@/lib/llm-metrics'
 import { normalizeTopic } from '@/lib/utils'
 
 const client = new Anthropic()
@@ -22,86 +22,68 @@ Return ONLY this JSON:
   "missing": "<one key point they missed, or empty string if score >= 4>"
 }`
 
-export async function POST(request: NextRequest) {
-  try {
-    const supabase = await createServerSupabaseClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+export const POST = withAuth('drill-evaluate', async ({ request, user, supabase }) => {
+  const { transcript, question, topic_tag, difficulty } = await request.json() as {
+    transcript: string
+    question: string
+    topic_tag: string
+    difficulty: number
+  }
 
-    if (!await checkRateLimit(`drill-eval:${user.id}`, 30, 3_600_000)) {
-      return NextResponse.json({ error: 'Rate limit exceeded. Try again later.' }, { status: 429 })
-    }
+  if (!transcript || !question) {
+    return apiError('Missing required fields', 400)
+  }
 
-    const { transcript, question, topic_tag, difficulty } = await request.json() as {
-      transcript: string
-      question: string
-      topic_tag: string
-      difficulty: number
-    }
-
-    if (!transcript || !question) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
-    }
-
-    const message = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 250,
-      system: [{ type: 'text', text: DRILL_SYSTEM, cache_control: { type: 'ephemeral' } }],
-      messages: [{
-        role: 'user',
-        content: `Question (topic: ${topic_tag}, difficulty ${difficulty}/5):
+  const message = await tracedMessage('drill-evaluate', client, {
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 250,
+    system: [{ type: 'text', text: DRILL_SYSTEM, cache_control: { type: 'ephemeral' } }],
+    messages: [{
+      role: 'user',
+      content: `Question (topic: ${topic_tag}, difficulty ${difficulty}/5):
 "${question}"
 
 Candidate's answer:
 "${transcript || '[No answer]'}"`,
-      }],
-    })
+    }],
+  })
 
-    const text = message.content[0]
-    if (text.type !== 'text') throw new Error('Unexpected response')
+  const text = message.content[0]
+  if (text.type !== 'text') throw new Error('Unexpected response')
 
-    let result: { score: number; one_line: string; missing: string }
-    try {
-      const m = text.text.match(/\{[\s\S]*\}/)
-      result = JSON.parse(m ? m[0] : text.text)
-    } catch {
-      result = { score: 3, one_line: 'Keep practicing!', missing: '' }
-    }
+  let result: { score: number; one_line: string; missing: string }
+  let parsedOk = true
+  try {
+    const m = text.text.match(/\{[\s\S]*\}/)
+    result = JSON.parse(m ? m[0] : text.text)
+  } catch {
+    parsedOk = false
+    console.error('drill-evaluate parse error — raw:', text.text.slice(0, 200))
+    result = { score: 3, one_line: 'Feedback unavailable — please try again.', missing: '' }
+  }
 
-    const score = Math.min(5, Math.max(1, result.score ?? 3))
+  const score = Math.min(5, Math.max(1, result.score ?? 3))
 
-    // Feed drill scores into weak_areas so personalization improves over time
+  // Only update weak_areas when we have a genuine LLM score. A fallback score
+  // of 3 from a parse failure must not be written — it would corrupt the rolling
+  // average with synthetic data that doesn't reflect the candidate's actual answer.
+  if (parsedOk) {
     const normalizedTag = normalizeTopic(topic_tag ?? '')
     if (normalizedTag) {
-      const { data: existing } = await supabase
-        .from('weak_areas')
-        .select('avg_score, session_count')
-        .eq('user_id', user.id)
-        .eq('topic_tag', normalizedTag)
-        .maybeSingle()
-
-      const existingCount = existing?.session_count ?? 0
-      const newCount = existingCount + 1
-      const newAvg = ((existing?.avg_score ?? 0) * existingCount + score) / newCount
-      await supabase.from('weak_areas').upsert(
-        {
-          user_id: user.id,
-          topic_tag: normalizedTag,
-          avg_score: Math.round(newAvg * 100) / 100,
-          session_count: newCount,
-          last_updated: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,topic_tag' },
-      )
+      const { error: upsertErr } = await supabase.rpc('upsert_weak_area', {
+        p_user_id: user.id,
+        p_topic_tag: normalizedTag,
+        p_session_avg: score,
+      })
+      if (upsertErr) console.error('drill weak_areas upsert error:', normalizedTag, upsertErr)
     }
-
-    return NextResponse.json({
-      score,
-      one_line: result.one_line ?? '',
-      missing: result.missing ?? '',
-    })
-  } catch (error) {
-    console.error('drill-evaluate error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
-}
+
+  return NextResponse.json({
+    score,
+    one_line: result.one_line ?? '',
+    missing: result.missing ?? '',
+  })
+}, {
+  rateLimit: { prefix: 'drill-eval', max: 30, windowMs: 3_600_000 },
+})

@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
+import crypto from 'crypto'
 import { createServiceClient } from '@/lib/supabase-server'
 import { sendPushToUser } from '@/lib/push-server'
 
+function isAuthorized(authHeader: string | null): boolean {
+  if (!process.env.CRON_SECRET || !authHeader) return false
+  const expected = Buffer.from(`Bearer ${process.env.CRON_SECRET}`)
+  const actual = Buffer.from(authHeader)
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual)
+}
+
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('Authorization')
-  if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!isAuthorized(request.headers.get('Authorization'))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -52,44 +59,78 @@ export async function GET(request: NextRequest) {
     }).catch(() => 0)
   }
 
-  // Re-engagement: last practiced 3 days ago
+  // Re-engagement tiers: each fires exactly once as the user's last-practice
+  // date crosses the mark. Day 3 = gentle nudge, day 7 = week-out win-back,
+  // day 14 = last-call pointing at the free drill (lowest-friction return).
+  // Without the later tiers, anyone who missed the day-3 email never heard
+  // from us again.
+  const REENGAGE_TIERS = [
+    { offset: 3, tone: 'nudge' as const },
+    { offset: 7, tone: 'winback' as const },
+    { offset: 14, tone: 'lastcall' as const },
+  ]
+  const tierDates = REENGAGE_TIERS.map(t => toDate(t.offset))
+  const toneByDate = new Map(REENGAGE_TIERS.map(t => [toDate(t.offset), t.tone]))
+
   const { data: nudgeUsers } = await supabase
     .from('users')
-    .select('id, email, name')
-    .eq('last_session_date', toDate(3))
+    .select('id, email, name, last_session_date')
+    .in('last_session_date', tierDates)
+
+  // Batch-fetch weak areas for all nudge users in one query (was N+1 — one
+  // query per user) and pick each user's single weakest topic client-side.
+  const nudgeUserIds = (nudgeUsers ?? []).map(u => u.id)
+  const weakestByUser = new Map<string, { topic_tag: string; avg_score: number }>()
+  if (nudgeUserIds.length > 0) {
+    const { data: allWeakAreas } = await supabase
+      .from('weak_areas')
+      .select('user_id, topic_tag, avg_score')
+      .in('user_id', nudgeUserIds)
+      .order('avg_score', { ascending: true })
+    for (const wa of allWeakAreas ?? []) {
+      if (!weakestByUser.has(wa.user_id)) {
+        weakestByUser.set(wa.user_id, { topic_tag: wa.topic_tag, avg_score: wa.avg_score })
+      }
+    }
+  }
 
   for (const u of nudgeUsers ?? []) {
-    // Fetch top weak area for personalised message
-    const { data: topWeak } = await supabase
-      .from('weak_areas')
-      .select('topic_tag, avg_score')
-      .eq('user_id', u.id)
-      .order('avg_score', { ascending: true })
-      .limit(1)
-      .maybeSingle()
-
+    const tone = toneByDate.get(u.last_session_date ?? '') ?? 'nudge'
+    const topWeak = weakestByUser.get(u.id) ?? null
     const weakTopic = topWeak
       ? topWeak.topic_tag.replace(/_/g, ' ')
       : null
     const weakScore = topWeak ? topWeak.avg_score.toFixed(1) : null
 
+    const subject =
+      tone === 'lastcall'
+        ? 'Two weeks out — try a free 5-minute drill'
+        : tone === 'winback'
+          ? `It's been a week — your interview skills fade fast`
+          : weakTopic
+            ? `Time to work on your ${weakTopic} skills`
+            : `Ready for your next practice interview?`
+
     try {
       await resend.emails.send({
         from,
         to: u.email,
-        subject: weakTopic
-          ? `Time to work on your ${weakTopic} skills`
-          : `Ready for your next practice interview?`,
-        html: reEngageHtml({ name: u.name, appUrl, weakTopic, weakScore }),
+        subject,
+        html: reEngageHtml({ name: u.name, appUrl, weakTopic, weakScore, tone }),
       })
       sent++
     } catch { /* non-fatal */ }
     pushed += await sendPushToUser(supabase, u.id, {
-      title: weakTopic ? `Work on ${weakTopic} today` : 'Ready for your next mock interview?',
+      title:
+        tone === 'lastcall'
+          ? 'Free 5-minute drill — no credits needed'
+          : tone === 'winback'
+            ? 'A week without practice — jump back in'
+            : weakTopic ? `Work on ${weakTopic} today` : 'Ready for your next mock interview?',
       body: weakTopic
         ? `You scored ${weakScore}/5 on ${weakTopic} — a targeted practice session today will help.`
         : 'A quick 20-minute practice session keeps you sharp.',
-      url: '/interview/setup',
+      url: tone === 'lastcall' ? '/drill' : '/interview/setup',
     }).catch(() => 0)
   }
 
@@ -130,7 +171,36 @@ function streakAtRiskHtml({ name, streak, appUrl }: { name: string; streak: numb
 </html>`
 }
 
-function reEngageHtml({ name, appUrl, weakTopic, weakScore }: { name: string; appUrl: string; weakTopic: string | null; weakScore: string | null }) {
+function reEngageHtml({ name, appUrl, weakTopic, weakScore, tone }: {
+  name: string
+  appUrl: string
+  weakTopic: string | null
+  weakScore: string | null
+  tone: 'nudge' | 'winback' | 'lastcall'
+}) {
+  const headline =
+    tone === 'lastcall'
+      ? 'Start small — a free 5-minute drill'
+      : tone === 'winback'
+        ? 'A week already — let\'s get you back'
+        : 'Miss you! Time for a quick practice?'
+
+  const bodyIntro =
+    tone === 'lastcall'
+      ? `<p style="color:#374151;margin-bottom:16px;">
+  It's been two weeks since your last practice. No pressure — the Daily Drill is 3 questions,
+  5 minutes, and completely free. It's the easiest way to get back into rhythm.
+</p>`
+      : tone === 'winback'
+        ? `<p style="color:#374151;margin-bottom:16px;">
+  It's been a week since your last practice interview. Interview skills are perishable —
+  a single session now beats three sessions the night before the real thing.
+</p>`
+        : ''
+
+  const ctaUrl = tone === 'lastcall' ? `${appUrl}/drill` : `${appUrl}/interview/setup`
+  const ctaLabel = tone === 'lastcall' ? 'Try the Free Drill →' : 'Start a Practice Interview →'
+
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
@@ -138,26 +208,27 @@ function reEngageHtml({ name, appUrl, weakTopic, weakScore }: { name: string; ap
   <div style="max-width:600px;margin:0 auto;background:white;border-radius:16px;overflow:hidden;border:1px solid #e5e7eb;">
     <div style="background:#4f46e5;padding:32px;text-align:center;">
       <h1 style="color:white;margin:0;font-size:22px;">InterviewAI</h1>
-      <p style="color:#a5b4fc;margin:8px 0 0;">Miss you! Time for a quick practice?</p>
+      <p style="color:#a5b4fc;margin:8px 0 0;">${headline}</p>
     </div>
     <div style="padding:32px;">
       <p style="color:#374151;margin-bottom:16px;">Hi ${name},</p>
+      ${bodyIntro}
       ${weakTopic ? `
 <div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:12px;padding:16px;margin-bottom:16px;">
   <div style="font-size:13px;color:#92400e;font-weight:600;margin-bottom:4px;">Your focus area: ${weakTopic}</div>
   <div style="font-size:13px;color:#92400e;">You scored ${weakScore}/5 on ${weakTopic} in your last session — a targeted practice today will make a real difference.</div>
 </div>
-` : `
+` : tone === 'nudge' ? `
 <p style="color:#374151;margin-bottom:16px;">
   It's been a few days since your last practice interview. The best time to sharpen your skills is before you need them — not after.
 </p>
-`}
+` : ''}
       <p style="color:#374151;margin-bottom:24px;">
-        Get 20 minutes of focused practice today. Your future self will thank you.
+        ${tone === 'lastcall' ? 'Five minutes. Three questions. Zero credits.' : 'Get 20 minutes of focused practice today. Your future self will thank you.'}
       </p>
       <div style="text-align:center;">
-        <a href="${appUrl}/interview/setup" style="background:#4f46e5;color:white;text-decoration:none;padding:14px 36px;border-radius:10px;font-weight:600;font-size:15px;display:inline-block;">
-          Start a Practice Interview →
+        <a href="${ctaUrl}" style="background:#4f46e5;color:white;text-decoration:none;padding:14px 36px;border-radius:10px;font-weight:600;font-size:15px;display:inline-block;">
+          ${ctaLabel}
         </a>
       </div>
     </div>

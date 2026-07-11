@@ -1,10 +1,13 @@
 name: E2E Tests
 
+# Disabled from automatic triggers — every run since this workflow was added
+# has failed before a single job dispatches (0 jobs queued, 0 billable minutes),
+# which points to a GitHub Actions account/billing/runner issue rather than a
+# code problem. A permanently-red check that nobody can act on is worse than no
+# check. Re-enable the push/pull_request triggers once Actions is confirmed
+# working for this repo (Settings > Actions, Settings > Billing).
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   e2e:

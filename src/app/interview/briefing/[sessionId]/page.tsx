@@ -1,7 +1,7 @@
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
-import { PERSONAS, getRoundLabel, getRoundDuration } from '@/lib/personas'
+import { PERSONAS, getRoundLabel, getRoundDuration, getQuestionCount } from '@/lib/personas'
 import { Mic, Clock, Shield, ArrowLeft, Users } from 'lucide-react'
 import type { InterviewSession, Question, RoundType } from '@/types'
 import MicCheckGate from './MicCheckGate'
@@ -43,6 +43,7 @@ export default async function BriefingPage({
   const personaName = gender === 'female' ? persona.femaleName : persona.maleName
   const duration = getRoundDuration(interviewSession.round_type as RoundType)
   const roundLabel = getRoundLabel(interviewSession.round_type as RoundType)
+  const questionCount = questions?.length ?? getQuestionCount(interviewSession.round_type as RoundType)
   const sessionUrl = `/interview/session/${sessionId}${gender === 'female' ? '?gender=female' : ''}`
 
   return (
@@ -91,7 +92,7 @@ export default async function BriefingPage({
             {interviewSession.company} — {interviewSession.role}
           </h1>
           <p className="text-gray-500 text-sm">
-            {questions?.length ?? 15} questions · Adaptive difficulty
+            {questionCount} questions · Adaptive difficulty
           </p>
         </FadeIn>
       </div>
@@ -164,7 +165,7 @@ export default async function BriefingPage({
                 iconBg: 'bg-violet-50',
                 iconColor: 'text-violet-600',
                 title: `~${duration} minute session`,
-                sub: `${questions?.length ?? 15} questions, adaptive difficulty`,
+                sub: `${questionCount} questions, adaptive difficulty`,
               },
               {
                 icon: Mic,

@@ -470,14 +470,11 @@ function SetupPageInner() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-gray-900">Full Interview</span>
-                      <span className="text-xs font-semibold bg-indigo-600 text-white px-2 py-0.5 rounded-full">
-                        Recommended
-                      </span>
-                      <span className="text-xs text-gray-500 ml-auto">~60 min · 1 credit</span>
+                      <span className="text-xs text-gray-500 ml-auto">26 questions · ~60 min · 1 credit</span>
                     </div>
                     <p className="text-sm text-gray-600 mt-1 leading-relaxed">
-                      Covers all 4 round types in one session — Technical L1, Technical L2, Managerial &amp; HR.
-                      Best value if you&rsquo;re unsure which rounds are coming or want comprehensive prep.
+                      26 questions spread across all 4 rounds — roughly 6&ndash;7 from each (Technical L1, Technical L2, Managerial &amp; HR).
+                      A broad, single-session overview of where you stand across the board.
                     </p>
                     <div className="flex flex-wrap gap-1.5 mt-2.5">
                       {['Tech L1', 'Tech L2', 'Managerial', 'HR'].map(tag => (
@@ -491,7 +488,7 @@ function SetupPageInner() {
               {/* Individual rounds */}
               <div className="mb-1">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2.5">
-                  Targeted round practice &mdash; use when you know your weak area
+                  Focused practice &mdash; 15 questions dedicated entirely to one round, for deeper, more serious preparation
                 </p>
                 <div className="grid grid-cols-2 gap-2.5">
                   {ROUND_OPTIONS.map((option) => (
@@ -517,6 +514,7 @@ function SetupPageInner() {
                         <div>
                           <div className="font-medium text-gray-900 text-sm leading-snug">{option.label}</div>
                           <div className="text-xs text-gray-500 mt-0.5 leading-snug">{option.desc}</div>
+                          <div className="text-xs text-gray-400 mt-1">15 questions · ~30 min</div>
                         </div>
                       </div>
                     </button>
@@ -525,7 +523,7 @@ function SetupPageInner() {
               </div>
 
               <p className="text-xs text-gray-400 mt-3 text-center">
-                ~30 min for individual rounds &nbsp;·&nbsp; Each option costs 1 credit
+                15 questions · ~30 min for individual rounds &nbsp;·&nbsp; Each option costs 1 credit
               </p>
             </div>
           )}
