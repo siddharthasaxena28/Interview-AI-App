@@ -46,11 +46,17 @@ export function validateEnv(): void {
 
   if (missing.length > 0) {
     const msg = `[env] Missing required environment variables: ${missing.join(', ')}`
-    if (process.env.NODE_ENV === 'production') {
+    // `next build` also sets NODE_ENV=production and (with instrumentationHook
+    // enabled) runs this during page-data collection — throwing there crashes
+    // the build itself with an opaque "Failed to collect page data" error
+    // instead of a real deploy-time signal. Only hard-fail at actual server
+    // startup, which Next.js marks with NEXT_PHASE=phase-production-server.
+    const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build'
+    if (process.env.NODE_ENV === 'production' && !isBuildPhase) {
       // Fail loudly at boot rather than 500ing on the first request that
       // happens to need the variable.
       throw new Error(msg)
     }
-    console.warn(`${msg} — continuing because NODE_ENV != production`)
+    console.warn(`${msg} — continuing (build phase or non-production)`)
   }
 }
